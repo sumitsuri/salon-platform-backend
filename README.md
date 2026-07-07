@@ -66,4 +66,4 @@ See `src/main/resources/application.yml`. Key variables:
 
 ## Related Repo
 
-Frontend: [salon-platform-frontend](https://github.com/sumitkumarbharti/salon-platform-frontend)
+Frontend: [salon-platform-frontend](https://github.com/sumitsuri/salon-platform-frontend)
