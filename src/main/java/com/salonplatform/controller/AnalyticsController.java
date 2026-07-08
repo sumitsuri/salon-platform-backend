@@ -5,8 +5,10 @@ import com.salonplatform.dto.analytics.AttendanceDashboardResponse;
 import com.salonplatform.dto.analytics.DashboardResponse;
 import com.salonplatform.dto.analytics.RecommendationsResponse;
 import com.salonplatform.dto.analytics.ServiceContributionResponse;
+import com.salonplatform.dto.analytics.PlSummaryResponse;
 import com.salonplatform.service.AnalyticsService;
 import com.salonplatform.service.AttendanceAnalyticsService;
+import com.salonplatform.service.PlAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +23,7 @@ public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
     private final AttendanceAnalyticsService attendanceAnalyticsService;
+    private final PlAnalyticsService plAnalyticsService;
 
     @GetMapping("/dashboard")
     public ApiResponse<DashboardResponse> dashboard(
@@ -70,5 +73,13 @@ public class AnalyticsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(required = false) List<java.util.UUID> branchIds) {
         return ApiResponse.ok(attendanceAnalyticsService.getDashboard(startDate, endDate, branchIds));
+    }
+
+    @GetMapping("/pl")
+    public ApiResponse<PlSummaryResponse> plSummary(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) List<java.util.UUID> branchIds) {
+        return ApiResponse.ok(plAnalyticsService.getPlSummary(startDate, endDate, branchIds));
     }
 }
