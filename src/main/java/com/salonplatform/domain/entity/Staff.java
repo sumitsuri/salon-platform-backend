@@ -6,7 +6,9 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -38,6 +40,27 @@ public class Staff {
     private StaffRole role = StaffRole.STYLIST;
 
     private String skills;
+
+    /** Simulated biometric thumb ID registered on device */
+    private String biometricId;
+
+    /** Monthly base salary — CEO-only field */
+    private BigDecimal salary;
+
+    private LocalDate joiningDate;
+
+    @Builder.Default
+    @Column(columnDefinition = "boolean default false")
+    private Boolean idProofCollected = false;
+
+    /** Masked reference e.g. "Aadhaar XXXX1234" — CEO-only */
+    private String idProofReference;
+
+    /** Monthly sales target in INR */
+    private BigDecimal monthlySalesTarget;
+
+    /** Incentive % of target paid when target is achieved (e.g. 5 = 5%) */
+    private BigDecimal incentivePercent;
 
     @Builder.Default
     private boolean active = true;

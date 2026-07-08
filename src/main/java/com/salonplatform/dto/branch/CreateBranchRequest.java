@@ -4,6 +4,8 @@ import com.salonplatform.domain.enums.BranchStatus;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 public class CreateBranchRequest {
     @NotBlank
@@ -16,5 +18,6 @@ public class CreateBranchRequest {
     private String phone;
     private String openTime;
     private String closeTime;
+    private BigDecimal monthlySalesTarget;
     private BranchStatus status = BranchStatus.ACTIVE;
 }

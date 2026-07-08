@@ -49,4 +49,19 @@ public final class SecurityUtils {
             throw new ForbiddenException("Platform admin access required");
         }
     }
+
+    public static boolean isManagerRole() {
+        UserRole role = currentUser().getRole();
+        return role == UserRole.BRANCH_MANAGER || role == UserRole.SALON_MANAGER;
+    }
+
+    public static boolean isBrandAdmin() {
+        return currentUser().getRole() == UserRole.BRAND_ADMIN;
+    }
+
+    public static void assertBrandAdmin() {
+        if (!isBrandAdmin()) {
+            throw new ForbiddenException("CEO access required");
+        }
+    }
 }

@@ -12,8 +12,10 @@ import java.util.UUID;
 @Builder
 public class BookingListFilter {
     private UUID branchId;
-    private String customer;
     private String branch;
+    private String customer;
+    private String service;
+    private String stylist;
     private BookingStatus status;
     private BigDecimal minAmount;
     private BigDecimal maxAmount;

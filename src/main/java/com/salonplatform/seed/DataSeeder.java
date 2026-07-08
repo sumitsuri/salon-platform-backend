@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 @Component
@@ -64,6 +65,7 @@ public class DataSeeder implements CommandLineRunner {
                 .phone("9876543210")
                 .openTime("09:00")
                 .closeTime("21:00")
+                .monthlySalesTarget(new BigDecimal("400000"))
                 .status(BranchStatus.ACTIVE)
                 .build());
 
@@ -77,6 +79,7 @@ public class DataSeeder implements CommandLineRunner {
                 .phone("9876543211")
                 .openTime("09:00")
                 .closeTime("21:00")
+                .monthlySalesTarget(new BigDecimal("350000"))
                 .status(BranchStatus.ACTIVE)
                 .build());
 
@@ -110,13 +113,24 @@ public class DataSeeder implements CommandLineRunner {
                 .build());
 
         Staff amitL = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(lithos.getId())
-                .name("Amit").role(StaffRole.STYLIST).skills("Hair,Grooming").active(true).build());
+                .name("Amit").role(StaffRole.STYLIST).skills("Hair,Grooming").biometricId("FP-AMIT-LITHOS")
+                .salary(new BigDecimal("25000")).joiningDate(LocalDate.of(2024, 3, 1)).idProofCollected(true)
+                .idProofReference("Aadhaar XXXX4521").monthlySalesTarget(new BigDecimal("120000"))
+                .incentivePercent(new BigDecimal("5")).active(true).build());
         Staff priyaL = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(lithos.getId())
-                .name("Priya").role(StaffRole.STYLIST).skills("Skin,Hair").active(true).build());
+                .name("Priya").role(StaffRole.STYLIST).skills("Skin,Hair").biometricId("FP-PRIYA-LITHOS")
+                .salary(new BigDecimal("28000")).joiningDate(LocalDate.of(2023, 8, 15)).idProofCollected(true)
+                .idProofReference("PAN XXXX7890").monthlySalesTarget(new BigDecimal("150000"))
+                .incentivePercent(new BigDecimal("5")).active(true).build());
         Staff amitW = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(webcity.getId())
-                .name("Ravi").role(StaffRole.STYLIST).skills("Hair,Grooming").active(true).build());
+                .name("Ravi").role(StaffRole.STYLIST).skills("Hair,Grooming").biometricId("FP-RAVI-WEBCITY")
+                .salary(new BigDecimal("22000")).joiningDate(LocalDate.of(2024, 6, 1)).idProofCollected(true)
+                .idProofReference("Aadhaar XXXX3312").monthlySalesTarget(new BigDecimal("100000"))
+                .incentivePercent(new BigDecimal("4")).active(true).build());
         Staff priyaW = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(webcity.getId())
-                .name("Sneha").role(StaffRole.STYLIST).skills("Skin,Nails").active(true).build());
+                .name("Sneha").role(StaffRole.STYLIST).skills("Skin,Nails").biometricId("FP-SNEHA-WEBCITY")
+                .salary(new BigDecimal("24000")).joiningDate(LocalDate.of(2024, 1, 10)).idProofCollected(false)
+                .monthlySalesTarget(new BigDecimal("110000")).incentivePercent(new BigDecimal("4")).active(true).build());
 
         ServiceCategory hair = categoryRepository.save(ServiceCategory.builder()
                 .tenantId(tenant.getId()).name("Hair").sortOrder(1).active(true).build());

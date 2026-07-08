@@ -13,6 +13,7 @@ import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.repository.BookingSpecifications;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.util.PageUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,7 +34,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class BookingService {
 
-    private static final List<Integer> ALLOWED_PAGE_SIZES = List.of(10, 20, 50, 100);
+    private static final List<Integer> ALLOWED_PAGE_SIZES = PageUtils.ALLOWED_PAGE_SIZES;
 
     private final BookingRepository bookingRepository;
     private final BookingLineItemRepository lineItemRepository;
@@ -126,8 +127,8 @@ public class BookingService {
             SecurityUtils.assertBrandAdminOrAbove();
         }
 
-        int size = ALLOWED_PAGE_SIZES.contains(filter.getSize()) ? filter.getSize() : 20;
-        int page = Math.max(filter.getPage(), 0);
+        int size = PageUtils.normalizeSize(filter.getSize());
+        int page = PageUtils.normalizePage(filter.getPage());
 
         Specification<Booking> spec = BookingSpecifications.fromFilter(tenantId, filter);
         Page<Booking> result = bookingRepository.findAll(

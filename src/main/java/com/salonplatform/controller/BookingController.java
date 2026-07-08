@@ -40,6 +40,8 @@ public class BookingController {
             @RequestParam(required = false) UUID branchId,
             @RequestParam(required = false) String customer,
             @RequestParam(required = false) String branch,
+            @RequestParam(required = false) String service,
+            @RequestParam(required = false) String stylist,
             @RequestParam(required = false) BookingStatus status,
             @RequestParam(required = false) BigDecimal minAmount,
             @RequestParam(required = false) BigDecimal maxAmount,
@@ -51,6 +53,8 @@ public class BookingController {
                 .branchId(branchId)
                 .customer(customer)
                 .branch(branch)
+                .service(service)
+                .stylist(stylist)
                 .status(status)
                 .minAmount(minAmount)
                 .maxAmount(maxAmount)

@@ -108,6 +108,7 @@ public class PlatformManagementService {
                 .phone(request.getPhone())
                 .openTime(request.getOpenTime() != null ? request.getOpenTime() : "09:00")
                 .closeTime(request.getCloseTime() != null ? request.getCloseTime() : "21:00")
+                .monthlySalesTarget(request.getMonthlySalesTarget())
                 .status(request.getStatus() != null ? request.getStatus() : BranchStatus.ACTIVE)
                 .build());
         return toBranchResponse(branch);
@@ -216,6 +217,7 @@ public class PlatformManagementService {
                 .phone(b.getPhone())
                 .openTime(b.getOpenTime())
                 .closeTime(b.getCloseTime())
+                .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
                 .createdAt(b.getCreatedAt())
                 .build();

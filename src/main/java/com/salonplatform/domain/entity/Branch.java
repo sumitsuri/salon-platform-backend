@@ -6,6 +6,7 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -39,6 +40,9 @@ public class Branch {
     private String phone;
     private String openTime;
     private String closeTime;
+
+    /** Monthly revenue target for branch-level tracking */
+    private BigDecimal monthlySalesTarget;
 
     @Enumerated(EnumType.STRING)
     @Builder.Default

@@ -1,9 +1,11 @@
 package com.salonplatform.repository;
 
 import com.salonplatform.domain.entity.Booking;
+import com.salonplatform.domain.entity.BookingLineItem;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.Invoice;
+import com.salonplatform.domain.entity.Staff;
 import com.salonplatform.dto.booking.BookingListFilter;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -68,6 +70,34 @@ public final class BookingSpecifications {
         }
         if (filter.getMaxAmount() != null) {
             spec = spec.and(amountAtMost(filter.getMaxAmount()));
+        }
+        if (filter.getService() != null && !filter.getService().isBlank()) {
+            String q = "%" + filter.getService().trim().toLowerCase() + "%";
+            spec = spec.and((root, query, cb) -> {
+                var sq = query.subquery(Long.class);
+                var line = sq.from(BookingLineItem.class);
+                sq.select(cb.literal(1L));
+                sq.where(cb.and(
+                        cb.equal(line.get("bookingId"), root.get("id")),
+                        cb.like(cb.lower(line.get("serviceName")), q)
+                ));
+                return cb.exists(sq);
+            });
+        }
+        if (filter.getStylist() != null && !filter.getStylist().isBlank()) {
+            String q = "%" + filter.getStylist().trim().toLowerCase() + "%";
+            spec = spec.and((root, query, cb) -> {
+                var sq = query.subquery(Long.class);
+                var line = sq.from(BookingLineItem.class);
+                var staff = sq.from(Staff.class);
+                sq.select(cb.literal(1L));
+                sq.where(cb.and(
+                        cb.equal(line.get("bookingId"), root.get("id")),
+                        cb.equal(line.get("staffId"), staff.get("id")),
+                        cb.like(cb.lower(staff.get("name")), q)
+                ));
+                return cb.exists(sq);
+            });
         }
 
         return spec;
