@@ -6,6 +6,7 @@ import com.salonplatform.dto.analytics.DashboardResponse;
 import com.salonplatform.dto.analytics.RecommendationsResponse;
 import com.salonplatform.dto.analytics.ServiceContributionResponse;
 import com.salonplatform.dto.analytics.PlSummaryResponse;
+import com.salonplatform.dto.analytics.PlTrendsResponse;
 import com.salonplatform.service.AnalyticsService;
 import com.salonplatform.service.AttendanceAnalyticsService;
 import com.salonplatform.service.PlAnalyticsService;
@@ -81,5 +82,13 @@ public class AnalyticsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(required = false) List<java.util.UUID> branchIds) {
         return ApiResponse.ok(plAnalyticsService.getPlSummary(startDate, endDate, branchIds));
+    }
+
+    @GetMapping("/pl/trends")
+    public ApiResponse<PlTrendsResponse> plTrends(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endMonth,
+            @RequestParam(required = false) Integer months,
+            @RequestParam(required = false) List<java.util.UUID> branchIds) {
+        return ApiResponse.ok(plAnalyticsService.getPlTrends(endMonth, months, branchIds));
     }
 }

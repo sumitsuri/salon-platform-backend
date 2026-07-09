@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 public class PlAnalyticsService {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
+    private static final int DEFAULT_TREND_MONTHS = 6;
 
     private final BranchRepository branchRepository;
     private final InvoiceRepository invoiceRepository;
@@ -121,6 +122,126 @@ public class PlAnalyticsService {
                 .brand(brand)
                 .branches(branchSummaries)
                 .build();
+    }
+
+    public PlTrendsResponse getPlTrends(LocalDate endMonth, Integer months, List<UUID> branchIds) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+
+        LocalDate end = (endMonth != null ? endMonth : LocalDate.now(ZONE)).withDayOfMonth(1);
+        int monthCount = months != null && months > 0 ? months : DEFAULT_TREND_MONTHS;
+        LocalDate start = end.minusMonths(monthCount - 1L).withDayOfMonth(1);
+
+        List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
+                .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
+                .collect(Collectors.toList());
+
+        Instant rangeStart = start.atStartOfDay(ZONE).toInstant();
+        LocalDate rangeEndDate = end.withDayOfMonth(end.lengthOfMonth());
+        Instant rangeEnd = rangeEndDate.plusDays(1).atStartOfDay(ZONE).toInstant();
+
+        List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
+        if (branchIds != null && !branchIds.isEmpty()) {
+            Set<UUID> branchSet = new HashSet<>(branchIds);
+            invoices = invoices.stream().filter(i -> branchSet.contains(i.getBranchId())).collect(Collectors.toList());
+        }
+
+        List<BranchExpenditure> expenditures = expenditureRepository
+                .findByTenantIdAndExpenseMonthBetweenAndActiveTrue(tenantId, start, end);
+        if (branchIds != null && !branchIds.isEmpty()) {
+            Set<UUID> branchSet = new HashSet<>(branchIds);
+            expenditures = expenditures.stream().filter(e -> branchSet.contains(e.getBranchId())).collect(Collectors.toList());
+        }
+
+        Map<UUID, Map<LocalDate, BigDecimal>> revenueByBranchMonth = aggregateRevenueByBranchMonth(invoices);
+        Map<UUID, Map<LocalDate, BigDecimal>> expensesByBranchMonth = aggregateExpensesByBranchMonth(expenditures);
+
+        List<LocalDate> monthPoints = new ArrayList<>();
+        for (LocalDate m = start; !m.isAfter(end); m = m.plusMonths(1)) {
+            monthPoints.add(m);
+        }
+
+        List<BranchPlTrend> trends = new ArrayList<>();
+        for (Branch branch : branches) {
+            Map<LocalDate, BigDecimal> revMap = revenueByBranchMonth.getOrDefault(branch.getId(), Map.of());
+            Map<LocalDate, BigDecimal> expMap = expensesByBranchMonth.getOrDefault(branch.getId(), Map.of());
+
+            List<PlTrendPoint> points = new ArrayList<>();
+            List<BigDecimal> revenues = new ArrayList<>();
+            List<BigDecimal> expenseTotals = new ArrayList<>();
+            List<BigDecimal> netProfits = new ArrayList<>();
+            List<BigDecimal> margins = new ArrayList<>();
+
+            for (LocalDate month : monthPoints) {
+                BigDecimal revenue = revMap.getOrDefault(month, BigDecimal.ZERO);
+                BigDecimal totalExpenses = expMap.getOrDefault(month, BigDecimal.ZERO);
+                BigDecimal netProfit = revenue.subtract(totalExpenses);
+                BigDecimal margin = marginPercent(revenue, netProfit);
+
+                points.add(PlTrendPoint.builder()
+                        .month(month)
+                        .revenue(revenue)
+                        .totalExpenses(totalExpenses)
+                        .netProfit(netProfit)
+                        .marginPercent(margin)
+                        .build());
+
+                revenues.add(revenue);
+                expenseTotals.add(totalExpenses);
+                netProfits.add(netProfit);
+                margins.add(margin);
+            }
+
+            trends.add(BranchPlTrend.builder()
+                    .branchId(branch.getId())
+                    .branchName(branch.getName())
+                    .points(points)
+                    .revenueChangePct(changePctFromSeries(revenues))
+                    .expensesChangePct(changePctFromSeries(expenseTotals))
+                    .netProfitChangePct(changePctFromSeries(netProfits))
+                    .marginChangePct(changePctFromSeries(margins))
+                    .build());
+        }
+
+        String periodLabel = start.format(DateTimeFormatter.ofPattern("MMM yyyy")) + " – "
+                + end.format(DateTimeFormatter.ofPattern("MMM yyyy"));
+
+        return PlTrendsResponse.builder()
+                .periodLabel(periodLabel)
+                .branches(trends)
+                .build();
+    }
+
+    private Map<UUID, Map<LocalDate, BigDecimal>> aggregateRevenueByBranchMonth(List<Invoice> invoices) {
+        Map<UUID, Map<LocalDate, BigDecimal>> result = new HashMap<>();
+        for (Invoice inv : invoices) {
+            LocalDate month = inv.getIssuedAt().atZone(ZONE).toLocalDate().withDayOfMonth(1);
+            result.computeIfAbsent(inv.getBranchId(), k -> new HashMap<>())
+                    .merge(month, inv.getGrandTotal(), BigDecimal::add);
+        }
+        return result;
+    }
+
+    private Map<UUID, Map<LocalDate, BigDecimal>> aggregateExpensesByBranchMonth(List<BranchExpenditure> expenditures) {
+        Map<UUID, Map<LocalDate, BigDecimal>> result = new HashMap<>();
+        for (BranchExpenditure e : expenditures) {
+            result.computeIfAbsent(e.getBranchId(), k -> new HashMap<>())
+                    .merge(e.getExpenseMonth(), e.getAmount(), BigDecimal::add);
+        }
+        return result;
+    }
+
+    private BigDecimal changePctFromSeries(List<BigDecimal> values) {
+        if (values.size() < 2) return null;
+        int mid = values.size() / 2;
+        BigDecimal first = values.subList(0, mid).stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal second = values.subList(mid, values.size()).stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (first.compareTo(BigDecimal.ZERO) == 0) {
+            return second.compareTo(BigDecimal.ZERO) > 0 ? BigDecimal.valueOf(100) : BigDecimal.ZERO;
+        }
+        return second.subtract(first)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(first, 1, RoundingMode.HALF_UP);
     }
 
     private List<PlCategoryAmount> buildCategoryList(Map<ExpenditureCategory, BigDecimal> catMap) {
