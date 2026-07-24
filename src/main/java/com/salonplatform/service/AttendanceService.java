@@ -91,7 +91,12 @@ public class AttendanceService {
 
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
-        GeoStatus geoStatus = GeofenceUtil.evaluate(request.getLatitude(), request.getLongitude(), branch);
+        GeoStatus geoStatus = GeofenceUtil.evaluate(
+                request.getLatitude(),
+                request.getLongitude(),
+                request.getAccuracyMeters(),
+                request.getLocationHighAccuracy(),
+                branch);
 
         AttendanceRecord record = attendanceRepository.findByStaffIdAndWorkDate(staff.getId(), LocalDate.now(ZONE))
                 .orElse(null);

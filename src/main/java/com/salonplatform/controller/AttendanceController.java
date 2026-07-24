@@ -38,6 +38,7 @@ public class AttendanceController {
             @RequestParam(required = false) Double latitude,
             @RequestParam(required = false) Double longitude,
             @RequestParam(required = false) Double accuracyMeters,
+            @RequestParam(required = false) Boolean locationHighAccuracy,
             @RequestPart("photo") MultipartFile photo) {
         VerifiedPunchRequest request = new VerifiedPunchRequest();
         request.setStaffId(staffId);
@@ -45,6 +46,7 @@ public class AttendanceController {
         request.setLatitude(latitude);
         request.setLongitude(longitude);
         request.setAccuracyMeters(accuracyMeters);
+        request.setLocationHighAccuracy(locationHighAccuracy);
         return ApiResponse.ok(attendanceService.verifiedPunch(request, photo));
     }
 

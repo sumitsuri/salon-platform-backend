@@ -12,4 +12,6 @@ public class VerifiedPunchRequest {
     private Double latitude;
     private Double longitude;
     private Double accuracyMeters;
+    /** True when fix came from device GPS; false for network/Wi‑Fi location. */
+    private Boolean locationHighAccuracy;
 }
