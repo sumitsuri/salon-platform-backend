@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     boolean existsByAction(String action);
+
+    boolean existsByTenantIdAndAction(UUID tenantId, String action);
 }

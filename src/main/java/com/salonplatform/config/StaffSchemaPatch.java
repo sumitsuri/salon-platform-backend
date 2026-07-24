@@ -55,5 +55,29 @@ public class StaffSchemaPatch implements ApplicationRunner {
                 "UPDATE staff SET salary = 24000, joining_date = '2024-01-10', id_proof_collected = FALSE, "
                         + "monthly_sales_target = 110000, incentive_percent = 4 "
                         + "WHERE biometric_id = 'FP-SNEHA-WEBCITY' AND salary IS NULL");
+        jdbcTemplate.update(
+                "UPDATE staff SET salary = 23000, joining_date = '2024-07-01', id_proof_collected = TRUE, "
+                        + "id_proof_reference = 'Aadhaar XXXX6102', monthly_sales_target = 105000, incentive_percent = 4 "
+                        + "WHERE biometric_id = 'FP-KIRAN-ALPINE' AND salary IS NULL");
+        jdbcTemplate.update(
+                "UPDATE staff SET salary = 25000, joining_date = '2024-04-12', id_proof_collected = TRUE, "
+                        + "id_proof_reference = 'PAN XXXX4411', monthly_sales_target = 115000, incentive_percent = 4 "
+                        + "WHERE biometric_id = 'FP-ANJALI-ALPINE' AND salary IS NULL");
+        jdbcTemplate.update(
+                "UPDATE staff SET salary = 22000, joining_date = '2024-08-01', id_proof_collected = TRUE, "
+                        + "id_proof_reference = 'Aadhaar XXXX8821', monthly_sales_target = 100000, incentive_percent = 4 "
+                        + "WHERE biometric_id = 'FP-DEEPAK-GP' AND salary IS NULL");
+        jdbcTemplate.update(
+                "UPDATE staff SET salary = 24000, joining_date = '2024-05-20', id_proof_collected = FALSE, "
+                        + "monthly_sales_target = 108000, incentive_percent = 4 "
+                        + "WHERE biometric_id = 'FP-MEERA-GP' AND salary IS NULL");
+        jdbcTemplate.update(
+                "UPDATE staff SET salary = 21000, joining_date = '2024-09-01', id_proof_collected = TRUE, "
+                        + "id_proof_reference = 'Aadhaar XXXX2290', monthly_sales_target = 95000, incentive_percent = 4 "
+                        + "WHERE biometric_id = 'FP-ARUN-VARTHUR' AND salary IS NULL");
+        jdbcTemplate.update(
+                "UPDATE staff SET salary = 23000, joining_date = '2024-02-18', id_proof_collected = TRUE, "
+                        + "id_proof_reference = 'PAN XXXX5566', monthly_sales_target = 100000, incentive_percent = 4 "
+                        + "WHERE biometric_id = 'FP-NISHA-VARTHUR' AND salary IS NULL");
     }
 }

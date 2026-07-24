@@ -1,8 +1,15 @@
 package com.salonplatform.seed;
 
 import com.salonplatform.domain.entity.*;
-import com.salonplatform.domain.enums.*;
+import com.salonplatform.domain.enums.SalonTier;
+import com.salonplatform.domain.enums.TenantStatus;
+import com.salonplatform.domain.enums.UserRole;
+import com.salonplatform.domain.enums.BranchStatus;
+import com.salonplatform.domain.enums.StaffRole;
 import com.salonplatform.domain.repository.*;
+import com.salonplatform.seed.SeedCatalog.BranchSeed;
+import com.salonplatform.seed.SeedCatalog.StaffSeed;
+import com.salonplatform.seed.SeedCatalog.TenantSeed;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -12,8 +19,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 @Order(1)
@@ -33,6 +42,14 @@ public class DataSeeder implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
+        ensurePlatformAdmin();
+
+        for (TenantSeed seed : SeedCatalog.TENANTS) {
+            ensureTenant(seed);
+        }
+    }
+
+    private void ensurePlatformAdmin() {
         if (userRepository.findByEmail("platform@salonplatform.local").isEmpty()) {
             userRepository.save(User.builder()
                     .name("Platform Admin")
@@ -43,138 +60,166 @@ public class DataSeeder implements CommandLineRunner {
                     .build());
             log.info("Seeded platform admin: platform@salonplatform.local / admin123");
         }
+    }
 
-        if (tenantRepository.findBySlug("demo-brand").isPresent()) {
-            return;
+    private void ensureTenant(TenantSeed seed) {
+        Tenant tenant = tenantRepository.findBySlug(seed.slug()).orElse(null);
+        boolean created = false;
+        if (tenant == null) {
+            tenant = tenantRepository.save(Tenant.builder()
+                    .name(seed.name())
+                    .slug(seed.slug())
+                    .primaryColor(seed.primaryColor())
+                    .status(TenantStatus.ACTIVE)
+                    .benchmarkOptIn(true)
+                    .marketCity("Bangalore")
+                    .salonTier(seed.salonTier())
+                    .build());
+            created = true;
+        } else {
+            tenant.setBenchmarkOptIn(true);
+            tenant.setMarketCity("Bangalore");
+            tenant.setSalonTier(seed.salonTier());
+            tenantRepository.save(tenant);
         }
 
-        Tenant tenant = tenantRepository.save(Tenant.builder()
-                .name("Demo Salon Brand")
-                .slug("demo-brand")
-                .primaryColor("#7c3aed")
-                .status(TenantStatus.ACTIVE)
-                .build());
+        if (userRepository.findByEmail(seed.adminEmail()).isEmpty()) {
+            userRepository.save(User.builder()
+                    .tenantId(tenant.getId())
+                    .name(seed.adminName())
+                    .email(seed.adminEmail())
+                    .password(passwordEncoder.encode(seed.adminPassword()))
+                    .role(UserRole.BRAND_ADMIN)
+                    .active(true)
+                    .build());
+        }
 
-        Branch lithos = branchRepository.save(Branch.builder()
-                .tenantId(tenant.getId())
-                .name("Mantri Lithos")
-                .code("LIT")
-                .address("Mantri Lithos, Bangalore")
-                .societyDefault("Mantri Lithos")
-                .gstin("29AABCU9603R1ZM")
-                .phone("9876543210")
-                .openTime("09:00")
-                .closeTime("21:00")
-                .latitude(12.9352)
-                .longitude(77.6245)
-                .geofenceRadiusMeters(150)
-                .attendanceGraceMinutes(15)
-                .monthlySalesTarget(new BigDecimal("400000"))
-                .status(BranchStatus.ACTIVE)
-                .build());
+        List<SalonService> catalog = ensureServiceCatalog(tenant.getId());
+        List<String> addedBranches = new ArrayList<>();
+        for (BranchSeed branchSeed : seed.branches()) {
+            if (branchRepository.findByTenantIdAndCode(tenant.getId(), branchSeed.code()).isPresent()) {
+                continue;
+            }
+            seedBranch(tenant.getId(), branchSeed, catalog, seed.priceMultiplier());
+            addedBranches.add(branchSeed.name());
+        }
 
-        Branch webcity = branchRepository.save(Branch.builder()
-                .tenantId(tenant.getId())
-                .name("Mantri Webcity")
-                .code("WEB")
-                .address("Mantri Webcity, Bangalore")
-                .societyDefault("Mantri Webcity")
-                .gstin("29AABCU9603R1ZN")
-                .phone("9876543211")
-                .openTime("09:00")
-                .closeTime("21:00")
-                .latitude(12.9716)
-                .longitude(77.5946)
-                .geofenceRadiusMeters(150)
-                .attendanceGraceMinutes(15)
-                .monthlySalesTarget(new BigDecimal("350000"))
-                .status(BranchStatus.ACTIVE)
-                .build());
+        if (created) {
+            log.info("Seeded tenant '{}' ({}) with {} branches", seed.name(), seed.slug(), seed.branches().size());
+            log.info("  Admin: {} / {}", seed.adminEmail(), seed.adminPassword());
+        } else if (!addedBranches.isEmpty()) {
+            log.info("Seeded additional branches for '{}': {}", seed.name(), String.join(", ", addedBranches));
+        }
+    }
 
-        userRepository.save(User.builder()
-                .tenantId(tenant.getId())
-                .name("Brand CEO")
-                .email("ceo@demo-brand.local")
-                .password(passwordEncoder.encode("ceo123"))
-                .role(UserRole.BRAND_ADMIN)
-                .active(true)
-                .build());
-
-        userRepository.save(User.builder()
-                .tenantId(tenant.getId())
-                .branchId(lithos.getId())
-                .name("Lithos Manager")
-                .email("manager.lithos@demo-brand.local")
-                .password(passwordEncoder.encode("manager123"))
-                .role(UserRole.SALON_MANAGER)
-                .active(true)
-                .build());
-
-        userRepository.save(User.builder()
-                .tenantId(tenant.getId())
-                .branchId(webcity.getId())
-                .name("Webcity Manager")
-                .email("manager.webcity@demo-brand.local")
-                .password(passwordEncoder.encode("manager123"))
-                .role(UserRole.SALON_MANAGER)
-                .active(true)
-                .build());
-
-        Staff amitL = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(lithos.getId())
-                .name("Amit").role(StaffRole.STYLIST).skills("Hair,Grooming").biometricId("FP-AMIT-LITHOS")
-                .salary(new BigDecimal("25000")).joiningDate(LocalDate.of(2024, 3, 1)).idProofCollected(true)
-                .idProofReference("Aadhaar XXXX4521").monthlySalesTarget(new BigDecimal("120000"))
-                .incentivePercent(new BigDecimal("5")).active(true).build());
-        Staff priyaL = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(lithos.getId())
-                .name("Priya").role(StaffRole.STYLIST).skills("Skin,Hair").biometricId("FP-PRIYA-LITHOS")
-                .salary(new BigDecimal("28000")).joiningDate(LocalDate.of(2023, 8, 15)).idProofCollected(true)
-                .idProofReference("PAN XXXX7890").monthlySalesTarget(new BigDecimal("150000"))
-                .incentivePercent(new BigDecimal("5")).active(true).build());
-        Staff amitW = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(webcity.getId())
-                .name("Ravi").role(StaffRole.STYLIST).skills("Hair,Grooming").biometricId("FP-RAVI-WEBCITY")
-                .salary(new BigDecimal("22000")).joiningDate(LocalDate.of(2024, 6, 1)).idProofCollected(true)
-                .idProofReference("Aadhaar XXXX3312").monthlySalesTarget(new BigDecimal("100000"))
-                .incentivePercent(new BigDecimal("4")).active(true).build());
-        Staff priyaW = staffRepository.save(Staff.builder().tenantId(tenant.getId()).branchId(webcity.getId())
-                .name("Sneha").role(StaffRole.STYLIST).skills("Skin,Nails").biometricId("FP-SNEHA-WEBCITY")
-                .salary(new BigDecimal("24000")).joiningDate(LocalDate.of(2024, 1, 10)).idProofCollected(false)
-                .monthlySalesTarget(new BigDecimal("110000")).incentivePercent(new BigDecimal("4")).active(true).build());
+    private List<SalonService> ensureServiceCatalog(UUID tenantId) {
+        List<SalonService> existing = salonServiceRepository.findByTenantIdAndActiveTrue(tenantId);
+        if (!existing.isEmpty()) {
+            return existing;
+        }
 
         ServiceCategory hair = categoryRepository.save(ServiceCategory.builder()
-                .tenantId(tenant.getId()).name("Hair").sortOrder(1).active(true).build());
+                .tenantId(tenantId).name("Hair").sortOrder(1).active(true).build());
         ServiceCategory skin = categoryRepository.save(ServiceCategory.builder()
-                .tenantId(tenant.getId()).name("Skin").sortOrder(2).active(true).build());
+                .tenantId(tenantId).name("Skin").sortOrder(2).active(true).build());
         ServiceCategory grooming = categoryRepository.save(ServiceCategory.builder()
-                .tenantId(tenant.getId()).name("Grooming").sortOrder(3).active(true).build());
+                .tenantId(tenantId).name("Grooming").sortOrder(3).active(true).build());
 
         SalonService haircut = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenant.getId()).categoryId(hair.getId()).name("Haircut Men")
+                .tenantId(tenantId).categoryId(hair.getId()).name("Haircut Men")
                 .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(30).active(true).build());
         SalonService beard = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenant.getId()).categoryId(grooming.getId()).name("Beard Trim")
+                .tenantId(tenantId).categoryId(grooming.getId()).name("Beard Trim")
                 .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(15).active(true).build());
         SalonService facial = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenant.getId()).categoryId(skin.getId()).name("Facial Classic")
+                .tenantId(tenantId).categoryId(skin.getId()).name("Facial Classic")
                 .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(45).active(true).build());
         SalonService color = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenant.getId()).categoryId(hair.getId()).name("Hair Color")
+                .tenantId(tenantId).categoryId(hair.getId()).name("Hair Color")
                 .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(90).active(true).build());
 
-        for (Branch branch : List.of(lithos, webcity)) {
-            BigDecimal multiplier = branch.getCode().equals("WEB") ? new BigDecimal("1.1") : BigDecimal.ONE;
-            branchServiceRepository.save(BranchService.builder().tenantId(tenant.getId()).branchId(branch.getId())
-                    .serviceId(haircut.getId()).price(new BigDecimal("300").multiply(multiplier)).active(true).build());
-            branchServiceRepository.save(BranchService.builder().tenantId(tenant.getId()).branchId(branch.getId())
-                    .serviceId(beard.getId()).price(new BigDecimal("150").multiply(multiplier)).active(true).build());
-            branchServiceRepository.save(BranchService.builder().tenantId(tenant.getId()).branchId(branch.getId())
-                    .serviceId(facial.getId()).price(new BigDecimal("1200")).active(true).build());
-            branchServiceRepository.save(BranchService.builder().tenantId(tenant.getId()).branchId(branch.getId())
-                    .serviceId(color.getId()).price(new BigDecimal("2500").multiply(multiplier)).active(true).build());
+        return List.of(haircut, beard, facial, color);
+    }
+
+    private Branch seedBranch(UUID tenantId, BranchSeed seed, List<SalonService> catalog,
+                              BigDecimal priceMultiplier) {
+        Branch branch = branchRepository.save(Branch.builder()
+                .tenantId(tenantId)
+                .name(seed.name())
+                .code(seed.code())
+                .address(seed.address())
+                .societyDefault(seed.societyDefault())
+                .gstin(seed.gstin())
+                .phone(seed.phone())
+                .openTime("09:00")
+                .closeTime("21:00")
+                .latitude(seed.latitude())
+                .longitude(seed.longitude())
+                .geofenceRadiusMeters(150)
+                .attendanceGraceMinutes(15)
+                .monthlySalesTarget(new BigDecimal(seed.monthlySalesTarget()))
+                .status(BranchStatus.ACTIVE)
+                .build());
+
+        if (userRepository.findByEmail(seed.managerEmail()).isEmpty()) {
+            userRepository.save(User.builder()
+                    .tenantId(tenantId)
+                    .branchId(branch.getId())
+                    .name(seed.managerName())
+                    .email(seed.managerEmail())
+                    .password(passwordEncoder.encode("manager123"))
+                    .role(UserRole.SALON_MANAGER)
+                    .active(true)
+                    .build());
         }
 
-        log.info("Seeded demo tenant with Lithos + Webcity pilot branches");
-        log.info("Brand Admin: ceo@demo-brand.local / ceo123");
-        log.info("Lithos Manager: manager.lithos@demo-brand.local / manager123");
-        log.info("Webcity Manager: manager.webcity@demo-brand.local / manager123");
+        for (StaffSeed staff : seed.staff()) {
+            if (staffRepository.findByTenantIdAndBiometricId(tenantId, staff.biometricId()).isPresent()) {
+                continue;
+            }
+            Staff.StaffBuilder builder = Staff.builder()
+                    .tenantId(tenantId)
+                    .branchId(branch.getId())
+                    .name(staff.name())
+                    .role(StaffRole.STYLIST)
+                    .skills(staff.skills())
+                    .biometricId(staff.biometricId())
+                    .salary(new BigDecimal(staff.salary()))
+                    .joiningDate(staff.joiningDate())
+                    .idProofCollected(staff.idProofCollected())
+                    .monthlySalesTarget(new BigDecimal(staff.monthlySalesTarget()))
+                    .incentivePercent(new BigDecimal(staff.incentivePercent()))
+                    .active(true);
+            if (staff.idProofReference() != null) {
+                builder.idProofReference(staff.idProofReference());
+            }
+            staffRepository.save(builder.build());
+        }
+
+        if (branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId()).isEmpty()) {
+            BigDecimal branchExtra = "WEB".equals(seed.code()) ? new BigDecimal("1.1") : BigDecimal.ONE;
+            BigDecimal multiplier = priceMultiplier.multiply(branchExtra);
+            for (SalonService service : catalog) {
+                BigDecimal base = switch (service.getName()) {
+                    case "Haircut Men" -> new BigDecimal("300");
+                    case "Beard Trim" -> new BigDecimal("150");
+                    case "Facial Classic" -> new BigDecimal("1200");
+                    case "Hair Color" -> new BigDecimal("2500");
+                    default -> new BigDecimal("500");
+                };
+                BigDecimal price = "Facial Classic".equals(service.getName())
+                        ? base
+                        : base.multiply(multiplier).setScale(0, RoundingMode.HALF_UP);
+                branchServiceRepository.save(BranchService.builder()
+                        .tenantId(tenantId)
+                        .branchId(branch.getId())
+                        .serviceId(service.getId())
+                        .price(price)
+                        .active(true)
+                        .build());
+            }
+        }
+
+        return branch;
     }
 }

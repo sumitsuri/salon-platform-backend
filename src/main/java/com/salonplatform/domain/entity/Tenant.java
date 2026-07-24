@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.SalonTier;
 import com.salonplatform.domain.enums.TenantStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -39,6 +40,17 @@ public class Tenant {
 
     @Builder.Default
     private String defaultLocale = "en-IN";
+
+    /** Opt-in to anonymized cross-brand benchmark cohort (Market Pulse). */
+    @Builder.Default
+    private Boolean benchmarkOptIn = true;
+
+    @Builder.Default
+    private String marketCity = "Bangalore";
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private SalonTier salonTier = SalonTier.MID_MARKET;
 
     @CreationTimestamp
     private Instant createdAt;

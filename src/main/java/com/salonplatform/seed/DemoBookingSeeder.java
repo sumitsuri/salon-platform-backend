@@ -27,7 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @Slf4j
 public class DemoBookingSeeder implements CommandLineRunner {
 
-    private static final String SEED_ACTION = "SEED_DEMO_BOOKINGS_60D_V3";
+    private static final String SEED_ACTION = "SEED_DEMO_BOOKINGS_60D_V5";
     private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
     private static final int HISTORY_DAYS = 60;
 
@@ -56,23 +56,29 @@ public class DemoBookingSeeder implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
-        Tenant tenant = tenantRepository.findBySlug("demo-brand").orElse(null);
+        for (SeedCatalog.TenantSeed tenantSeed : SeedCatalog.TENANTS) {
+            seedTenant(tenantSeed);
+        }
+    }
+
+    private void seedTenant(SeedCatalog.TenantSeed tenantSeed) {
+        Tenant tenant = tenantRepository.findBySlug(tenantSeed.slug()).orElse(null);
         if (tenant == null) {
             return;
         }
 
         UUID tenantId = tenant.getId();
-
-        if (auditLogRepository.existsByAction(SEED_ACTION) && hasHealthyDateDistribution(tenantId)) {
+        if (auditLogRepository.existsByTenantIdAndAction(tenantId, SEED_ACTION)
+                && hasHealthyDateDistribution(tenantId)) {
             return;
         }
 
         List<Branch> branches = branchRepository.findByTenantId(tenantId);
-        if (branches.size() < 2) {
+        if (branches.size() < tenantSeed.branches().size()) {
             return;
         }
 
-        log.info("Cleaning up demo booking data before re-seeding with backdated timestamps...");
+        log.info("Cleaning up demo booking data for '{}' before re-seeding...", tenantSeed.slug());
         cleanupDemoBookingData(tenantId);
 
         List<Customer> customers = ensureCustomers(tenantId, branches);
@@ -88,7 +94,7 @@ public class DemoBookingSeeder implements CommandLineRunner {
             boolean weekend = date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY;
 
             for (Branch branch : branches) {
-                int count = bookingsForDay(branch.getCode(), weekend);
+                int count = bookingsForDay(branch.getCode(), weekend, tenantSeed.bookingVolumeScale());
                 for (int i = 0; i < count; i++) {
                     Instant visitTime = randomVisitTime(date);
                     totalBookings += seedBooking(
@@ -107,7 +113,8 @@ public class DemoBookingSeeder implements CommandLineRunner {
                 .details("Seeded " + totalBookings + " completed bookings over " + HISTORY_DAYS + " days")
                 .build());
 
-        log.info("Seeded {} demo bookings across {} days for Lithos + Webcity", totalBookings, HISTORY_DAYS);
+        log.info("Seeded {} demo bookings across {} days for tenant '{}'",
+                totalBookings, HISTORY_DAYS, tenantSeed.slug());
     }
 
     private boolean hasHealthyDateDistribution(UUID tenantId) {
@@ -132,15 +139,18 @@ public class DemoBookingSeeder implements CommandLineRunner {
                 tenantId);
     }
 
-    private int bookingsForDay(String branchCode, boolean weekend) {
-        if ("WEB".equals(branchCode)) {
-            return weekend
+    private int bookingsForDay(String branchCode, boolean weekend, double volumeScale) {
+        int base;
+        if ("WEB".equals(branchCode) || "IND".equals(branchCode)) {
+            base = weekend
                     ? ThreadLocalRandom.current().nextInt(4, 7)
                     : ThreadLocalRandom.current().nextInt(2, 5);
+        } else {
+            base = weekend
+                    ? ThreadLocalRandom.current().nextInt(3, 6)
+                    : ThreadLocalRandom.current().nextInt(2, 4);
         }
-        return weekend
-                ? ThreadLocalRandom.current().nextInt(3, 6)
-                : ThreadLocalRandom.current().nextInt(2, 4);
+        return Math.max(1, (int) Math.round(base * volumeScale));
     }
 
     private Instant randomVisitTime(LocalDate date) {

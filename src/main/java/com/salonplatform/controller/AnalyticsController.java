@@ -1,14 +1,10 @@
 package com.salonplatform.controller;
 
 import com.salonplatform.dto.ApiResponse;
-import com.salonplatform.dto.analytics.AttendanceDashboardResponse;
-import com.salonplatform.dto.analytics.DashboardResponse;
-import com.salonplatform.dto.analytics.RecommendationsResponse;
-import com.salonplatform.dto.analytics.ServiceContributionResponse;
-import com.salonplatform.dto.analytics.PlSummaryResponse;
-import com.salonplatform.dto.analytics.PlTrendsResponse;
+import com.salonplatform.dto.analytics.*;
 import com.salonplatform.service.AnalyticsService;
 import com.salonplatform.service.AttendanceAnalyticsService;
+import com.salonplatform.service.BenchmarkService;
 import com.salonplatform.service.PlAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -25,6 +21,7 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
     private final AttendanceAnalyticsService attendanceAnalyticsService;
     private final PlAnalyticsService plAnalyticsService;
+    private final BenchmarkService benchmarkService;
 
     @GetMapping("/dashboard")
     public ApiResponse<DashboardResponse> dashboard(
@@ -90,5 +87,48 @@ public class AnalyticsController {
             @RequestParam(required = false) Integer months,
             @RequestParam(required = false) List<java.util.UUID> branchIds) {
         return ApiResponse.ok(plAnalyticsService.getPlTrends(endMonth, months, branchIds));
+    }
+
+    @GetMapping("/benchmark")
+    public ApiResponse<BenchmarkResponse> benchmark(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) List<java.util.UUID> branchIds) {
+        return ApiResponse.ok(benchmarkService.getBenchmark(startDate, endDate, branchIds));
+    }
+
+    @GetMapping("/benchmark/settings")
+    public ApiResponse<BenchmarkSettingsResponse> benchmarkSettings() {
+        return ApiResponse.ok(benchmarkService.getSettings());
+    }
+
+    @PatchMapping("/benchmark/settings")
+    public ApiResponse<BenchmarkSettingsResponse> updateBenchmarkSettings(
+            @RequestBody UpdateBenchmarkSettingsRequest request) {
+        return ApiResponse.ok(benchmarkService.updateSettings(request));
+    }
+
+    @GetMapping("/benchmark/local-competitors")
+    public ApiResponse<List<BenchmarkResponse.LocalCompetitorRow>> localCompetitors() {
+        return ApiResponse.ok(benchmarkService.listLocalCompetitors());
+    }
+
+    @PostMapping("/benchmark/local-competitors")
+    public ApiResponse<BenchmarkResponse.LocalCompetitorRow> createLocalCompetitor(
+            @RequestBody UpsertLocalCompetitorRequest request) {
+        return ApiResponse.ok(benchmarkService.createLocalCompetitor(request));
+    }
+
+    @PutMapping("/benchmark/local-competitors/{id}")
+    public ApiResponse<BenchmarkResponse.LocalCompetitorRow> updateLocalCompetitor(
+            @PathVariable java.util.UUID id,
+            @RequestBody UpsertLocalCompetitorRequest request) {
+        return ApiResponse.ok(benchmarkService.updateLocalCompetitor(id, request));
+    }
+
+    @DeleteMapping("/benchmark/local-competitors/{id}")
+    public ApiResponse<Void> deleteLocalCompetitor(@PathVariable java.util.UUID id) {
+        benchmarkService.deleteLocalCompetitor(id);
+        return ApiResponse.ok(null);
     }
 }

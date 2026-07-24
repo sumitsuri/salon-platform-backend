@@ -34,30 +34,40 @@ public class ExpenditureSeeder implements CommandLineRunner {
     @Override
     @Transactional
     public void run(String... args) {
-        Tenant tenant = tenantRepository.findBySlug("demo-brand").orElse(null);
-        if (tenant == null) return;
-
-        long existing = expenditureRepository.findByTenantIdAndActiveTrueOrderByExpenseMonthDesc(tenant.getId()).size();
-        if (existing > 0) return;
-
-        List<Branch> branches = branchRepository.findByTenantId(tenant.getId());
         LocalDate month = LocalDate.now(ZONE).withDayOfMonth(1);
+        for (String slug : SeedCatalog.slugs()) {
+            tenantRepository.findBySlug(slug).ifPresent(tenant -> seedTenant(tenant, month));
+        }
+    }
+
+    private void seedTenant(Tenant tenant, LocalDate month) {
+        List<Branch> branches = branchRepository.findByTenantId(tenant.getId());
+        int seeded = 0;
 
         for (Branch branch : branches) {
-            boolean isLithos = branch.getCode().equals("LIT");
+            boolean alreadySeeded = expenditureRepository
+                    .findByTenantIdAndBranchIdAndActiveTrueOrderByExpenseMonthDesc(tenant.getId(), branch.getId())
+                    .stream()
+                    .anyMatch(e -> e.getExpenseMonth().equals(month));
+            if (alreadySeeded) continue;
+
+            boolean flagship = branch.getCode().equals("LIT") || branch.getCode().equals("IND");
             seed(branch, month, ExpenditureCategory.EMPLOYEE_SALARY,
-                    isLithos ? "185000" : "142000", "Monthly staff payroll");
+                    flagship ? "185000" : "142000", "Monthly staff payroll");
             seed(branch, month, ExpenditureCategory.RENT,
-                    isLithos ? "85000" : "72000", "Shop rent");
+                    flagship ? "85000" : "72000", "Shop rent");
             seed(branch, month, ExpenditureCategory.PRODUCT_COST,
-                    isLithos ? "42000" : "35000", "Consumables & retail stock");
+                    flagship ? "42000" : "35000", "Consumables & retail stock");
             seed(branch, month, ExpenditureCategory.EMPLOYEE_ACCOMMODATION_RENT,
-                    isLithos ? "28000" : "22000", "Staff housing");
+                    flagship ? "28000" : "22000", "Staff housing");
             seed(branch, month, ExpenditureCategory.MISCELLANEOUS,
-                    isLithos ? "12000" : "9500", "Utilities, marketing, misc");
+                    flagship ? "12000" : "9500", "Utilities, marketing, misc");
+            seeded++;
         }
 
-        log.info("Seeded demo branch expenditures for {}", month);
+        if (seeded > 0) {
+            log.info("Seeded expenditures for '{}' on {} ({} branch(es))", tenant.getSlug(), month, seeded);
+        }
     }
 
     private void seed(Branch branch, LocalDate month, ExpenditureCategory category,
