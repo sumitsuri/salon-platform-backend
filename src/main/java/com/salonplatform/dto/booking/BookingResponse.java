@@ -29,4 +29,6 @@ public class BookingResponse {
     private BillPreviewResponse billPreview;
     private Instant createdAt;
     private Instant completedAt;
+    private UUID invoiceId;
+    private Boolean receiptQueued;
 }

@@ -37,6 +37,9 @@ public class Tenant {
     @Builder.Default
     private TenantStatus status = TenantStatus.ACTIVE;
 
+    @Builder.Default
+    private String defaultLocale = "en-IN";
+
     @CreationTimestamp
     private Instant createdAt;
 

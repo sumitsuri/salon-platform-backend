@@ -30,7 +30,16 @@ public class InvoicePdfService {
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
         SecurityUtils.assertBranchAccess(invoice.getBranchId());
+        return buildPdf(invoice);
+    }
 
+    public byte[] generatePdfPublic(UUID invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+        return buildPdf(invoice);
+    }
+
+    private byte[] buildPdf(Invoice invoice) {
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {

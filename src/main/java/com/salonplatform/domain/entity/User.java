@@ -44,6 +44,9 @@ public class User {
     @Builder.Default
     private boolean active = true;
 
+    /** BCP 47 e.g. hi-IN. Null until user picks a language. */
+    private String preferredLocale;
+
     @CreationTimestamp
     private Instant createdAt;
 

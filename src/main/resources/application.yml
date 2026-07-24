@@ -28,7 +28,108 @@ app:
     access-token-expiry-ms: 900000
     refresh-token-expiry-ms: 604800000
   cors:
-    allowed-origins: http://localhost:3000,http://localhost:3001
+    allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:3002
+  public-url: http://localhost:8080
+  msg91:
+    auth-key: ${MSG91_AUTH_KEY:}
+    whatsapp-integrated-number: ${MSG91_WHATSAPP_NUMBER:}
+    bill-receipt-template: ${MSG91_BILL_RECEIPT_TEMPLATE:bill_receipt}
+    promo-template: ${MSG91_PROMO_TEMPLATE:salon_promo}
+    promo-sms-flow-id: ${MSG91_PROMO_SMS_FLOW_ID:}
+    sms-sender: ${MSG91_SMS_SENDER:}
+  locales:
+    default-locale: en-IN
+    supported:
+      - code: en-IN
+        label: English
+        native-label: English
+        enabled: true
+        state-code: IN
+        state-name: All India
+        state-name-native: India
+        region-group: Pan-India
+        sort-order: 0
+      - code: hi-IN
+        label: Hindi
+        native-label: "हिन्दी"
+        enabled: true
+        state-code: HI
+        state-name: Hindi-speaking states
+        state-name-native: "हिंदी भाषी राज्य"
+        region-group: North & Central India
+        sort-order: 10
+      - code: pa-IN
+        label: Punjabi
+        native-label: "ਪੰਜਾਬੀ"
+        enabled: true
+        state-code: PB
+        state-name: Punjab
+        state-name-native: "ਪੰਜਾਬ"
+        region-group: North India
+        sort-order: 11
+      - code: bn-IN
+        label: Bengali
+        native-label: "বাংলা"
+        enabled: true
+        state-code: WB
+        state-name: West Bengal
+        state-name-native: "পশ্চিমবঙ্গ"
+        region-group: East India
+        sort-order: 12
+      - code: gu-IN
+        label: Gujarati
+        native-label: "ગુજરાતી"
+        enabled: true
+        state-code: GJ
+        state-name: Gujarat
+        state-name-native: "ગુજરાત"
+        region-group: West India
+        sort-order: 20
+      - code: mr-IN
+        label: Marathi
+        native-label: "मराठी"
+        enabled: true
+        state-code: MH
+        state-name: Maharashtra
+        state-name-native: "महाराष्ट्र"
+        region-group: West India
+        sort-order: 21
+      - code: kn-IN
+        label: Kannada
+        native-label: "ಕನ್ನಡ"
+        enabled: true
+        state-code: KA
+        state-name: Karnataka
+        state-name-native: "ಕರ್ನಾಟಕ"
+        region-group: South India
+        sort-order: 30
+      - code: te-IN
+        label: Telugu
+        native-label: "తెలుగు"
+        enabled: true
+        state-code: AP
+        state-name: Andhra Pradesh & Telangana
+        state-name-native: "ఆంధ్ర ప్రదేశ్ & తెలంగాణ"
+        region-group: South India
+        sort-order: 31
+      - code: ta-IN
+        label: Tamil
+        native-label: "தமிழ்"
+        enabled: true
+        state-code: TN
+        state-name: Tamil Nadu
+        state-name-native: "தமிழ்நாடு"
+        region-group: South India
+        sort-order: 32
+      - code: ml-IN
+        label: Malayalam
+        native-label: "മലയാളം"
+        enabled: true
+        state-code: KL
+        state-name: Kerala
+        state-name-native: "കേരളം"
+        region-group: South India
+        sort-order: 33
 
 springdoc:
   api-docs:

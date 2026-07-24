@@ -56,9 +56,9 @@ public class AuthService {
     @Transactional
     public AuthResponse refresh(String refreshToken) {
         RefreshToken token = refreshTokenRepository.findByTokenAndRevokedFalse(refreshToken)
-                .orElseThrow(() -> new BadRequestException("Invalid refresh token"));
+                .orElseThrow(() -> new BadRequestException("error.refreshToken.invalid"));
         if (token.getExpiresAt().isBefore(Instant.now())) {
-            throw new BadRequestException("Refresh token expired");
+            throw new BadRequestException("error.refreshToken.expired");
         }
         User user = userRepository.findById(token.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -95,6 +95,17 @@ public class AuthService {
                     .map(Branch::getName)
                     .ifPresent(builder::branchName);
         }
+
+        userRepository.findById(principal.getId()).ifPresent(user -> {
+            String locale = user.getPreferredLocale();
+            if (locale == null && user.getTenantId() != null) {
+                locale = tenantRepository.findById(user.getTenantId())
+                        .map(Tenant::getDefaultLocale)
+                        .orElse("en-IN");
+            }
+            builder.preferredLocale(user.getPreferredLocale());
+        });
+
         return builder.build();
     }
 }

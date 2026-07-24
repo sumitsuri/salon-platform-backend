@@ -23,3 +23,11 @@ app:
     refresh-token-expiry-ms: 604800000
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  public-url: ${PUBLIC_URL:http://localhost}
+  msg91:
+    auth-key: ${MSG91_AUTH_KEY:}
+    whatsapp-integrated-number: ${MSG91_WHATSAPP_NUMBER:}
+    bill-receipt-template: ${MSG91_BILL_RECEIPT_TEMPLATE:bill_receipt}
+    promo-template: ${MSG91_PROMO_TEMPLATE:salon_promo}
+    promo-sms-flow-id: ${MSG91_PROMO_SMS_FLOW_ID:}
+    sms-sender: ${MSG91_SMS_SENDER:}

@@ -21,4 +21,5 @@ public class AuthResponse {
     private String branchName;
     private String primaryColor;
     private String logoUrl;
+    private String preferredLocale;
 }

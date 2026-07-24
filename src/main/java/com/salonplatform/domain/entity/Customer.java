@@ -37,6 +37,15 @@ public class Customer {
     private String flatUnit;
     private String notes;
 
+    /** Reserved for future SES integration. */
+    private String email;
+
+    @Builder.Default
+    private Boolean whatsappOptIn = true;
+
+    @Builder.Default
+    private Boolean smsOptIn = true;
+
     @Builder.Default
     private Integer visitCount = 0;
 

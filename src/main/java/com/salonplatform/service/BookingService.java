@@ -49,6 +49,7 @@ public class BookingService {
     private final PaymentSplitRepository paymentSplitRepository;
     private final GstCalculationService gstCalculationService;
     private final AuditService auditService;
+    private final BillReceiptNotificationService billReceiptNotificationService;
 
     @Transactional
     public BookingResponse create(CreateBookingRequest request) {
@@ -62,7 +63,7 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         if (request.getLines().isEmpty()) {
-            throw new BadRequestException("At least one service is required");
+            throw new BadRequestException("error.booking.servicesRequired");
         }
 
         Booking booking = bookingRepository.save(Booking.builder()
@@ -79,7 +80,7 @@ public class BookingService {
 
         for (BookingLineRequest lineReq : request.getLines()) {
             if (lineReq.getStaffId() == null) {
-                throw new BadRequestException("Staff assignment is required for every service");
+                throw new BadRequestException("error.booking.staffRequired");
             }
             BranchService bs = branchServiceRepository.findById(lineReq.getBranchServiceId())
                     .orElseThrow(() -> new ResourceNotFoundException("Branch service not found"));
@@ -196,14 +197,14 @@ public class BookingService {
         SecurityUtils.assertBranchAccess(booking.getBranchId());
 
         if (booking.getStatus() == BookingStatus.COMPLETED) {
-            throw new BadRequestException("Booking already completed");
+            throw new BadRequestException("error.booking.alreadyCompleted");
         }
         if (booking.getStatus() == BookingStatus.CANCELLED) {
-            throw new BadRequestException("Cannot pay for cancelled booking");
+            throw new BadRequestException("error.booking.cancelled");
         }
 
         invoiceRepository.findByBookingId(bookingId).ifPresent(i -> {
-            throw new BadRequestException("Invoice already exists for this booking");
+            throw new BadRequestException("error.booking.invoiceExists");
         });
 
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
@@ -268,7 +269,11 @@ public class BookingService {
         customerRepository.save(customer);
 
         auditService.log("COMPLETE_PAYMENT", "Booking", booking.getId(), "Invoice: " + invoiceNumber);
-        return toResponse(booking, branch, customer);
+        billReceiptNotificationService.sendAfterPayment(invoice, customer);
+        BookingResponse response = toResponse(booking, branch, customer);
+        response.setInvoiceId(invoice.getId());
+        response.setReceiptQueued(true);
+        return response;
     }
 
     @Transactional
@@ -277,7 +282,7 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
         SecurityUtils.assertBranchAccess(booking.getBranchId());
         if (booking.getStatus() == BookingStatus.COMPLETED) {
-            throw new BadRequestException("Cannot cancel completed booking");
+            throw new BadRequestException("error.booking.cannotCancel");
         }
         booking.setStatus(BookingStatus.CANCELLED);
         bookingRepository.save(booking);
