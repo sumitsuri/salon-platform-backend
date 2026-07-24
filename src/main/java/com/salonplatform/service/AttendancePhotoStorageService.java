@@ -29,7 +29,17 @@ public class AttendancePhotoStorageService {
             throw new BadRequestException("Photo must be under 1 MB");
         }
         String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED.contains(contentType.toLowerCase())) {
+        if (contentType == null || contentType.isBlank() || "application/octet-stream".equalsIgnoreCase(contentType)) {
+            String name = file.getOriginalFilename();
+            if (name != null && name.toLowerCase().endsWith(".png")) {
+                contentType = "image/png";
+            } else if (name != null && name.toLowerCase().endsWith(".webp")) {
+                contentType = "image/webp";
+            } else {
+                contentType = "image/jpeg";
+            }
+        }
+        if (!ALLOWED.contains(contentType.toLowerCase())) {
             throw new BadRequestException("Photo must be JPEG, PNG, or WebP");
         }
 
