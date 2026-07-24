@@ -24,7 +24,9 @@ public final class AttendanceSpecifications {
         if (filter.getDateTo() != null) {
             spec = spec.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("workDate"), filter.getDateTo()));
         }
-        if (filter.getStaff() != null && !filter.getStaff().isBlank()) {
+        if (filter.getStaffId() != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("staffId"), filter.getStaffId()));
+        } else if (filter.getStaff() != null && !filter.getStaff().isBlank()) {
             String q = "%" + filter.getStaff().trim().toLowerCase() + "%";
             spec = spec.and((root, query, cb) -> {
                 var sq = query.subquery(Long.class);

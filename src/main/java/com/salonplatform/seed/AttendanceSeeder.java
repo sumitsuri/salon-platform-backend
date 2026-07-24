@@ -14,6 +14,7 @@ import com.salonplatform.domain.repository.StaffRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -36,9 +37,16 @@ public class AttendanceSeeder implements CommandLineRunner {
     private final AttendanceRecordRepository attendanceRepository;
     private final LeaveRecordRepository leaveRepository;
 
+    @Value("${salon.seed.attendance:false}")
+    private boolean seedAttendance;
+
     @Override
     @Transactional
     public void run(String... args) {
+        if (!seedAttendance) {
+            log.info("Attendance demo seeding disabled (set salon.seed.attendance=true to enable)");
+            return;
+        }
         Tenant tenant = tenantRepository.findBySlug("demo-brand").orElse(null);
         if (tenant == null || tenant.getStatus() != TenantStatus.ACTIVE) return;
 

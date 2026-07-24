@@ -1,6 +1,7 @@
 package com.salonplatform.domain.entity;
 
 import com.salonplatform.domain.enums.AttendanceMethod;
+import com.salonplatform.domain.enums.GeoStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -50,6 +51,32 @@ public class AttendanceRecord {
     private String manualReason;
 
     private UUID recordedByUserId;
+
+    private Double entryLatitude;
+    private Double entryLongitude;
+    private Double entryAccuracyMeters;
+
+    private Double exitLatitude;
+    private Double exitLongitude;
+    private Double exitAccuracyMeters;
+
+    @Enumerated(EnumType.STRING)
+    private GeoStatus entryGeoStatus;
+
+    @Enumerated(EnumType.STRING)
+    private GeoStatus exitGeoStatus;
+
+    /** Storage key/path for entry selfie */
+    private String entryPhotoKey;
+
+    /** Storage key/path for exit selfie */
+    private String exitPhotoKey;
+
+    @Builder.Default
+    private Boolean entryVerified = false;
+
+    @Builder.Default
+    private Boolean exitVerified = false;
 
     @CreationTimestamp
     private Instant createdAt;

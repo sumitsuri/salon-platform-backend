@@ -10,6 +10,7 @@ import java.util.UUID;
 @Builder
 public class AttendanceListFilter {
     private UUID branchId;
+    private UUID staffId;
     private String staff;
     private String branch;
     private String status;

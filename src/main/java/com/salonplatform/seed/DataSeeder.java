@@ -65,6 +65,10 @@ public class DataSeeder implements CommandLineRunner {
                 .phone("9876543210")
                 .openTime("09:00")
                 .closeTime("21:00")
+                .latitude(12.9352)
+                .longitude(77.6245)
+                .geofenceRadiusMeters(150)
+                .attendanceGraceMinutes(15)
                 .monthlySalesTarget(new BigDecimal("400000"))
                 .status(BranchStatus.ACTIVE)
                 .build());
@@ -79,6 +83,10 @@ public class DataSeeder implements CommandLineRunner {
                 .phone("9876543211")
                 .openTime("09:00")
                 .closeTime("21:00")
+                .latitude(12.9716)
+                .longitude(77.5946)
+                .geofenceRadiusMeters(150)
+                .attendanceGraceMinutes(15)
                 .monthlySalesTarget(new BigDecimal("350000"))
                 .status(BranchStatus.ACTIVE)
                 .build());

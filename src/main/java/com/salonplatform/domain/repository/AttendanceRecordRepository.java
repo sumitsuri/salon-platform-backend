@@ -20,4 +20,8 @@ public interface AttendanceRecordRepository extends JpaRepository<AttendanceReco
 
     List<AttendanceRecord> findByTenantIdAndBranchIdInAndWorkDateBetween(
             UUID tenantId, List<UUID> branchIds, LocalDate start, LocalDate end);
+
+    List<AttendanceRecord> findByTenantIdOrderByWorkDateDesc(UUID tenantId);
+
+    void deleteByTenantId(UUID tenantId);
 }

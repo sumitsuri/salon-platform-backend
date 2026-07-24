@@ -41,6 +41,16 @@ public class Branch {
     private String openTime;
     private String closeTime;
 
+    /** Branch location for attendance geofence (WGS84). */
+    private Double latitude;
+    private Double longitude;
+
+    @Builder.Default
+    private Integer geofenceRadiusMeters = 150;
+
+    @Builder.Default
+    private Integer attendanceGraceMinutes = 15;
+
     /** Monthly revenue target for branch-level tracking */
     private BigDecimal monthlySalesTarget;
 

@@ -16,5 +16,8 @@ public class StaffAttendanceSummary {
     private BigDecimal totalHours;
     private BigDecimal avgHoursPerDay;
     private long lateArrivals;
+    private long earlyExits;
+    private long geoFlags;
     private BigDecimal performanceScore;
+    private int complianceScore;
 }

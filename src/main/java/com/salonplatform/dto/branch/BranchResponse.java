@@ -20,6 +20,10 @@ public class BranchResponse {
     private String phone;
     private String openTime;
     private String closeTime;
+    private Double latitude;
+    private Double longitude;
+    private Integer geofenceRadiusMeters;
+    private Integer attendanceGraceMinutes;
     private BigDecimal monthlySalesTarget;
     private BranchStatus status;
     private Instant createdAt;

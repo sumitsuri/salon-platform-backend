@@ -7,6 +7,7 @@ import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.UserRepository;
 import com.salonplatform.dto.branch.BranchResponse;
 import com.salonplatform.dto.branch.CreateBranchRequest;
+import com.salonplatform.dto.branch.UpdateBranchGeofenceRequest;
 import com.salonplatform.dto.branch.UpdateBranchRequest;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
@@ -87,6 +88,22 @@ public class BranchManagementService {
     }
 
     @Transactional
+    public BranchResponse updateGeofence(UUID id, UpdateBranchGeofenceRequest request) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Branch branch = requireBranch(tenantId, id);
+        branch.setLatitude(request.getLatitude());
+        branch.setLongitude(request.getLongitude());
+        if (request.getGeofenceRadiusMeters() != null) {
+            branch.setGeofenceRadiusMeters(request.getGeofenceRadiusMeters());
+        }
+        if (request.getAttendanceGraceMinutes() != null) {
+            branch.setAttendanceGraceMinutes(request.getAttendanceGraceMinutes());
+        }
+        return toResponse(branchRepository.save(branch));
+    }
+
+    @Transactional
     public void deactivate(UUID id) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
@@ -119,6 +136,10 @@ public class BranchManagementService {
                 .phone(b.getPhone())
                 .openTime(b.getOpenTime())
                 .closeTime(b.getCloseTime())
+                .latitude(b.getLatitude())
+                .longitude(b.getLongitude())
+                .geofenceRadiusMeters(b.getGeofenceRadiusMeters())
+                .attendanceGraceMinutes(b.getAttendanceGraceMinutes())
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
                 .createdAt(b.getCreatedAt())

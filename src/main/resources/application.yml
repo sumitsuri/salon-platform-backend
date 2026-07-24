@@ -30,6 +30,10 @@ app:
   cors:
     allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:3002
   public-url: http://localhost:8080
+  attendance:
+    photos:
+      storage-dir: ${ATTENDANCE_PHOTO_DIR:data/attendance-photos}
+      max-bytes: 1048576
   msg91:
     auth-key: ${MSG91_AUTH_KEY:}
     whatsapp-integrated-number: ${MSG91_WHATSAPP_NUMBER:}

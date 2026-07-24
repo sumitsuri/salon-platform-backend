@@ -45,6 +45,13 @@ public class BranchController {
         return ApiResponse.ok(branchService.update(id, request));
     }
 
+    @PatchMapping("/{id}/geofence")
+    public ApiResponse<BranchResponse> updateGeofence(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.salonplatform.dto.branch.UpdateBranchGeofenceRequest request) {
+        return ApiResponse.ok(branchService.updateGeofence(id, request));
+    }
+
     @DeleteMapping("/{id}")
     public ApiResponse<Void> deactivate(@PathVariable UUID id) {
         branchService.deactivate(id);

@@ -87,20 +87,26 @@ public class AttendanceAnalyticsService {
 
         List<StaffAttendanceSummary> staffSummaries = allStaff.stream().map(staff -> {
             List<AttendanceRecord> staffRecords = byStaff.getOrDefault(staff.getId(), List.of());
+            Branch branch = branchRepository.findById(staff.getBranchId()).orElse(null);
             long daysPresent = staffRecords.stream().filter(r -> r.getEntryTime() != null).count();
+            long absentDays = countAbsentDays(staff.getId(), staffRecords, approvedLeaves, start, end);
             double totalHours = staffRecords.stream()
                     .map(AttendanceService::computeHours)
                     .filter(Objects::nonNull)
                     .mapToDouble(Double::doubleValue)
                     .sum();
-            long lateArrivals = staffRecords.stream().filter(AttendanceService::isLate).count();
+            long lateArrivals = staffRecords.stream().filter(r -> AttendanceService.isLate(r, branch)).count();
+            long earlyExits = staffRecords.stream().filter(r -> AttendanceService.isEarlyExit(r, branch)).count();
+            long geoFlags = staffRecords.stream().filter(AttendanceService::hasGeoFlag).count();
             BigDecimal avgHours = daysPresent > 0
                     ? BigDecimal.valueOf(totalHours / daysPresent).setScale(1, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
             BigDecimal performanceScore = computePerformanceScore(daysPresent, leaveDaysByStaff.getOrDefault(staff.getId(), 0L),
                     lateArrivals, avgHours, start, end);
+            int complianceScore = AttendanceService.computeComplianceScore(
+                    daysPresent, absentDays, lateArrivals, earlyExits, geoFlags);
 
-            String branchName = branchRepository.findById(staff.getBranchId()).map(Branch::getName).orElse("");
+            String branchName = branch != null ? branch.getName() : "";
 
             return StaffAttendanceSummary.builder()
                     .staffId(staff.getId().toString())
@@ -111,9 +117,12 @@ public class AttendanceAnalyticsService {
                     .totalHours(BigDecimal.valueOf(totalHours).setScale(1, RoundingMode.HALF_UP))
                     .avgHoursPerDay(avgHours)
                     .lateArrivals(lateArrivals)
+                    .earlyExits(earlyExits)
+                    .geoFlags(geoFlags)
                     .performanceScore(performanceScore)
+                    .complianceScore(complianceScore)
                     .build();
-        }).sorted(Comparator.comparing(StaffAttendanceSummary::getPerformanceScore).reversed())
+        }).sorted(Comparator.comparing(StaffAttendanceSummary::getComplianceScore).reversed())
                 .collect(Collectors.toList());
 
         double avgHoursAll = staffSummaries.stream()
@@ -200,6 +209,20 @@ public class AttendanceAnalyticsService {
         long count = 0;
         for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
             if (isOnLeave(staffId, leaves, d)) count++;
+        }
+        return count;
+    }
+
+    private long countAbsentDays(UUID staffId, List<AttendanceRecord> staffRecords,
+                                 List<LeaveRecord> approvedLeaves, LocalDate start, LocalDate end) {
+        long count = 0;
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            final LocalDate day = d;
+            if (day.isAfter(LocalDate.now(ZONE))) continue;
+            if (isOnLeave(staffId, approvedLeaves, day)) continue;
+            boolean present = staffRecords.stream()
+                    .anyMatch(r -> r.getWorkDate().equals(day) && r.getEntryTime() != null);
+            if (!present) count++;
         }
         return count;
     }
