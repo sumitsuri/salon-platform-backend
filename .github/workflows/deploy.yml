@@ -12,6 +12,8 @@ permissions:
 env:
   AWS_REGION: ap-south-1
   ECR_REPOSITORY: salon-platform-prod-backend
+  # SSM path written by Terraform; override via repo variable if needed
+  DEPLOY_SSM_TARGET_PARAM: ${{ vars.DEPLOY_SSM_TARGET_PARAM || '/salon-platform-prod/deploy/ssm_target' }}
 
 jobs:
   deploy:
@@ -44,8 +46,18 @@ jobs:
 
       - name: Deploy to EC2 via SSM
         run: |
+          set -euo pipefail
+          DEFAULT_TARGETS="Key=tag:DeployTarget,Values=salon-platform-prod-app"
+          if TARGETS=$(aws ssm get-parameter \
+            --name "$DEPLOY_SSM_TARGET_PARAM" \
+            --query Parameter.Value --output text 2>/dev/null); then
+            echo "SSM deploy target (from parameter): $TARGETS"
+          else
+            TARGETS="$DEFAULT_TARGETS"
+            echo "SSM deploy target (fallback tag): $TARGETS"
+          fi
           aws ssm send-command \
-            --instance-ids "${{ vars.EC2_INSTANCE_ID }}" \
+            --targets "$TARGETS" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy backend ${{ github.sha }}" \
             --parameters 'commands=["/opt/salon-platform/scripts/deploy.sh backend"]' \
