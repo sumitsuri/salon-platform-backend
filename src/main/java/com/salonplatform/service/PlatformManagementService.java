@@ -180,6 +180,14 @@ public class PlatformManagementService {
         userRepository.save(user);
     }
 
+    @Transactional
+    public void updateTenantStatus(UUID tenantId, TenantStatus status) {
+        SecurityUtils.assertPlatformAdmin();
+        Tenant tenant = requireTenant(tenantId);
+        tenant.setStatus(status);
+        tenantRepository.save(tenant);
+    }
+
     private Tenant requireTenant(UUID tenantId) {
         return tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));

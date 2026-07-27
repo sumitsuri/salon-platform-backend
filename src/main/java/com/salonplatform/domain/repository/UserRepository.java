@@ -1,6 +1,7 @@
 package com.salonplatform.domain.repository;
 
 import com.salonplatform.domain.entity.User;
+import com.salonplatform.domain.enums.UserRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -12,4 +13,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByTenantIdAndEmail(UUID tenantId, String email);
     List<User> findByTenantId(UUID tenantId);
     List<User> findByTenantIdAndBranchId(UUID tenantId, UUID branchId);
+    List<User> findByRoleAndActiveTrue(UserRole role);
+
+    List<User> findByRoleOrderByActiveDescNameAsc(UserRole role);
 }

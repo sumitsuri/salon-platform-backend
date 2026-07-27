@@ -50,6 +50,21 @@ public final class SecurityUtils {
         }
     }
 
+    public static void assertSalesAccess() {
+        UserRole role = currentUser().getRole();
+        if (role != UserRole.PLATFORM_SUPER_ADMIN && role != UserRole.SALES_EXECUTIVE) {
+            throw new ForbiddenException("Sales access required");
+        }
+    }
+
+    public static boolean isSalesExecutive() {
+        return currentUser().getRole() == UserRole.SALES_EXECUTIVE;
+    }
+
+    public static UUID currentUserId() {
+        return currentUser().getId();
+    }
+
     public static boolean isManagerRole() {
         UserRole role = currentUser().getRole();
         return role == UserRole.BRANCH_MANAGER || role == UserRole.SALON_MANAGER;
