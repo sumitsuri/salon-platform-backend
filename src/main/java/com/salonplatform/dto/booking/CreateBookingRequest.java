@@ -21,4 +21,6 @@ public class CreateBookingRequest {
     private DiscountType billDiscountType;
     private BigDecimal billDiscountValue;
     private String billDiscountNote;
+    private UUID couponId;
+    private UUID offerId;
 }

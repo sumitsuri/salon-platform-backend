@@ -203,7 +203,7 @@ public class SalesLeadService {
 
         if (to.ordinal() >= LeadStage.QUALIFIED.ordinal()) {
             SalesStageTransitionValidator.validateQualifiedFields(
-                    lead.getLocalityName(), lead.getUseCase(), lead.getLeadType());
+                    lead.getUseCase(), lead.getLeadType());
         }
 
         if (to == LeadStage.CONTACTED || (from == LeadStage.NEW && to.ordinal() > LeadStage.CONTACTED.ordinal())) {

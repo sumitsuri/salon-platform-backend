@@ -44,6 +44,24 @@ public class Invoice {
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal discountAmount;
 
+    @Column(precision = 14, scale = 2)
+    @Builder.Default
+    private BigDecimal membershipDiscountAmount = BigDecimal.ZERO;
+
+    @Column(precision = 14, scale = 2)
+    @Builder.Default
+    private BigDecimal promoDiscountAmount = BigDecimal.ZERO;
+
+    private UUID couponId;
+
+    private UUID offerId;
+
+    private UUID membershipSubscriptionId;
+
+    private String membershipLabel;
+
+    private String promoLabel;
+
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal taxableAmount;
 

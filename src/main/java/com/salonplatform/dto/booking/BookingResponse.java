@@ -25,6 +25,9 @@ public class BookingResponse {
     private DiscountType billDiscountType;
     private BigDecimal billDiscountValue;
     private String billDiscountNote;
+    private UUID couponId;
+    private UUID offerId;
+    private UUID membershipSubscriptionId;
     private String notes;
     private BillPreviewResponse billPreview;
     private Instant createdAt;

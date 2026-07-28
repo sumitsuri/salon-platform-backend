@@ -3,6 +3,7 @@ package com.salonplatform.controller;
 import com.salonplatform.domain.enums.BookingStatus;
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.billing.BillPreviewResponse;
+import com.salonplatform.dto.booking.ApplyPromoRequest;
 import com.salonplatform.dto.booking.BookingListFilter;
 import com.salonplatform.dto.booking.BookingResponse;
 import com.salonplatform.dto.booking.CreateBookingRequest;
@@ -69,6 +70,11 @@ public class BookingController {
     @GetMapping("/{id}/bill-preview")
     public ApiResponse<BillPreviewResponse> billPreview(@PathVariable UUID id) {
         return ApiResponse.ok(bookingService.previewBill(id));
+    }
+
+    @PostMapping("/{id}/promotions")
+    public ApiResponse<BookingResponse> applyPromo(@PathVariable UUID id, @RequestBody ApplyPromoRequest request) {
+        return ApiResponse.ok(bookingService.applyPromo(id, request));
     }
 
     @PostMapping("/{id}/payments")

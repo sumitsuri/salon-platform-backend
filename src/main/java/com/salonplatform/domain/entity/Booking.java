@@ -53,6 +53,18 @@ public class Booking {
 
     private String billDiscountNote;
 
+    private UUID couponId;
+
+    private UUID offerId;
+
+    private UUID membershipSubscriptionId;
+
+    @Column(precision = 14, scale = 2)
+    private BigDecimal membershipDiscountAmount;
+
+    @Column(precision = 14, scale = 2)
+    private BigDecimal promoDiscountAmount;
+
     private String notes;
 
     @CreationTimestamp

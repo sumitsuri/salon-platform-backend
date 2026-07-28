@@ -50,6 +50,7 @@ public class BookingService {
     private final GstCalculationService gstCalculationService;
     private final AuditService auditService;
     private final BillReceiptNotificationService billReceiptNotificationService;
+    private final PromoResolutionService promoResolutionService;
 
     @Transactional
     public BookingResponse create(CreateBookingRequest request) {
@@ -65,6 +66,13 @@ public class BookingService {
         if (request.getLines().isEmpty()) {
             throw new BadRequestException("error.booking.servicesRequired");
         }
+        if (request.getCouponId() != null && request.getOfferId() != null) {
+            throw new BadRequestException("Select either a coupon or an offer, not both");
+        }
+
+        GstCalculationService.PromoContext promo = promoResolutionService.resolveForBooking(
+                tenantId, request.getBranchId(), customer.getId(),
+                request.getCouponId(), request.getOfferId());
 
         Booking booking = bookingRepository.save(Booking.builder()
                 .tenantId(tenantId)
@@ -76,6 +84,10 @@ public class BookingService {
                 .billDiscountType(request.getBillDiscountType())
                 .billDiscountValue(request.getBillDiscountValue())
                 .billDiscountNote(request.getBillDiscountNote())
+                .couponId(promo.getCoupon() != null ? promo.getCoupon().getId() : null)
+                .offerId(promo.getOffer() != null ? promo.getOffer().getId() : null)
+                .membershipSubscriptionId(promo.getMembershipSubscription() != null
+                        ? promo.getMembershipSubscription().getId() : null)
                 .build());
 
         for (BookingLineRequest lineReq : request.getLines()) {
@@ -105,8 +117,40 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.READY_FOR_BILLING);
+        persistPromoAmounts(booking, promo);
         bookingRepository.save(booking);
         auditService.log("CREATE_BOOKING", "Booking", booking.getId(), "Walk-in booking created");
+        return toResponse(booking, branch, customer);
+    }
+
+    @Transactional
+    public BookingResponse applyPromo(UUID bookingId, ApplyPromoRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        SecurityUtils.assertBranchAccess(booking.getBranchId());
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new BadRequestException("Cannot change promo on this booking");
+        }
+
+        UUID couponId = Boolean.TRUE.equals(request.getClearPromo()) ? null : request.getCouponId();
+        UUID offerId = Boolean.TRUE.equals(request.getClearPromo()) ? null : request.getOfferId();
+        if (couponId != null && offerId != null) {
+            throw new BadRequestException("Select either a coupon or an offer, not both");
+        }
+
+        GstCalculationService.PromoContext promo = promoResolutionService.resolveForBooking(
+                booking.getTenantId(), booking.getBranchId(), booking.getCustomerId(),
+                couponId, offerId);
+
+        booking.setCouponId(promo.getCoupon() != null ? promo.getCoupon().getId() : null);
+        booking.setOfferId(promo.getOffer() != null ? promo.getOffer().getId() : null);
+        booking.setMembershipSubscriptionId(promo.getMembershipSubscription() != null
+                ? promo.getMembershipSubscription().getId() : null);
+        persistPromoAmounts(booking, promo);
+        bookingRepository.save(booking);
+
+        Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
+        Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
         return toResponse(booking, branch, customer);
     }
 
@@ -186,7 +230,7 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
         SecurityUtils.assertBranchAccess(booking.getBranchId());
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
-        return gstCalculationService.calculate(booking, lines);
+        return gstCalculationService.calculate(booking, lines, promoContextFor(booking));
     }
 
     @Transactional
@@ -208,7 +252,8 @@ public class BookingService {
         });
 
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
-        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines);
+        GstCalculationService.PromoContext promo = promoContextFor(booking);
+        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
 
         if (request.getAmount().compareTo(bill.getGrandTotal()) != 0) {
             throw new BadRequestException("Payment amount must match grand total: " + bill.getGrandTotal());
@@ -226,6 +271,15 @@ public class BookingService {
                 .invoiceNumber(invoiceNumber)
                 .subtotal(bill.getSubtotal())
                 .discountAmount(bill.getDiscountAmount())
+                .membershipDiscountAmount(bill.getMembershipDiscountAmount() != null
+                        ? bill.getMembershipDiscountAmount() : BigDecimal.ZERO)
+                .promoDiscountAmount(bill.getPromoDiscountAmount() != null
+                        ? bill.getPromoDiscountAmount() : BigDecimal.ZERO)
+                .couponId(bill.getCouponId())
+                .offerId(bill.getOfferId())
+                .membershipSubscriptionId(bill.getMembershipSubscriptionId())
+                .membershipLabel(bill.getMembershipLabel())
+                .promoLabel(bill.getPromoLabel())
                 .taxableAmount(bill.getTaxableAmount())
                 .cgstAmount(bill.getCgstAmount())
                 .sgstAmount(bill.getSgstAmount())
@@ -261,7 +315,11 @@ public class BookingService {
 
         booking.setStatus(BookingStatus.COMPLETED);
         booking.setCompletedAt(Instant.now());
+        booking.setMembershipDiscountAmount(bill.getMembershipDiscountAmount());
+        booking.setPromoDiscountAmount(bill.getPromoDiscountAmount());
         bookingRepository.save(booking);
+
+        promoResolutionService.incrementRedemptions(booking.getCouponId(), booking.getOfferId());
 
         customer.setVisitCount(customer.getVisitCount() + 1);
         customer.setLifetimeSpend(customer.getLifetimeSpend().add(bill.getGrandTotal()));
@@ -326,7 +384,9 @@ public class BookingService {
                     .build();
         }).collect(Collectors.toList());
 
-        BillPreviewResponse billPreview = lines.isEmpty() ? null : gstCalculationService.calculate(booking, lines);
+        BillPreviewResponse billPreview = lines.isEmpty()
+                ? null
+                : gstCalculationService.calculate(booking, lines, promoContextFor(booking));
 
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -340,10 +400,32 @@ public class BookingService {
                 .billDiscountType(booking.getBillDiscountType())
                 .billDiscountValue(booking.getBillDiscountValue())
                 .billDiscountNote(booking.getBillDiscountNote())
+                .couponId(booking.getCouponId())
+                .offerId(booking.getOfferId())
+                .membershipSubscriptionId(booking.getMembershipSubscriptionId())
                 .notes(booking.getNotes())
                 .billPreview(billPreview)
                 .createdAt(booking.getCreatedAt())
                 .completedAt(booking.getCompletedAt())
                 .build();
+    }
+
+    private GstCalculationService.PromoContext promoContextFor(Booking booking) {
+        return promoResolutionService.resolveForBooking(
+                booking.getTenantId(),
+                booking.getBranchId(),
+                booking.getCustomerId(),
+                booking.getCouponId(),
+                booking.getOfferId());
+    }
+
+    private void persistPromoAmounts(Booking booking, GstCalculationService.PromoContext promo) {
+        List<BookingLineItem> lines = lineItemRepository.findByBookingId(booking.getId());
+        if (lines.isEmpty()) {
+            return;
+        }
+        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
+        booking.setMembershipDiscountAmount(bill.getMembershipDiscountAmount());
+        booking.setPromoDiscountAmount(bill.getPromoDiscountAmount());
     }
 }

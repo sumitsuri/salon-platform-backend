@@ -228,6 +228,12 @@ public class DemoBookingSeeder implements CommandLineRunner {
                 .invoiceNumber(invoiceNumber)
                 .subtotal(bill.getSubtotal())
                 .discountAmount(bill.getDiscountAmount())
+                .membershipDiscountAmount(bill.getMembershipDiscountAmount() != null
+                        ? bill.getMembershipDiscountAmount() : java.math.BigDecimal.ZERO)
+                .promoDiscountAmount(bill.getPromoDiscountAmount() != null
+                        ? bill.getPromoDiscountAmount() : java.math.BigDecimal.ZERO)
+                .membershipLabel(bill.getMembershipLabel())
+                .promoLabel(bill.getPromoLabel())
                 .taxableAmount(bill.getTaxableAmount())
                 .cgstAmount(bill.getCgstAmount())
                 .sgstAmount(bill.getSgstAmount())

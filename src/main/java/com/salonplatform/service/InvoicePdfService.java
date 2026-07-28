@@ -83,7 +83,19 @@ public class InvoicePdfService {
             document.add(Chunk.NEWLINE);
 
             document.add(new Paragraph("Subtotal: ₹" + invoice.getSubtotal(), normalFont));
-            document.add(new Paragraph("Discount: ₹" + invoice.getDiscountAmount(), normalFont));
+            if (invoice.getMembershipDiscountAmount() != null
+                    && invoice.getMembershipDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                String label = invoice.getMembershipLabel() != null ? invoice.getMembershipLabel() : "Membership";
+                document.add(new Paragraph(label + ": −₹" + invoice.getMembershipDiscountAmount(), normalFont));
+            }
+            if (invoice.getPromoDiscountAmount() != null
+                    && invoice.getPromoDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                String label = invoice.getPromoLabel() != null ? invoice.getPromoLabel() : "Promo";
+                document.add(new Paragraph(label + ": −₹" + invoice.getPromoDiscountAmount(), normalFont));
+            } else if (invoice.getDiscountAmount() != null
+                    && invoice.getDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                document.add(new Paragraph("Discount: ₹" + invoice.getDiscountAmount(), normalFont));
+            }
             document.add(new Paragraph("CGST: ₹" + invoice.getCgstAmount(), normalFont));
             document.add(new Paragraph("SGST: ₹" + invoice.getSgstAmount(), normalFont));
             document.add(new Paragraph("GRAND TOTAL: ₹" + invoice.getGrandTotal(), titleFont));

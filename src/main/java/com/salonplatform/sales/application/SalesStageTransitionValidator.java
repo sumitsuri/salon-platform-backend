@@ -40,10 +40,7 @@ public final class SalesStageTransitionValidator {
         }
     }
 
-    public static void validateQualifiedFields(String localityName, String useCase, com.salonplatform.sales.domain.enums.LeadType leadType) {
-        if (localityName == null || localityName.isBlank()) {
-            throw new BadRequestException("Locality is required for QUALIFIED stage");
-        }
+    public static void validateQualifiedFields(String useCase, com.salonplatform.sales.domain.enums.LeadType leadType) {
         if (useCase == null || useCase.isBlank()) {
             throw new BadRequestException("Use case is required for QUALIFIED stage");
         }
