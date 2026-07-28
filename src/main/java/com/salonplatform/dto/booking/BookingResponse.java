@@ -31,7 +31,10 @@ public class BookingResponse {
     private String notes;
     private BillPreviewResponse billPreview;
     private Instant createdAt;
+    private Instant serviceStartedAt;
+    private Instant estimatedEndAt;
     private Instant completedAt;
+    private Integer actualDurationMinutes;
     private UUID invoiceId;
     private Boolean receiptQueued;
 }

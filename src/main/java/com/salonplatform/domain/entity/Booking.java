@@ -67,6 +67,15 @@ public class Booking {
 
     private String notes;
 
+    /** When service work began (walk-in: create time). Used for duration & floor blocks. */
+    private Instant serviceStartedAt;
+
+    /** Estimated visit end from catalog service durations (max staff load). */
+    private Instant estimatedEndAt;
+
+    /** Minutes from serviceStartedAt to completedAt / invoice. */
+    private Integer actualDurationMinutes;
+
     @CreationTimestamp
     private Instant createdAt;
 

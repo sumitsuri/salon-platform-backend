@@ -19,7 +19,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -38,6 +37,7 @@ public class DataSeeder implements CommandLineRunner {
     private final SalonServiceRepository salonServiceRepository;
     private final BranchServiceRepository branchServiceRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RateCardCatalogSync rateCardCatalogSync;
 
     @Override
     @Transactional
@@ -94,7 +94,7 @@ public class DataSeeder implements CommandLineRunner {
                     .build());
         }
 
-        List<SalonService> catalog = ensureServiceCatalog(tenant.getId());
+        List<SalonService> catalog = rateCardCatalogSync.syncTenant(tenant.getId(), seed.priceMultiplier());
         List<String> addedBranches = new ArrayList<>();
         for (BranchSeed branchSeed : seed.branches()) {
             if (branchRepository.findByTenantIdAndCode(tenant.getId(), branchSeed.code()).isPresent()) {
@@ -103,6 +103,8 @@ public class DataSeeder implements CommandLineRunner {
             seedBranch(tenant.getId(), branchSeed, catalog, seed.priceMultiplier());
             addedBranches.add(branchSeed.name());
         }
+        // Ensure pricing for all existing branches after catalog upgrades.
+        rateCardCatalogSync.syncTenant(tenant.getId(), seed.priceMultiplier());
 
         if (created) {
             log.info("Seeded tenant '{}' ({}) with {} branches", seed.name(), seed.slug(), seed.branches().size());
@@ -110,35 +112,6 @@ public class DataSeeder implements CommandLineRunner {
         } else if (!addedBranches.isEmpty()) {
             log.info("Seeded additional branches for '{}': {}", seed.name(), String.join(", ", addedBranches));
         }
-    }
-
-    private List<SalonService> ensureServiceCatalog(UUID tenantId) {
-        List<SalonService> existing = salonServiceRepository.findByTenantIdAndActiveTrue(tenantId);
-        if (!existing.isEmpty()) {
-            return existing;
-        }
-
-        ServiceCategory hair = categoryRepository.save(ServiceCategory.builder()
-                .tenantId(tenantId).name("Hair").sortOrder(1).active(true).build());
-        ServiceCategory skin = categoryRepository.save(ServiceCategory.builder()
-                .tenantId(tenantId).name("Skin").sortOrder(2).active(true).build());
-        ServiceCategory grooming = categoryRepository.save(ServiceCategory.builder()
-                .tenantId(tenantId).name("Grooming").sortOrder(3).active(true).build());
-
-        SalonService haircut = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenantId).categoryId(hair.getId()).name("Haircut Men")
-                .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(30).active(true).build());
-        SalonService beard = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenantId).categoryId(grooming.getId()).name("Beard Trim")
-                .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(15).active(true).build());
-        SalonService facial = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenantId).categoryId(skin.getId()).name("Facial Classic")
-                .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(45).active(true).build());
-        SalonService color = salonServiceRepository.save(SalonService.builder()
-                .tenantId(tenantId).categoryId(hair.getId()).name("Hair Color")
-                .sacCode("9997").gstRate(new BigDecimal("18")).durationMinutes(90).active(true).build());
-
-        return List.of(haircut, beard, facial, color);
     }
 
     private Branch seedBranch(UUID tenantId, BranchSeed seed, List<SalonService> catalog,
@@ -196,30 +169,7 @@ public class DataSeeder implements CommandLineRunner {
             staffRepository.save(builder.build());
         }
 
-        if (branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId()).isEmpty()) {
-            BigDecimal branchExtra = "WEB".equals(seed.code()) ? new BigDecimal("1.1") : BigDecimal.ONE;
-            BigDecimal multiplier = priceMultiplier.multiply(branchExtra);
-            for (SalonService service : catalog) {
-                BigDecimal base = switch (service.getName()) {
-                    case "Haircut Men" -> new BigDecimal("300");
-                    case "Beard Trim" -> new BigDecimal("150");
-                    case "Facial Classic" -> new BigDecimal("1200");
-                    case "Hair Color" -> new BigDecimal("2500");
-                    default -> new BigDecimal("500");
-                };
-                BigDecimal price = "Facial Classic".equals(service.getName())
-                        ? base
-                        : base.multiply(multiplier).setScale(0, RoundingMode.HALF_UP);
-                branchServiceRepository.save(BranchService.builder()
-                        .tenantId(tenantId)
-                        .branchId(branch.getId())
-                        .serviceId(service.getId())
-                        .price(price)
-                        .active(true)
-                        .build());
-            }
-        }
-
+        // Branch service pricing is applied by RateCardCatalogSync after all branches exist.
         return branch;
     }
 }

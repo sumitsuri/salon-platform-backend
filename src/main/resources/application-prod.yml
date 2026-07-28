@@ -31,3 +31,8 @@ app:
     promo-template: ${MSG91_PROMO_TEMPLATE:salon_promo}
     promo-sms-flow-id: ${MSG91_PROMO_SMS_FLOW_ID:}
     sms-sender: ${MSG91_SMS_SENDER:}
+  invoice-pdf:
+    s3-bucket: ${INVOICE_S3_BUCKET:}
+    key-prefix: ${INVOICE_S3_PREFIX:invoices/}
+    local-dir: ${INVOICE_PDF_DIR:data/invoice-pdfs}
+    aws-region: ${AWS_REGION:ap-south-1}

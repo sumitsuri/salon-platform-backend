@@ -23,4 +23,9 @@ public class CreateBookingRequest {
     private String billDiscountNote;
     private UUID couponId;
     private UUID offerId;
+    /**
+     * When true, booking stays {@code IN_PROGRESS} (open visit — add/change services later).
+     * When false/null, booking is marked {@code READY_FOR_BILLING} for immediate payment.
+     */
+    private Boolean keepOpen;
 }

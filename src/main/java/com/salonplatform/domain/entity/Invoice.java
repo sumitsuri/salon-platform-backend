@@ -86,6 +86,11 @@ public class Invoice {
     private String customerSociety;
     private String customerFlat;
 
+    /** S3 object key or local filesystem path for the pre-generated PDF. */
+    private String pdfStorageKey;
+
+    private Instant pdfStoredAt;
+
     @CreationTimestamp
     private Instant issuedAt;
 }

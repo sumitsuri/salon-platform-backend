@@ -26,6 +26,9 @@ public class ServiceCategory {
     @Column(nullable = false)
     private String name;
 
+    /** Top-level grouping (Men / Women / Kids / Shared). Null = top category. */
+    private UUID parentCategoryId;
+
     private Integer sortOrder;
 
     @Builder.Default

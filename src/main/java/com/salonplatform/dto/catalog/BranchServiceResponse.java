@@ -13,10 +13,15 @@ public class BranchServiceResponse {
     private UUID branchId;
     private UUID serviceId;
     private String serviceName;
-    private String categoryName;
+    /** Leaf category (e.g. Hair Cut & Styling). */
     private UUID categoryId;
+    private String categoryName;
+    /** Top category (Men / Women / Kids / Shared). */
+    private UUID parentCategoryId;
+    private String parentCategoryName;
     private BigDecimal price;
     private BigDecimal gstRate;
+    private Integer durationMinutes;
     private String displayNameOverride;
     private boolean active;
 }

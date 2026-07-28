@@ -24,4 +24,7 @@ public class BillPreviewResponse {
     private UUID membershipSubscriptionId;
     private String membershipLabel;
     private String promoLabel;
+    /** Manager FLAT/PERCENT discount when no coupon/offer is applied. */
+    private BigDecimal manualDiscountAmount;
+    private String manualDiscountLabel;
 }

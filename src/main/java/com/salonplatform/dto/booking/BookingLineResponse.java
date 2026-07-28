@@ -21,4 +21,6 @@ public class BookingLineResponse {
     private BigDecimal gstRate;
     private DiscountType lineDiscountType;
     private BigDecimal lineDiscountValue;
+    private Integer estimatedDurationMinutes;
+    private Integer actualDurationMinutes;
 }

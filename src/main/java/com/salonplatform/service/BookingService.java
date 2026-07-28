@@ -23,10 +23,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -51,6 +55,7 @@ public class BookingService {
     private final AuditService auditService;
     private final BillReceiptNotificationService billReceiptNotificationService;
     private final PromoResolutionService promoResolutionService;
+    private final InvoicePdfService invoicePdfService;
 
     @Transactional
     public BookingResponse create(CreateBookingRequest request) {
@@ -80,10 +85,14 @@ public class BookingService {
                 .customerId(customer.getId())
                 .createdByUserId(user.getId())
                 .status(BookingStatus.IN_PROGRESS)
+                .serviceStartedAt(Instant.now())
                 .notes(request.getNotes())
-                .billDiscountType(request.getBillDiscountType())
-                .billDiscountValue(request.getBillDiscountValue())
-                .billDiscountNote(request.getBillDiscountNote())
+                .billDiscountType(promo.getCoupon() == null && promo.getOffer() == null
+                        ? request.getBillDiscountType() : null)
+                .billDiscountValue(promo.getCoupon() == null && promo.getOffer() == null
+                        ? request.getBillDiscountValue() : null)
+                .billDiscountNote(promo.getCoupon() == null && promo.getOffer() == null
+                        ? request.getBillDiscountNote() : null)
                 .couponId(promo.getCoupon() != null ? promo.getCoupon().getId() : null)
                 .offerId(promo.getOffer() != null ? promo.getOffer().getId() : null)
                 .membershipSubscriptionId(promo.getMembershipSubscription() != null
@@ -91,36 +100,143 @@ public class BookingService {
                 .build());
 
         for (BookingLineRequest lineReq : request.getLines()) {
-            if (lineReq.getStaffId() == null) {
-                throw new BadRequestException("error.booking.staffRequired");
-            }
-            BranchService bs = branchServiceRepository.findById(lineReq.getBranchServiceId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Branch service not found"));
-            SalonService svc = salonServiceRepository.findById(bs.getServiceId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Service not found"));
-            staffRepository.findById(lineReq.getStaffId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
-
-            lineItemRepository.save(BookingLineItem.builder()
-                    .bookingId(booking.getId())
-                    .branchServiceId(bs.getId())
-                    .serviceId(svc.getId())
-                    .staffId(lineReq.getStaffId())
-                    .serviceName(bs.getDisplayNameOverride() != null ? bs.getDisplayNameOverride() : svc.getName())
-                    .unitPrice(bs.getPrice())
-                    .quantity(lineReq.getQuantity() != null ? lineReq.getQuantity() : 1)
-                    .gstRate(svc.getGstRate())
-                    .lineDiscountType(lineReq.getLineDiscountType())
-                    .lineDiscountValue(lineReq.getLineDiscountValue())
-                    .lineDiscountNote(lineReq.getLineDiscountNote())
-                    .build());
+            saveLine(booking.getId(), lineReq, booking.getServiceStartedAt());
         }
+        refreshEstimatedEnd(booking);
 
-        booking.setStatus(BookingStatus.READY_FOR_BILLING);
+        boolean keepOpen = Boolean.TRUE.equals(request.getKeepOpen());
+        booking.setStatus(keepOpen ? BookingStatus.IN_PROGRESS : BookingStatus.READY_FOR_BILLING);
         persistPromoAmounts(booking, promo);
         bookingRepository.save(booking);
-        auditService.log("CREATE_BOOKING", "Booking", booking.getId(), "Walk-in booking created");
+        auditService.log(
+                keepOpen ? "OPEN_VISIT" : "CREATE_BOOKING",
+                "Booking",
+                booking.getId(),
+                keepOpen ? "Walk-in visit kept open" : "Walk-in ready for billing");
         return toResponse(booking, branch, customer);
+    }
+
+    @Transactional
+    public BookingResponse replaceLines(UUID bookingId, UpdateBookingLinesRequest request) {
+        Booking booking = requireEditableBooking(bookingId);
+        if (request.getLines() == null || request.getLines().isEmpty()) {
+            throw new BadRequestException("error.booking.servicesRequired");
+        }
+
+        lineItemRepository.deleteByBookingId(bookingId);
+        Instant start = booking.getServiceStartedAt() != null ? booking.getServiceStartedAt() : Instant.now();
+        if (booking.getServiceStartedAt() == null) {
+            booking.setServiceStartedAt(start);
+        }
+        for (BookingLineRequest lineReq : request.getLines()) {
+            saveLine(bookingId, lineReq, start);
+        }
+        refreshEstimatedEnd(booking);
+
+        // Editing services brings the visit back to in-progress until billed.
+        if (booking.getStatus() == BookingStatus.READY_FOR_BILLING) {
+            booking.setStatus(BookingStatus.IN_PROGRESS);
+        }
+        persistPromoAmounts(booking, promoContextFor(booking));
+        bookingRepository.save(booking);
+        auditService.log("UPDATE_BOOKING_LINES", "Booking", bookingId, "Services updated on open visit");
+
+        Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
+        Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
+        return toResponse(booking, branch, customer);
+    }
+
+    @Transactional
+    public BookingResponse markReadyForBilling(UUID bookingId) {
+        Booking booking = requireEditableBooking(bookingId);
+        List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
+        if (lines.isEmpty()) {
+            throw new BadRequestException("error.booking.servicesRequired");
+        }
+        for (BookingLineItem line : lines) {
+            if (line.getStaffId() == null) {
+                throw new BadRequestException("error.booking.staffRequired");
+            }
+        }
+        booking.setStatus(BookingStatus.READY_FOR_BILLING);
+        persistPromoAmounts(booking, promoContextFor(booking));
+        bookingRepository.save(booking);
+        auditService.log("READY_FOR_BILLING", "Booking", bookingId, null);
+
+        Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
+        Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
+        return toResponse(booking, branch, customer);
+    }
+
+    @Transactional
+    public BookingResponse reopenVisit(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        SecurityUtils.assertBranchAccess(booking.getBranchId());
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new BadRequestException("Cannot reopen this booking");
+        }
+        booking.setStatus(BookingStatus.IN_PROGRESS);
+        bookingRepository.save(booking);
+        auditService.log("REOPEN_VISIT", "Booking", bookingId, null);
+
+        Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
+        Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
+        return toResponse(booking, branch, customer);
+    }
+
+    private Booking requireEditableBooking(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        SecurityUtils.assertBranchAccess(booking.getBranchId());
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new BadRequestException("Cannot change services on this booking");
+        }
+        return booking;
+    }
+
+    private void saveLine(UUID bookingId, BookingLineRequest lineReq, Instant startedAt) {
+        if (lineReq.getStaffId() == null) {
+            throw new BadRequestException("error.booking.staffRequired");
+        }
+        BranchService bs = branchServiceRepository.findById(lineReq.getBranchServiceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Branch service not found"));
+        SalonService svc = salonServiceRepository.findById(bs.getServiceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Service not found"));
+        staffRepository.findById(lineReq.getStaffId())
+                .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+
+        int duration = svc.getDurationMinutes() != null && svc.getDurationMinutes() > 0
+                ? svc.getDurationMinutes() : 30;
+
+        lineItemRepository.save(BookingLineItem.builder()
+                .bookingId(bookingId)
+                .branchServiceId(bs.getId())
+                .serviceId(svc.getId())
+                .staffId(lineReq.getStaffId())
+                .serviceName(bs.getDisplayNameOverride() != null ? bs.getDisplayNameOverride() : svc.getName())
+                .unitPrice(bs.getPrice())
+                .quantity(lineReq.getQuantity() != null ? lineReq.getQuantity() : 1)
+                .gstRate(svc.getGstRate())
+                .lineDiscountType(lineReq.getLineDiscountType())
+                .lineDiscountValue(lineReq.getLineDiscountValue())
+                .lineDiscountNote(lineReq.getLineDiscountNote())
+                .estimatedDurationMinutes(duration)
+                .startedAt(startedAt)
+                .build());
+    }
+
+    private void refreshEstimatedEnd(Booking booking) {
+        List<BookingLineItem> lines = lineItemRepository.findByBookingId(booking.getId());
+        Instant start = booking.getServiceStartedAt() != null ? booking.getServiceStartedAt() : Instant.now();
+        Map<UUID, Integer> loadByStaff = new HashMap<>();
+        for (BookingLineItem line : lines) {
+            int mins = (line.getEstimatedDurationMinutes() != null ? line.getEstimatedDurationMinutes() : 30)
+                    * Math.max(1, line.getQuantity() != null ? line.getQuantity() : 1);
+            loadByStaff.merge(line.getStaffId(), mins, Integer::sum);
+        }
+        int maxLoad = loadByStaff.values().stream().mapToInt(Integer::intValue).max().orElse(30);
+        booking.setEstimatedEndAt(start.plus(Duration.ofMinutes(maxLoad)));
     }
 
     @Transactional
@@ -146,6 +262,47 @@ public class BookingService {
         booking.setOfferId(promo.getOffer() != null ? promo.getOffer().getId() : null);
         booking.setMembershipSubscriptionId(promo.getMembershipSubscription() != null
                 ? promo.getMembershipSubscription().getId() : null);
+        // Coupon/offer XOR manager bill discount.
+        if (booking.getCouponId() != null || booking.getOfferId() != null) {
+            booking.setBillDiscountType(null);
+            booking.setBillDiscountValue(null);
+            booking.setBillDiscountNote(null);
+        }
+        persistPromoAmounts(booking, promo);
+        bookingRepository.save(booking);
+
+        Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
+        Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
+        return toResponse(booking, branch, customer);
+    }
+
+    @Transactional
+    public BookingResponse applyBillDiscount(UUID bookingId, ApplyBillDiscountRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        SecurityUtils.assertBranchAccess(booking.getBranchId());
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new BadRequestException("Cannot change discount on this booking");
+        }
+
+        if (Boolean.TRUE.equals(request.getClearDiscount())) {
+            booking.setBillDiscountType(null);
+            booking.setBillDiscountValue(null);
+            booking.setBillDiscountNote(null);
+        } else {
+            if (request.getBillDiscountType() == null || request.getBillDiscountValue() == null
+                    || request.getBillDiscountValue().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BadRequestException("error.booking.billDiscountInvalid");
+            }
+            booking.setBillDiscountType(request.getBillDiscountType());
+            booking.setBillDiscountValue(request.getBillDiscountValue().setScale(2, RoundingMode.HALF_UP));
+            booking.setBillDiscountNote(request.getBillDiscountNote());
+            // Manager discount XOR coupon/offer.
+            booking.setCouponId(null);
+            booking.setOfferId(null);
+        }
+
+        GstCalculationService.PromoContext promo = promoContextFor(booking);
         persistPromoAmounts(booking, promo);
         bookingRepository.save(booking);
 
@@ -246,6 +403,11 @@ public class BookingService {
         if (booking.getStatus() == BookingStatus.CANCELLED) {
             throw new BadRequestException("error.booking.cancelled");
         }
+        if (booking.getStatus() != BookingStatus.IN_PROGRESS
+                && booking.getStatus() != BookingStatus.READY_FOR_BILLING
+                && booking.getStatus() != BookingStatus.DRAFT) {
+            throw new BadRequestException("error.booking.alreadyCompleted");
+        }
 
         invoiceRepository.findByBookingId(bookingId).ifPresent(i -> {
             throw new BadRequestException("error.booking.invoiceExists");
@@ -255,14 +417,40 @@ public class BookingService {
         GstCalculationService.PromoContext promo = promoContextFor(booking);
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
 
-        if (request.getAmount().compareTo(bill.getGrandTotal()) != 0) {
-            throw new BadRequestException("Payment amount must match grand total: " + bill.getGrandTotal());
+        BigDecimal cgstAmount = bill.getCgstAmount();
+        BigDecimal sgstAmount = bill.getSgstAmount();
+        BigDecimal grandTotal = bill.getGrandTotal();
+
+        boolean overrideCgst = request.getCgstAmount() != null;
+        boolean overrideSgst = request.getSgstAmount() != null;
+        if (overrideCgst || overrideSgst) {
+            if (!overrideCgst || !overrideSgst) {
+                throw new BadRequestException("error.booking.taxOverrideBothRequired");
+            }
+            if (request.getCgstAmount().compareTo(BigDecimal.ZERO) < 0
+                    || request.getSgstAmount().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BadRequestException("error.booking.taxOverridePositive");
+            }
+            cgstAmount = request.getCgstAmount().setScale(2, RoundingMode.HALF_UP);
+            sgstAmount = request.getSgstAmount().setScale(2, RoundingMode.HALF_UP);
+            grandTotal = bill.getGrandTotal()
+                    .subtract(bill.getCgstAmount())
+                    .subtract(bill.getSgstAmount())
+                    .add(cgstAmount)
+                    .add(sgstAmount)
+                    .max(BigDecimal.ZERO)
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+
+        if (request.getAmount().compareTo(grandTotal) != 0) {
+            throw new BadRequestException("error.booking.paymentMismatch");
         }
 
         Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
         Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
 
         String invoiceNumber = nextInvoiceNumber(branch);
+        Instant issuedAt = Instant.now();
         Invoice invoice = invoiceRepository.save(Invoice.builder()
                 .tenantId(booking.getTenantId())
                 .branchId(booking.getBranchId())
@@ -273,23 +461,33 @@ public class BookingService {
                 .discountAmount(bill.getDiscountAmount())
                 .membershipDiscountAmount(bill.getMembershipDiscountAmount() != null
                         ? bill.getMembershipDiscountAmount() : BigDecimal.ZERO)
-                .promoDiscountAmount(bill.getPromoDiscountAmount() != null
-                        ? bill.getPromoDiscountAmount() : BigDecimal.ZERO)
+                .promoDiscountAmount(
+                        (bill.getPromoDiscountAmount() != null ? bill.getPromoDiscountAmount() : BigDecimal.ZERO)
+                                .add(bill.getManualDiscountAmount() != null ? bill.getManualDiscountAmount() : BigDecimal.ZERO))
                 .couponId(bill.getCouponId())
                 .offerId(bill.getOfferId())
                 .membershipSubscriptionId(bill.getMembershipSubscriptionId())
                 .membershipLabel(bill.getMembershipLabel())
-                .promoLabel(bill.getPromoLabel())
+                .promoLabel(bill.getPromoLabel() != null ? bill.getPromoLabel() : bill.getManualDiscountLabel())
                 .taxableAmount(bill.getTaxableAmount())
-                .cgstAmount(bill.getCgstAmount())
-                .sgstAmount(bill.getSgstAmount())
-                .grandTotal(bill.getGrandTotal())
-                .branchGstin(branch.getGstin())
+                .cgstAmount(cgstAmount)
+                .sgstAmount(sgstAmount)
+                .grandTotal(grandTotal)
+                .branchGstin(branch.getGstin() != null ? branch.getGstin() : "")
                 .customerName(customer.getName())
                 .customerPhone(customer.getPhone())
                 .customerSociety(customer.getSociety())
                 .customerFlat(customer.getFlatUnit())
+                .issuedAt(issuedAt)
                 .build());
+
+        try {
+            invoicePdfService.persistPdf(invoice);
+        } catch (Exception e) {
+            // Payment must succeed even if PDF persistence fails; download regenerates on demand.
+            org.slf4j.LoggerFactory.getLogger(BookingService.class)
+                    .warn("Invoice PDF persistence failed for {}: {}", invoice.getId(), e.toString());
+        }
 
         Payment payment = paymentRepository.save(Payment.builder()
                 .tenantId(booking.getTenantId())
@@ -314,15 +512,39 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.COMPLETED);
-        booking.setCompletedAt(Instant.now());
+        Instant completedAt = Instant.now();
+        booking.setCompletedAt(completedAt);
+        Instant started = booking.getServiceStartedAt() != null ? booking.getServiceStartedAt() : booking.getCreatedAt();
+        if (started != null) {
+            long mins = Duration.between(started, completedAt).toMinutes();
+            booking.setActualDurationMinutes((int) Math.max(1, mins));
+        }
         booking.setMembershipDiscountAmount(bill.getMembershipDiscountAmount());
         booking.setPromoDiscountAmount(bill.getPromoDiscountAmount());
         bookingRepository.save(booking);
 
+        // Allocate visit duration across lines by estimated weight (per staff sequential share).
+        List<BookingLineItem> paidLines = lineItemRepository.findByBookingId(booking.getId());
+        int totalEst = paidLines.stream()
+                .mapToInt(l -> (l.getEstimatedDurationMinutes() != null ? l.getEstimatedDurationMinutes() : 30)
+                        * Math.max(1, l.getQuantity() != null ? l.getQuantity() : 1))
+                .sum();
+        int visitMins = booking.getActualDurationMinutes() != null ? booking.getActualDurationMinutes() : 0;
+        for (BookingLineItem line : paidLines) {
+            int lineEst = (line.getEstimatedDurationMinutes() != null ? line.getEstimatedDurationMinutes() : 30)
+                    * Math.max(1, line.getQuantity() != null ? line.getQuantity() : 1);
+            int allocated = totalEst > 0
+                    ? Math.max(1, (int) Math.round(visitMins * (lineEst / (double) totalEst)))
+                    : visitMins;
+            line.setEndedAt(completedAt);
+            line.setActualDurationMinutes(allocated);
+            lineItemRepository.save(line);
+        }
+
         promoResolutionService.incrementRedemptions(booking.getCouponId(), booking.getOfferId());
 
         customer.setVisitCount(customer.getVisitCount() + 1);
-        customer.setLifetimeSpend(customer.getLifetimeSpend().add(bill.getGrandTotal()));
+        customer.setLifetimeSpend(customer.getLifetimeSpend().add(grandTotal));
         customer.setLastVisitAt(Instant.now());
         customerRepository.save(customer);
 
@@ -381,12 +603,18 @@ public class BookingService {
                     .gstRate(line.getGstRate())
                     .lineDiscountType(line.getLineDiscountType())
                     .lineDiscountValue(line.getLineDiscountValue())
+                    .estimatedDurationMinutes(line.getEstimatedDurationMinutes())
+                    .actualDurationMinutes(line.getActualDurationMinutes())
                     .build();
         }).collect(Collectors.toList());
 
         BillPreviewResponse billPreview = lines.isEmpty()
                 ? null
                 : gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+
+        UUID invoiceId = invoiceRepository.findByBookingId(booking.getId())
+                .map(Invoice::getId)
+                .orElse(null);
 
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -406,7 +634,11 @@ public class BookingService {
                 .notes(booking.getNotes())
                 .billPreview(billPreview)
                 .createdAt(booking.getCreatedAt())
+                .serviceStartedAt(booking.getServiceStartedAt())
+                .estimatedEndAt(booking.getEstimatedEndAt())
                 .completedAt(booking.getCompletedAt())
+                .actualDurationMinutes(booking.getActualDurationMinutes())
+                .invoiceId(invoiceId)
                 .build();
     }
 

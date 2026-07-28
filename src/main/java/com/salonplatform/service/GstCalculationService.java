@@ -167,11 +167,26 @@ public class GstCalculationService {
             promoLabel = "Offer · " + promo.getOffer().getName();
         }
 
+        String manualDiscountLabel = null;
+        if (legacyBillDiscount.compareTo(BigDecimal.ZERO) > 0) {
+            if (booking.getBillDiscountType() == DiscountType.PERCENT) {
+                manualDiscountLabel = "Manager discount (−"
+                        + booking.getBillDiscountValue().stripTrailingZeros().toPlainString() + "%)";
+            } else {
+                manualDiscountLabel = "Manager discount";
+            }
+            if (booking.getBillDiscountNote() != null && !booking.getBillDiscountNote().isBlank()) {
+                manualDiscountLabel = manualDiscountLabel + " · " + booking.getBillDiscountNote().trim();
+            }
+        }
+
         return BillPreviewResponse.builder()
                 .lines(linePreviews)
                 .subtotal(subtotal.add(totalMembershipDiscount).add(totalPromoDiscount))
                 .membershipDiscountAmount(totalMembershipDiscount)
-                .promoDiscountAmount(totalPromoDiscount.add(legacyBillDiscount))
+                .promoDiscountAmount(totalPromoDiscount)
+                .manualDiscountAmount(legacyBillDiscount)
+                .manualDiscountLabel(manualDiscountLabel)
                 .discountAmount(totalDiscount)
                 .taxableAmount(subtotal)
                 .cgstAmount(totalCgst)

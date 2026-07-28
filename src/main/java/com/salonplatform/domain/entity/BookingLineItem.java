@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -51,4 +52,14 @@ public class BookingLineItem {
     private BigDecimal lineDiscountValue;
 
     private String lineDiscountNote;
+
+    /** Snapshot of catalog duration at booking time (minutes). */
+    private Integer estimatedDurationMinutes;
+
+    private Instant startedAt;
+
+    private Instant endedAt;
+
+    /** Measured minutes for this line (allocated from visit duration on payment). */
+    private Integer actualDurationMinutes;
 }

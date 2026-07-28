@@ -28,6 +28,7 @@ public class CatalogService {
         return categoryRepository.save(ServiceCategory.builder()
                 .tenantId(tenantId)
                 .name(request.getName())
+                .parentCategoryId(request.getParentCategoryId())
                 .sortOrder(request.getSortOrder())
                 .active(true)
                 .build());
@@ -84,21 +85,29 @@ public class CatalogService {
         return branchServiceRepository.findByBranchIdAndActiveTrue(branchId).stream()
                 .map(bs -> {
                     SalonService svc = salonServiceRepository.findById(bs.getServiceId()).orElse(null);
-                    ServiceCategory cat = svc != null
-                            ? categoryRepository.findById(svc.getCategoryId()).orElse(null) : null;
+                    if (svc == null || !svc.isActive()) {
+                        return null;
+                    }
+                    ServiceCategory cat = categoryRepository.findById(svc.getCategoryId()).orElse(null);
+                    ServiceCategory parent = cat != null && cat.getParentCategoryId() != null
+                            ? categoryRepository.findById(cat.getParentCategoryId()).orElse(null) : null;
                     return BranchServiceResponse.builder()
                             .id(bs.getId())
                             .branchId(bs.getBranchId())
                             .serviceId(bs.getServiceId())
-                            .serviceName(svc != null ? svc.getName() : null)
-                            .categoryId(svc != null ? svc.getCategoryId() : null)
+                            .serviceName(svc.getName())
+                            .categoryId(svc.getCategoryId())
                             .categoryName(cat != null ? cat.getName() : null)
+                            .parentCategoryId(parent != null ? parent.getId() : (cat != null ? cat.getId() : null))
+                            .parentCategoryName(parent != null ? parent.getName() : (cat != null ? cat.getName() : null))
                             .price(bs.getPrice())
-                            .gstRate(svc != null ? svc.getGstRate() : null)
+                            .gstRate(svc.getGstRate())
+                            .durationMinutes(svc.getDurationMinutes())
                             .displayNameOverride(bs.getDisplayNameOverride())
                             .active(bs.isActive())
                             .build();
                 })
+                .filter(r -> r != null)
                 .collect(Collectors.toList());
     }
 }

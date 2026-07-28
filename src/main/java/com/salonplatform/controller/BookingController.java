@@ -3,10 +3,12 @@ package com.salonplatform.controller;
 import com.salonplatform.domain.enums.BookingStatus;
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.billing.BillPreviewResponse;
+import com.salonplatform.dto.booking.ApplyBillDiscountRequest;
 import com.salonplatform.dto.booking.ApplyPromoRequest;
 import com.salonplatform.dto.booking.BookingListFilter;
 import com.salonplatform.dto.booking.BookingResponse;
 import com.salonplatform.dto.booking.CreateBookingRequest;
+import com.salonplatform.dto.booking.UpdateBookingLinesRequest;
 import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.payment.RecordPaymentRequest;
 import com.salonplatform.service.BookingService;
@@ -75,6 +77,28 @@ public class BookingController {
     @PostMapping("/{id}/promotions")
     public ApiResponse<BookingResponse> applyPromo(@PathVariable UUID id, @RequestBody ApplyPromoRequest request) {
         return ApiResponse.ok(bookingService.applyPromo(id, request));
+    }
+
+    @PutMapping("/{id}/lines")
+    public ApiResponse<BookingResponse> replaceLines(
+            @PathVariable UUID id, @Valid @RequestBody UpdateBookingLinesRequest request) {
+        return ApiResponse.ok(bookingService.replaceLines(id, request));
+    }
+
+    @PostMapping("/{id}/ready-for-billing")
+    public ApiResponse<BookingResponse> markReady(@PathVariable UUID id) {
+        return ApiResponse.ok(bookingService.markReadyForBilling(id));
+    }
+
+    @PostMapping("/{id}/reopen")
+    public ApiResponse<BookingResponse> reopen(@PathVariable UUID id) {
+        return ApiResponse.ok(bookingService.reopenVisit(id));
+    }
+
+    @PostMapping("/{id}/bill-discount")
+    public ApiResponse<BookingResponse> applyBillDiscount(
+            @PathVariable UUID id, @RequestBody ApplyBillDiscountRequest request) {
+        return ApiResponse.ok(bookingService.applyBillDiscount(id, request));
     }
 
     @PostMapping("/{id}/payments")
