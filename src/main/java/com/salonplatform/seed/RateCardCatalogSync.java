@@ -185,6 +185,14 @@ public class RateCardCatalogSync {
     private void upsertBranchPrice(UUID tenantId, UUID branchId, UUID serviceId, BigDecimal price) {
         branchServiceRepository.findByBranchIdAndServiceId(branchId, serviceId)
                 .ifPresentOrElse(existing -> {
+                    if (existing.isManualPriceOverride()) {
+                        // Keep CEO/admin price overrides; only ensure service stays available.
+                        if (!existing.isActive()) {
+                            existing.setActive(true);
+                            branchServiceRepository.save(existing);
+                        }
+                        return;
+                    }
                     existing.setPrice(price);
                     existing.setActive(true);
                     branchServiceRepository.save(existing);
@@ -194,6 +202,7 @@ public class RateCardCatalogSync {
                         .serviceId(serviceId)
                         .price(price)
                         .active(true)
+                        .manualPriceOverride(false)
                         .build()));
     }
 }

@@ -10,5 +10,6 @@ import java.util.UUID;
 public interface BranchServiceRepository extends JpaRepository<BranchService, UUID> {
     List<BranchService> findByBranchIdAndActiveTrue(UUID branchId);
     List<BranchService> findByTenantIdAndBranchId(UUID tenantId, UUID branchId);
+    List<BranchService> findByTenantIdAndServiceId(UUID tenantId, UUID serviceId);
     Optional<BranchService> findByBranchIdAndServiceId(UUID branchId, UUID serviceId);
 }

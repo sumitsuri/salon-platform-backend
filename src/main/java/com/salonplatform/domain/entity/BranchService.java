@@ -41,6 +41,10 @@ public class BranchService {
     @Builder.Default
     private boolean active = true;
 
+    /** When true, rate-card seed sync will not overwrite this branch price. */
+    @Builder.Default
+    private boolean manualPriceOverride = false;
+
     @CreationTimestamp
     private Instant createdAt;
 

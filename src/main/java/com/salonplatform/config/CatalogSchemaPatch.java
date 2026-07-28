@@ -21,6 +21,8 @@ public class CatalogSchemaPatch implements ApplicationRunner {
         try {
             jdbcTemplate.execute(
                     "ALTER TABLE service_categories ADD COLUMN IF NOT EXISTS parent_category_id UUID");
+            jdbcTemplate.execute(
+                    "ALTER TABLE branch_services ADD COLUMN IF NOT EXISTS manual_price_override BOOLEAN DEFAULT FALSE");
             log.info("Catalog schema patch applied");
         } catch (Exception e) {
             log.warn("Catalog schema patch skipped or partial: {}", e.getMessage());
