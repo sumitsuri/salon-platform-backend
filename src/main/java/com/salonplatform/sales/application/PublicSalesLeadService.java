@@ -28,11 +28,15 @@ public class PublicSalesLeadService {
 
     @Transactional
     public SalesLeadResponse createFromMarketing(CreatePublicSalesLeadRequest request) {
+        String contactName = resolveContactName(request);
+        String businessName = resolveBusinessName(request, contactName);
+
         CreateSalesLeadRequest internal = new CreateSalesLeadRequest();
-        internal.setBusinessName(request.getName());
-        internal.setContactName(request.getName());
+        internal.setBusinessName(businessName);
+        internal.setContactName(contactName);
         internal.setEmail(request.getEmail());
         internal.setPhone(request.getPhone());
+        internal.setCity(isPresent(request.getCity()) ? request.getCity() : "Bangalore");
         internal.setLeadType(parseLeadType(request.getBranches()));
         internal.setSource(LeadSource.MARKETING_WEB);
         internal.setExpectedBranches(parseBranchCount(request.getBranches()));
@@ -40,6 +44,30 @@ public class PublicSalesLeadService {
         internal.setNotes(buildNotes(request));
         internal.setAssignedRepId(assignRoundRobin());
         return salesLeadService.createPublic(internal);
+    }
+
+    private static String resolveContactName(CreatePublicSalesLeadRequest request) {
+        if (isPresent(request.getContactName())) {
+            return request.getContactName().trim();
+        }
+        if (isPresent(request.getName())) {
+            return request.getName().trim();
+        }
+        return "Unknown";
+    }
+
+    private static String resolveBusinessName(CreatePublicSalesLeadRequest request, String contactName) {
+        if (isPresent(request.getBusinessName())) {
+            return request.getBusinessName().trim();
+        }
+        if (isPresent(request.getName())) {
+            return request.getName().trim();
+        }
+        return contactName;
+    }
+
+    private static boolean isPresent(String value) {
+        return value != null && !value.isBlank();
     }
 
     private UUID assignRoundRobin() {
