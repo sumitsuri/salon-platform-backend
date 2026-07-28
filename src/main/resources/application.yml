@@ -32,7 +32,10 @@ app:
   public-url: http://localhost:8080
   attendance:
     photos:
+      s3-bucket: ${ATTENDANCE_S3_BUCKET:}
+      key-prefix: ${ATTENDANCE_S3_PREFIX:attendance/}
       storage-dir: ${ATTENDANCE_PHOTO_DIR:data/attendance-photos}
+      aws-region: ${AWS_REGION:ap-south-1}
       max-bytes: 1048576
   msg91:
     auth-key: ${MSG91_AUTH_KEY:}

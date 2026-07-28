@@ -8,8 +8,10 @@ RUN ./mvnw -q package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-RUN addgroup -S spring && adduser -S spring -G spring
+RUN addgroup -S spring && adduser -S spring -G spring \
+    && mkdir -p /app/data/attendance-photos /app/data/invoice-pdfs \
+    && chown -R spring:spring /app
+COPY --from=build --chown=spring:spring /app/target/salon-platform-api-*.jar app.jar
 USER spring:spring
-COPY --from=build /app/target/salon-platform-api-*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
