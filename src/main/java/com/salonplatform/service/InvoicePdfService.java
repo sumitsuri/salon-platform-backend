@@ -159,67 +159,58 @@ public class InvoicePdfService {
         String issuedLabel = DATE_FMT.format(issued.atZone(IST));
 
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            // Slim side margins; top margin tiny because hero is edge-to-edge.
-            Document document = new Document(PageSize.A5, 0, 0, 0, 26);
+            // A5 single-page bill. Side margins for readable body.
+            // Critical: never wrap the whole body in one PdfPCell — OpenPDF will
+            // push that cell to page 2 if it does not fit under the hero.
+            float margin = 16f;
+            Document document = new Document(PageSize.A5, margin, margin, 10f, 14f);
             PdfWriter writer = PdfWriter.getInstance(document, baos);
             writer.setPageEvent(new PaperCanvasEvent());
             document.open();
 
-            Font whiteBrand = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 15, Color.WHITE);
-            Font whiteSmall = FontFactory.getFont(FontFactory.HELVETICA, 8, new Color(235, 230, 224));
-            Font whiteTag = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 7.5f, new Color(220, 210, 198));
-            Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7.5f, GOLD);
-            Font bodyFont = FontFactory.getFont(FontFactory.HELVETICA, 9, INK);
-            Font bodyBold = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9.5f, INK);
-            Font smallFont = FontFactory.getFont(FontFactory.HELVETICA, 8, INK);
-            Font smallMuted = FontFactory.getFont(FontFactory.HELVETICA, 7.5f, MUTED);
-            Font labelFont = FontFactory.getFont(FontFactory.HELVETICA, 7.5f, MUTED);
-            Font tableHeadFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7.5f, Color.WHITE);
-            Font totalFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11, Color.WHITE);
-            Font moneyBold = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, INK);
-            Font thanksFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 8, MUTED);
+            Font whiteBrand = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 13, Color.WHITE);
+            Font whiteSmall = FontFactory.getFont(FontFactory.HELVETICA, 7.5f, new Color(235, 230, 224));
+            Font whiteTag = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 7f, new Color(220, 210, 198));
+            Font sectionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7f, GOLD);
+            Font bodyFont = FontFactory.getFont(FontFactory.HELVETICA, 8.5f, INK);
+            Font bodyBold = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9f, INK);
+            Font smallFont = FontFactory.getFont(FontFactory.HELVETICA, 7.5f, INK);
+            Font smallMuted = FontFactory.getFont(FontFactory.HELVETICA, 7f, MUTED);
+            Font labelFont = FontFactory.getFont(FontFactory.HELVETICA, 7f, MUTED);
+            Font tableHeadFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7f, Color.WHITE);
+            Font totalFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10f, Color.WHITE);
+            Font moneyBold = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8.5f, INK);
+            Font thanksFont = FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 7.5f, MUTED);
 
-            // —— Hero: salon photo + brand overlay (full bleed) ——
+            float contentWidth = document.getPageSize().getWidth() - (margin * 2);
+            float heroHeight = 68f;
+
             Image hero = buildHeroBanner(
                     brandName, branchName, tagline, brand, brandDark,
-                    document.getPageSize().getWidth(), 108f);
+                    contentWidth, heroHeight);
             if (hero != null) {
                 hero.setAlignment(Element.ALIGN_CENTER);
+                hero.setSpacingBefore(0f);
+                hero.setSpacingAfter(0f);
                 document.add(hero);
             } else {
                 document.add(fallbackHero(brandName, branchName, tagline, whiteBrand, whiteSmall, whiteTag, brandDark));
             }
 
-            // Gold hairline under hero
-            document.add(ruleBand(GOLD, 2.4f));
+            document.add(ruleBand(GOLD, 2f));
 
-            // Content inset
-            float inset = 22f;
-            PdfPTable shell = new PdfPTable(1);
-            shell.setWidthPercentage(100);
-            shell.setSpacingBefore(0f);
-            PdfPCell shellCell = new PdfPCell();
-            shellCell.setBorder(Rectangle.NO_BORDER);
-            shellCell.setBackgroundColor(PAPER);
-            shellCell.setPaddingLeft(inset);
-            shellCell.setPaddingRight(inset);
-            shellCell.setPaddingTop(14f);
-            shellCell.setPaddingBottom(6f);
-
-            // Meta row
             PdfPTable meta = new PdfPTable(new float[]{1.15f, 1f});
             meta.setWidthPercentage(100);
-            meta.setSpacingAfter(12f);
+            meta.setSpacingBefore(8f);
+            meta.setSpacingAfter(8f);
+            meta.setSplitLate(false);
+            meta.setKeepTogether(false);
 
             PdfPCell leftMeta = surfaceCard();
             leftMeta.addElement(new Paragraph("TAX INVOICE", sectionFont));
-            leftMeta.addElement(vspace(4f));
+            leftMeta.addElement(vspace(3f));
             leftMeta.addElement(new Paragraph(invoice.getInvoiceNumber(), bodyBold));
             leftMeta.addElement(new Paragraph(issuedLabel, smallMuted));
-            leftMeta.addElement(vspace(3f));
-            if (invoice.getBookingId() != null) {
-                leftMeta.addElement(new Paragraph("Booking ID  " + invoice.getBookingId(), smallFont));
-            }
             String gstin = invoice.getBranchGstin() != null ? invoice.getBranchGstin() : "—";
             leftMeta.addElement(new Paragraph("GSTIN  " + gstin, smallFont));
             if (branchPhone != null && !branchPhone.isBlank()) {
@@ -232,7 +223,7 @@ public class InvoicePdfService {
 
             PdfPCell rightMeta = surfaceCard();
             rightMeta.addElement(new Paragraph("BILLED TO", sectionFont));
-            rightMeta.addElement(vspace(4f));
+            rightMeta.addElement(vspace(3f));
             rightMeta.addElement(new Paragraph(nullSafe(invoice.getCustomerName()), bodyBold));
             rightMeta.addElement(new Paragraph(nullSafe(invoice.getCustomerPhone()), smallFont));
             if (invoice.getCustomerSociety() != null && !invoice.getCustomerSociety().isBlank()) {
@@ -243,16 +234,18 @@ public class InvoicePdfService {
                 rightMeta.addElement(new Paragraph(loc, smallMuted));
             }
             meta.addCell(rightMeta);
-            shellCell.addElement(meta);
+            document.add(meta);
 
-            // Services
             Paragraph servicesTitle = new Paragraph("SERVICES", sectionFont);
-            servicesTitle.setSpacingAfter(5f);
-            shellCell.addElement(servicesTitle);
+            servicesTitle.setSpacingBefore(0f);
+            servicesTitle.setSpacingAfter(4f);
+            document.add(servicesTitle);
 
             PdfPTable table = new PdfPTable(new float[]{3.4f, 1.15f, 1.15f});
             table.setWidthPercentage(100);
-            table.setSpacingAfter(10f);
+            table.setSpacingAfter(6f);
+            table.setSplitLate(false);
+            table.setHeaderRows(1);
             table.addCell(headCell("#  Service", tableHeadFont, CHARCOAL));
             table.addCell(headCell("Rate", tableHeadFont, CHARCOAL, Element.ALIGN_RIGHT));
             table.addCell(headCell("Amount", tableHeadFont, CHARCOAL, Element.ALIGN_RIGHT));
@@ -267,19 +260,20 @@ public class InvoicePdfService {
                 alt = !alt;
                 idx++;
             }
-            shellCell.addElement(table);
+            document.add(table);
 
-            // Totals — right aligned card
-            PdfPTable totalsWrap = new PdfPTable(new float[]{0.95f, 1.05f});
+            PdfPTable totalsWrap = new PdfPTable(new float[]{0.85f, 1.15f});
             totalsWrap.setWidthPercentage(100);
-            totalsWrap.setSpacingAfter(6f);
+            totalsWrap.setSpacingAfter(4f);
+            totalsWrap.setSplitLate(false);
+            totalsWrap.setKeepTogether(true);
             totalsWrap.addCell(emptyCell());
 
             PdfPCell totalsCard = new PdfPCell();
             totalsCard.setBorder(Rectangle.NO_BORDER);
             totalsCard.setBackgroundColor(SURFACE);
-            totalsCard.setPadding(8f);
-            totalsCard.setPaddingTop(6f);
+            totalsCard.setPadding(6f);
+            totalsCard.setPaddingTop(4f);
             totalsCard.setBorderWidthTop(1.2f);
             totalsCard.setBorderColorTop(GOLD);
 
@@ -310,56 +304,51 @@ public class InvoicePdfService {
             addTotalRow(totals, "SGST", money(invoice.getSgstAmount()), labelFont, bodyFont, SURFACE);
             totalsCard.addElement(totals);
 
-            // Grand total
             PdfPTable grand = new PdfPTable(new float[]{1.4f, 1f});
             grand.setWidthPercentage(100);
-            grand.setSpacingBefore(4f);
+            grand.setSpacingBefore(3f);
             PdfPCell gtLabel = new PdfPCell(new Phrase("AMOUNT PAYABLE", totalFont));
             gtLabel.setBackgroundColor(CHARCOAL);
             gtLabel.setBorder(Rectangle.NO_BORDER);
-            gtLabel.setPadding(9f);
+            gtLabel.setPadding(7f);
             PdfPCell gtValue = new PdfPCell(new Phrase(money(invoice.getGrandTotal()), totalFont));
             gtValue.setBackgroundColor(CHARCOAL);
             gtValue.setBorder(Rectangle.NO_BORDER);
             gtValue.setHorizontalAlignment(Element.ALIGN_RIGHT);
-            gtValue.setPadding(9f);
+            gtValue.setPadding(7f);
             grand.addCell(gtLabel);
             grand.addCell(gtValue);
             totalsCard.addElement(grand);
             totalsWrap.addCell(totalsCard);
-            shellCell.addElement(totalsWrap);
+            document.add(totalsWrap);
 
-            // Footer
-            shellCell.addElement(ruleBand(RULE, 0.8f));
-            shellCell.addElement(vspace(8f));
+            document.add(ruleBand(RULE, 0.7f));
+
             Paragraph thanks = new Paragraph(footerLine, thanksFont);
             thanks.setAlignment(Element.ALIGN_CENTER);
-            thanks.setSpacingAfter(3f);
-            shellCell.addElement(thanks);
+            thanks.setSpacingBefore(6f);
+            thanks.setSpacingAfter(2f);
+            document.add(thanks);
+
             Paragraph powered = new Paragraph(brandName + "  ·  " + branchName, smallMuted);
             powered.setAlignment(Element.ALIGN_CENTER);
-            shellCell.addElement(powered);
+            powered.setSpacingAfter(2f);
+            document.add(powered);
 
-            // Tiny brand badge at bottom (salon touch without fighting contrast)
             Image mark = resolveLogo(tenant, brandName, brand, brandDark);
             if (mark != null) {
-                mark.scaleToFit(28, 28);
+                mark.scaleToFit(22, 22);
                 mark.setAlignment(Element.ALIGN_CENTER);
-                Paragraph markPad = new Paragraph();
-                markPad.setSpacingBefore(8f);
-                shellCell.addElement(markPad);
                 PdfPTable markTable = new PdfPTable(1);
                 markTable.setWidthPercentage(100);
+                markTable.setSpacingBefore(2f);
                 PdfPCell mc = new PdfPCell(mark, false);
                 mc.setBorder(Rectangle.NO_BORDER);
                 mc.setHorizontalAlignment(Element.ALIGN_CENTER);
-                mc.setPaddingTop(4f);
+                mc.setPaddingTop(2f);
                 markTable.addCell(mc);
-                shellCell.addElement(markTable);
+                document.add(markTable);
             }
-
-            shell.addCell(shellCell);
-            document.add(shell);
 
             document.close();
             return baos.toByteArray();
@@ -497,9 +486,9 @@ public class InvoicePdfService {
         PdfPCell cell = new PdfPCell();
         cell.setBorder(Rectangle.NO_BORDER);
         cell.setBackgroundColor(brandDark);
-        cell.setPadding(18f);
-        cell.setPaddingTop(22f);
-        cell.setPaddingBottom(22f);
+        cell.setPadding(14f);
+        cell.setPaddingTop(14f);
+        cell.setPaddingBottom(14f);
         cell.addElement(new Paragraph(brandName, whiteBrand));
         cell.addElement(new Paragraph(branchName, whiteSmall));
         cell.addElement(new Paragraph(tagline, whiteTag));
@@ -620,8 +609,8 @@ public class InvoicePdfService {
         PdfPCell cell = new PdfPCell();
         cell.setBorder(Rectangle.NO_BORDER);
         cell.setBackgroundColor(SURFACE);
-        cell.setPadding(10f);
-        cell.setPaddingRight(12f);
+        cell.setPadding(7f);
+        cell.setPaddingRight(8f);
         cell.setBorderWidthBottom(0.6f);
         cell.setBorderColorBottom(RULE);
         return cell;
@@ -642,9 +631,9 @@ public class InvoicePdfService {
         PdfPCell cell = new PdfPCell(new Phrase(text, font));
         cell.setBackgroundColor(bg);
         cell.setBorder(Rectangle.NO_BORDER);
-        cell.setPadding(7f);
-        cell.setPaddingTop(8f);
-        cell.setPaddingBottom(8f);
+        cell.setPadding(5f);
+        cell.setPaddingTop(6f);
+        cell.setPaddingBottom(6f);
         cell.setHorizontalAlignment(align);
         return cell;
     }
@@ -655,7 +644,7 @@ public class InvoicePdfService {
         cell.setBorder(Rectangle.NO_BORDER);
         cell.setBorderWidthBottom(0.5f);
         cell.setBorderColorBottom(RULE);
-        cell.setPadding(7f);
+        cell.setPadding(5f);
         cell.setHorizontalAlignment(align);
         return cell;
     }
