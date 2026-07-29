@@ -12,9 +12,15 @@ public final class PageUtils {
 
     private PageUtils() {}
 
-    public static int normalizeSize(int size) {
-        return ALLOWED_PAGE_SIZES.contains(size) ? size : DEFAULT_PAGE_SIZE;
-    }
+  public static int normalizeSize(int size) {
+    return ALLOWED_PAGE_SIZES.contains(size) ? size : DEFAULT_PAGE_SIZE;
+  }
+
+  /** For pipeline/kanban views that need a larger single fetch cap. */
+  public static int normalizeSize(int size, int maxAllowed) {
+    if (size > 0 && size <= maxAllowed) return size;
+    return normalizeSize(size);
+  }
 
     public static int normalizePage(int page) {
         return Math.max(page, 0);

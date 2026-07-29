@@ -40,7 +40,7 @@ public class SalesController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate createdFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate createdTo,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "20") int size) {
         SalesLeadListFilter filter = SalesLeadListFilter.builder()
                 .stage(stage).leadType(leadType).source(source)
                 .assignedRepId(assignedRepId).assignedRepIds(assignedRepIds)
@@ -52,7 +52,7 @@ public class SalesController {
 
     @GetMapping("/leads/pipeline")
     public ApiResponse<List<SalesLeadResponse>> pipelineBoard() {
-        return ApiResponse.ok(leadService.list(SalesLeadListFilter.builder().page(0).size(500).build()).getContent());
+        return ApiResponse.ok(leadService.listPipelineBoard());
     }
 
     @PostMapping("/leads")

@@ -123,6 +123,25 @@ public class SalesLeadService {
     }
 
     @Transactional(readOnly = true)
+    public List<SalesLeadResponse> listPipelineBoard() {
+        SecurityUtils.assertSalesAccess();
+        List<SalesLeadResponse> all = new ArrayList<>();
+        int page = 0;
+        final int batchSize = 100;
+        final int maxRows = 500;
+        while (all.size() < maxRows) {
+            PageResponse<SalesLeadResponse> batch = list(
+                    SalesLeadListFilter.builder().page(page).size(batchSize).build());
+            all.addAll(batch.getContent());
+            if (batch.getContent().isEmpty() || page + 1 >= batch.getTotalPages()) {
+                break;
+            }
+            page++;
+        }
+        return all.size() > maxRows ? all.subList(0, maxRows) : all;
+    }
+
+    @Transactional(readOnly = true)
     public List<SalesLeadResponse> listByStage(LeadStage stage) {
         SecurityUtils.assertSalesAccess();
         SalesLeadListFilter filter = SalesLeadListFilter.builder().stage(stage).page(0).size(500).build();
