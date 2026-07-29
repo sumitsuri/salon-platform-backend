@@ -31,6 +31,8 @@ import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -338,13 +340,10 @@ public class BookingService {
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
 
-        List<BookingResponse> content = result.getContent().stream()
-                .map(b -> {
-                    Branch branch = branchRepository.findById(b.getBranchId()).orElse(null);
-                    Customer customer = customerRepository.findById(b.getCustomerId()).orElse(null);
-                    return toResponse(b, branch, customer);
-                })
-                .collect(Collectors.toList());
+        List<Booking> bookings = result.getContent();
+        List<BookingResponse> content = bookings.isEmpty()
+                ? List.of()
+                : toListResponses(bookings);
 
         return PageResponse.<BookingResponse>builder()
                 .content(content)
@@ -352,6 +351,129 @@ public class BookingService {
                 .size(result.getSize())
                 .totalElements(result.getTotalElements())
                 .totalPages(result.getTotalPages())
+                .build();
+    }
+
+    /** Fast path for tables — batch-load relations; skip live GST recompute on every row. */
+    private List<BookingResponse> toListResponses(List<Booking> bookings) {
+        List<UUID> bookingIds = bookings.stream().map(Booking::getId).toList();
+
+        Set<UUID> branchIds = bookings.stream().map(Booking::getBranchId).collect(Collectors.toSet());
+        Set<UUID> customerIds = bookings.stream().map(Booking::getCustomerId).collect(Collectors.toSet());
+
+        Map<UUID, Branch> branchMap = branchRepository.findAllById(branchIds).stream()
+                .collect(Collectors.toMap(Branch::getId, b -> b));
+        Map<UUID, Customer> customerMap = customerRepository.findAllById(customerIds).stream()
+                .collect(Collectors.toMap(Customer::getId, c -> c));
+
+        Map<UUID, List<BookingLineItem>> linesByBooking = lineItemRepository.findByBookingIdIn(bookingIds).stream()
+                .collect(Collectors.groupingBy(BookingLineItem::getBookingId));
+
+        Set<UUID> staffIds = linesByBooking.values().stream()
+                .flatMap(List::stream)
+                .map(BookingLineItem::getStaffId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<UUID, String> staffNames = staffIds.isEmpty()
+                ? Map.of()
+                : staffRepository.findAllById(staffIds).stream()
+                        .collect(Collectors.toMap(Staff::getId, Staff::getName));
+
+        Map<UUID, Invoice> invoiceByBooking = invoiceRepository.findByBookingIdIn(bookingIds).stream()
+                .collect(Collectors.toMap(Invoice::getBookingId, inv -> inv, (a, b) -> a));
+
+        return bookings.stream()
+                .map(b -> toListResponse(
+                        b,
+                        branchMap.get(b.getBranchId()),
+                        customerMap.get(b.getCustomerId()),
+                        linesByBooking.getOrDefault(b.getId(), List.of()),
+                        staffNames,
+                        invoiceByBooking.get(b.getId())))
+                .collect(Collectors.toList());
+    }
+
+    private BookingResponse toListResponse(
+            Booking booking,
+            Branch branch,
+            Customer customer,
+            List<BookingLineItem> lines,
+            Map<UUID, String> staffNames,
+            Invoice invoice) {
+        List<BookingLineResponse> lineResponses = lines.stream()
+                .map(line -> BookingLineResponse.builder()
+                        .id(line.getId())
+                        .branchServiceId(line.getBranchServiceId())
+                        .serviceId(line.getServiceId())
+                        .staffId(line.getStaffId())
+                        .staffName(line.getStaffId() != null ? staffNames.get(line.getStaffId()) : null)
+                        .serviceName(line.getServiceName())
+                        .unitPrice(line.getUnitPrice())
+                        .quantity(line.getQuantity())
+                        .gstRate(line.getGstRate())
+                        .lineDiscountType(line.getLineDiscountType())
+                        .lineDiscountValue(line.getLineDiscountValue())
+                        .estimatedDurationMinutes(line.getEstimatedDurationMinutes())
+                        .actualDurationMinutes(line.getActualDurationMinutes())
+                        .build())
+                .collect(Collectors.toList());
+
+        BillPreviewResponse billPreview = invoice != null
+                ? billPreviewFromInvoice(invoice)
+                : estimateBillPreviewFromLines(lines);
+
+        return BookingResponse.builder()
+                .id(booking.getId())
+                .branchId(booking.getBranchId())
+                .branchName(branch != null ? branch.getName() : null)
+                .customerId(booking.getCustomerId())
+                .customerName(customer != null ? customer.getName() : null)
+                .customerPhone(customer != null ? customer.getPhone() : null)
+                .status(booking.getStatus())
+                .lines(lineResponses)
+                .billDiscountType(booking.getBillDiscountType())
+                .billDiscountValue(booking.getBillDiscountValue())
+                .billDiscountNote(booking.getBillDiscountNote())
+                .couponId(booking.getCouponId())
+                .offerId(booking.getOfferId())
+                .membershipSubscriptionId(booking.getMembershipSubscriptionId())
+                .notes(booking.getNotes())
+                .billPreview(billPreview)
+                .createdAt(booking.getCreatedAt())
+                .serviceStartedAt(booking.getServiceStartedAt())
+                .estimatedEndAt(booking.getEstimatedEndAt())
+                .completedAt(booking.getCompletedAt())
+                .actualDurationMinutes(booking.getActualDurationMinutes())
+                .invoiceId(invoice != null ? invoice.getId() : null)
+                .build();
+    }
+
+    private BillPreviewResponse billPreviewFromInvoice(Invoice invoice) {
+        return BillPreviewResponse.builder()
+                .subtotal(invoice.getSubtotal())
+                .membershipDiscountAmount(invoice.getMembershipDiscountAmount())
+                .promoDiscountAmount(invoice.getPromoDiscountAmount())
+                .discountAmount(invoice.getDiscountAmount())
+                .taxableAmount(invoice.getTaxableAmount())
+                .cgstAmount(invoice.getCgstAmount())
+                .sgstAmount(invoice.getSgstAmount())
+                .grandTotal(invoice.getGrandTotal())
+                .membershipLabel(invoice.getMembershipLabel())
+                .promoLabel(invoice.getPromoLabel())
+                .build();
+    }
+
+    private BillPreviewResponse estimateBillPreviewFromLines(List<BookingLineItem> lines) {
+        if (lines.isEmpty()) {
+            return null;
+        }
+        BigDecimal subtotal = lines.stream()
+                .map(line -> line.getUnitPrice().multiply(
+                        BigDecimal.valueOf(line.getQuantity() != null ? line.getQuantity() : 1)))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return BillPreviewResponse.builder()
+                .subtotal(subtotal)
+                .grandTotal(subtotal)
                 .build();
     }
 

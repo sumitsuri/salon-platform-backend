@@ -20,7 +20,11 @@ public final class BookingSpecifications {
     private BookingSpecifications() {}
 
     public static Specification<Booking> fromFilter(UUID tenantId, BookingListFilter filter) {
-        Specification<Booking> spec = (root, query, cb) -> cb.equal(root.get("tenantId"), tenantId);
+        // Platform super-admin has no tenant on the JWT; omit tenant scope so brand-wide lists work.
+        Specification<Booking> spec = (root, query, cb) -> cb.conjunction();
+        if (tenantId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("tenantId"), tenantId));
+        }
 
         if (filter.getBranchId() != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("branchId"), filter.getBranchId()));

@@ -6,12 +6,14 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
     Optional<Invoice> findByBookingId(UUID bookingId);
+    List<Invoice> findByBookingIdIn(Collection<UUID> bookingIds);
     List<Invoice> findByTenantIdOrderByIssuedAtDesc(UUID tenantId);
 
     @Query("SELECT i FROM Invoice i WHERE i.tenantId = :tenantId AND i.issuedAt >= :start AND i.issuedAt < :end")
