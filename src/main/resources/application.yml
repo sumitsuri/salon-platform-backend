@@ -143,6 +143,11 @@ app:
         region-group: South India
         sort-order: 33
 
+  reviews:
+    token-secret: ${REVIEWS_TOKEN_SECRET:salon-platform-jwt-secret-change-in-production-min-256-bits-long-key-here}
+    token-expiry-days: 7
+    public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:http://localhost:3000}
+
 springdoc:
   api-docs:
     path: /api-docs

@@ -37,4 +37,6 @@ public class BookingResponse {
     private Integer actualDurationMinutes;
     private UUID invoiceId;
     private Boolean receiptQueued;
+    private String reviewInvitationUrl;
+    private String reviewInvitationToken;
 }

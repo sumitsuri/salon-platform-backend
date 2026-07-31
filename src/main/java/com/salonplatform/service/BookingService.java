@@ -58,6 +58,7 @@ public class BookingService {
     private final BillReceiptNotificationService billReceiptNotificationService;
     private final PromoResolutionService promoResolutionService;
     private final InvoicePdfService invoicePdfService;
+    private final com.salonplatform.reviews.domain.port.ReviewInvitationPort reviewInvitationPort;
 
     @Transactional
     public BookingResponse create(CreateBookingRequest request) {
@@ -675,6 +676,9 @@ public class BookingService {
         BookingResponse response = toResponse(booking, branch, customer);
         response.setInvoiceId(invoice.getId());
         response.setReceiptQueued(true);
+        var invitation = reviewInvitationPort.createAfterPayment(invoice, branch, customer);
+        response.setReviewInvitationUrl(invitation.getReviewUrl());
+        response.setReviewInvitationToken(invitation.getToken());
         return response;
     }
 

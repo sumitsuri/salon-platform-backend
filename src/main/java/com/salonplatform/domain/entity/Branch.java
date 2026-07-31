@@ -58,6 +58,9 @@ public class Branch {
     @Builder.Default
     private BranchStatus status = BranchStatus.ACTIVE;
 
+    /** Google Business review URL used after 4–5★ internal ratings. */
+    private String googleReviewUrl;
+
     @CreationTimestamp
     private Instant createdAt;
 

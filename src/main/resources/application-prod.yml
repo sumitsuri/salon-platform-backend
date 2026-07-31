@@ -43,3 +43,7 @@ app:
     key-prefix: ${INVOICE_S3_PREFIX:invoices/}
     local-dir: ${INVOICE_PDF_DIR:data/invoice-pdfs}
     aws-region: ${AWS_REGION:ap-south-1}
+  reviews:
+    token-secret: ${JWT_SECRET}
+    token-expiry-days: 7
+    public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:https://app.antrahq.com}
