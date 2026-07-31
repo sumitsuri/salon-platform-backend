@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class SubmitPublicReviewRequest {
@@ -16,6 +17,7 @@ public class SubmitPublicReviewRequest {
     @Min(1)
     @Max(5)
     private Integer overallRating;
+    private Map<String, Integer> categoryRatings;
     private List<String> improvementTags;
     private String comment;
     private boolean googleReviewRedirected;

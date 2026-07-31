@@ -38,6 +38,16 @@ public class Review {
     @Column(nullable = false)
     private int overallRating;
 
+    private Integer serviceRating;
+
+    private Integer ambienceRating;
+
+    private Integer staffRating;
+
+    private Integer cleanlinessRating;
+
+    private Integer valueRating;
+
     @Column(length = 512)
     private String improvementTags;
 

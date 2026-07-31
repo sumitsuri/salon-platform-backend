@@ -17,6 +17,7 @@ public class GuestVoiceSummaryDto {
     private long detractorsCount;
     private Map<Integer, Long> ratingDistribution;
     private Map<String, Long> improvementTagCounts;
+    private Map<String, Double> categoryAverageRatings;
     private List<RecoveryItemDto> openRecoveries;
 
     @Data

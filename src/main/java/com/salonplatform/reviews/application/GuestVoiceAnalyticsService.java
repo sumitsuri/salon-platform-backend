@@ -4,6 +4,7 @@ import com.salonplatform.reviews.domain.entity.Review;
 import com.salonplatform.reviews.domain.entity.ReviewRecovery;
 import com.salonplatform.reviews.domain.enums.ImprovementTag;
 import com.salonplatform.reviews.domain.enums.RecoveryStatus;
+import com.salonplatform.reviews.domain.enums.ReviewCategory;
 import com.salonplatform.reviews.domain.repository.ReviewRecoveryRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRepository;
 import com.salonplatform.reviews.dto.GuestVoiceSummaryDto;
@@ -41,6 +42,12 @@ public class GuestVoiceAnalyticsService {
         for (ImprovementTag tag : ImprovementTag.values()) {
             tagCounts.put(tag.name(), 0L);
         }
+        Map<String, Double> categorySums = new LinkedHashMap<>();
+        Map<String, Long> categoryCounts = new LinkedHashMap<>();
+        for (ReviewCategory category : ReviewCategory.values()) {
+            categorySums.put(category.name(), 0.0);
+            categoryCounts.put(category.name(), 0L);
+        }
 
         long promoters = 0;
         long detractors = 0;
@@ -55,6 +62,18 @@ public class GuestVoiceAnalyticsService {
                 detractors++;
             }
             parseTags(review.getImprovementTags()).forEach(tag -> tagCounts.merge(tag.name(), 1L, Long::sum));
+            accumulateCategory(categorySums, categoryCounts, ReviewCategory.SERVICE.name(), review.getServiceRating());
+            accumulateCategory(categorySums, categoryCounts, ReviewCategory.AMBIENCE.name(), review.getAmbienceRating());
+            accumulateCategory(categorySums, categoryCounts, ReviewCategory.STAFF.name(), review.getStaffRating());
+            accumulateCategory(categorySums, categoryCounts, ReviewCategory.CLEANLINESS.name(), review.getCleanlinessRating());
+            accumulateCategory(categorySums, categoryCounts, ReviewCategory.VALUE_FOR_MONEY.name(), review.getValueRating());
+        }
+
+        Map<String, Double> categoryAverageRatings = new LinkedHashMap<>();
+        for (ReviewCategory category : ReviewCategory.values()) {
+            String key = category.name();
+            long count = categoryCounts.getOrDefault(key, 0L);
+            categoryAverageRatings.put(key, count == 0 ? 0 : categorySums.get(key) / count);
         }
 
         List<ReviewRecovery> recoveries = branchIds == null || branchIds.isEmpty()
@@ -79,8 +98,21 @@ public class GuestVoiceAnalyticsService {
                 .detractorsCount(detractors)
                 .ratingDistribution(distribution)
                 .improvementTagCounts(tagCounts)
+                .categoryAverageRatings(categoryAverageRatings)
                 .openRecoveries(openRecoveries)
                 .build();
+    }
+
+    private static void accumulateCategory(
+            Map<String, Double> sums,
+            Map<String, Long> counts,
+            String key,
+            Integer rating) {
+        if (rating == null) {
+            return;
+        }
+        sums.merge(key, rating.doubleValue(), Double::sum);
+        counts.merge(key, 1L, Long::sum);
     }
 
     private static List<ImprovementTag> parseTags(String raw) {

@@ -5,12 +5,14 @@ import com.salonplatform.reviews.domain.entity.Review;
 import com.salonplatform.reviews.domain.entity.ReviewInvitation;
 import com.salonplatform.reviews.domain.entity.ReviewRecovery;
 import com.salonplatform.reviews.domain.enums.ImprovementTag;
+import com.salonplatform.reviews.domain.enums.ReviewCategory;
 import com.salonplatform.reviews.domain.enums.RecoveryStatus;
 import com.salonplatform.reviews.domain.enums.ReviewInvitationStatus;
 import com.salonplatform.reviews.domain.repository.ReviewInvitationRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRecoveryRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRepository;
 import com.salonplatform.reviews.dto.PublicReviewContextDto;
+import com.salonplatform.reviews.dto.ReviewCategoryOptionDto;
 import com.salonplatform.reviews.dto.SubmitPublicReviewRequest;
 import com.salonplatform.reviews.dto.SubmitPublicReviewResponse;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -49,6 +53,7 @@ public class ReviewSubmissionService {
                 .submittedRating(existing != null ? existing.getOverallRating() : null)
                 .googleReviewUrl(invitation.getGoogleReviewUrl())
                 .improvementTagOptions(Arrays.stream(ImprovementTag.values()).map(Enum::name).toList())
+                .categoryOptions(categoryOptions())
                 .build();
     }
 
@@ -67,6 +72,7 @@ public class ReviewSubmissionService {
         }
 
         int rating = request.getOverallRating();
+        Map<String, Integer> categoryRatings = validateCategoryRatings(request.getCategoryRatings());
         List<ImprovementTag> tags = parseTags(request.getImprovementTags());
         String comment = sanitizeComment(request.getComment());
 
@@ -76,6 +82,11 @@ public class ReviewSubmissionService {
                 .branchId(invitation.getBranchId())
                 .visitId(invitation.getVisitId())
                 .overallRating(rating)
+                .serviceRating(categoryRatings.get(ReviewCategory.SERVICE.name()))
+                .ambienceRating(categoryRatings.get(ReviewCategory.AMBIENCE.name()))
+                .staffRating(categoryRatings.get(ReviewCategory.STAFF.name()))
+                .cleanlinessRating(categoryRatings.get(ReviewCategory.CLEANLINESS.name()))
+                .valueRating(categoryRatings.get(ReviewCategory.VALUE_FOR_MONEY.name()))
                 .improvementTags(serializeTags(tags))
                 .comment(comment)
                 .googleReviewRedirected(request.isGoogleReviewRedirected())
@@ -118,6 +129,37 @@ public class ReviewSubmissionService {
             invitation.setStatus(ReviewInvitationStatus.EXPIRED);
             invitationRepository.save(invitation);
         }
+    }
+
+    private static List<ReviewCategoryOptionDto> categoryOptions() {
+        return Arrays.stream(ReviewCategory.values())
+                .map(category -> ReviewCategoryOptionDto.builder()
+                        .id(category.name())
+                        .label(categoryLabel(category))
+                        .build())
+                .toList();
+    }
+
+    private static String categoryLabel(ReviewCategory category) {
+        return switch (category) {
+            case SERVICE -> "Service quality";
+            case AMBIENCE -> "Ambience";
+            case STAFF -> "Staff attitude";
+            case CLEANLINESS -> "Cleanliness";
+            case VALUE_FOR_MONEY -> "Value for money";
+        };
+    }
+
+    private static Map<String, Integer> validateCategoryRatings(Map<String, Integer> raw) {
+        Map<String, Integer> validated = new LinkedHashMap<>();
+        for (ReviewCategory category : ReviewCategory.values()) {
+            Integer value = raw != null ? raw.get(category.name()) : null;
+            if (value == null || value < 1 || value > 5) {
+                throw new BadRequestException("Please rate " + categoryLabel(category).toLowerCase());
+            }
+            validated.put(category.name(), value);
+        }
+        return validated;
     }
 
     private static List<ImprovementTag> parseTags(List<String> raw) {

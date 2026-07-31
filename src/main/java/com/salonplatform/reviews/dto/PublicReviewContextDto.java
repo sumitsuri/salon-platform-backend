@@ -15,4 +15,5 @@ public class PublicReviewContextDto {
     private Integer submittedRating;
     private String googleReviewUrl;
     private List<String> improvementTagOptions;
+    private List<ReviewCategoryOptionDto> categoryOptions;
 }

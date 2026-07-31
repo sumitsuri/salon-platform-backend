@@ -44,12 +44,22 @@ public class ReviewsSchemaPatch implements ApplicationRunner {
                         branch_id UUID NOT NULL,
                         visit_id UUID NOT NULL UNIQUE,
                         overall_rating INT NOT NULL,
+                        service_rating INT,
+                        ambience_rating INT,
+                        staff_rating INT,
+                        cleanliness_rating INT,
+                        value_rating INT,
                         improvement_tags VARCHAR(512),
                         comment VARCHAR(2000),
                         google_review_redirected BOOLEAN DEFAULT FALSE,
                         submitted_at TIMESTAMP
                     )
                     """);
+            jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS service_rating INT");
+            jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS ambience_rating INT");
+            jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS staff_rating INT");
+            jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS cleanliness_rating INT");
+            jdbcTemplate.execute("ALTER TABLE reviews ADD COLUMN IF NOT EXISTS value_rating INT");
             jdbcTemplate.execute("""
                     CREATE TABLE IF NOT EXISTS review_recoveries (
                         id UUID PRIMARY KEY,
