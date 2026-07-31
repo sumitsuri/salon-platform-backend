@@ -1,12 +1,15 @@
 package com.salonplatform.reviews.application;
 
 import com.salonplatform.reviews.domain.entity.Review;
+import com.salonplatform.reviews.domain.entity.ReviewInvitation;
 import com.salonplatform.reviews.domain.entity.ReviewRecovery;
 import com.salonplatform.reviews.domain.enums.ImprovementTag;
 import com.salonplatform.reviews.domain.enums.RecoveryStatus;
 import com.salonplatform.reviews.domain.enums.ReviewCategory;
+import com.salonplatform.reviews.domain.repository.ReviewInvitationRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRecoveryRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRepository;
+import com.salonplatform.reviews.dto.GuestVoiceReviewItemDto;
 import com.salonplatform.reviews.dto.GuestVoiceSummaryDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +25,7 @@ public class GuestVoiceAnalyticsService {
 
     private final ReviewRepository reviewRepository;
     private final ReviewRecoveryRepository recoveryRepository;
+    private final ReviewInvitationRepository invitationRepository;
 
     @Transactional(readOnly = true)
     public GuestVoiceSummaryDto summarize(
@@ -76,19 +80,63 @@ public class GuestVoiceAnalyticsService {
             categoryAverageRatings.put(key, count == 0 ? 0 : categorySums.get(key) / count);
         }
 
+        Map<UUID, ReviewInvitation> invitationsById = loadInvitations(reviews);
+        List<GuestVoiceReviewItemDto> reviewItems = reviews.stream()
+                .sorted(Comparator.comparing(Review::getSubmittedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(review -> toReviewItem(review, invitationsById.get(review.getInvitationId())))
+                .toList();
+
         List<ReviewRecovery> recoveries = branchIds == null || branchIds.isEmpty()
                 ? recoveryRepository.findOpenByTenant(tenantId, RecoveryStatus.OPEN)
                 : recoveryRepository.findOpenByTenantAndBranches(tenantId, branchIds, RecoveryStatus.OPEN);
 
+        Map<UUID, Review> reviewsById = reviews.stream()
+                .collect(Collectors.toMap(Review::getId, r -> r, (a, b) -> a));
+        List<UUID> missingReviewIds = recoveries.stream()
+                .map(ReviewRecovery::getReviewId)
+                .filter(id -> !reviewsById.containsKey(id))
+                .distinct()
+                .toList();
+        if (!missingReviewIds.isEmpty()) {
+            reviewRepository.findAllById(missingReviewIds).forEach(r -> reviewsById.put(r.getId(), r));
+        }
+
+        Set<UUID> visitIds = new HashSet<>();
+        recoveries.forEach(rr -> visitIds.add(rr.getVisitId()));
+        reviewsById.values().forEach(r -> visitIds.add(r.getVisitId()));
+        Map<UUID, ReviewInvitation> invitationsByVisit = new HashMap<>();
+        for (Review review : reviews) {
+            ReviewInvitation invitation = invitationsById.get(review.getInvitationId());
+            if (invitation != null) {
+                invitationsByVisit.put(invitation.getVisitId(), invitation);
+            }
+        }
+        for (ReviewRecovery recovery : recoveries) {
+            if (!invitationsByVisit.containsKey(recovery.getVisitId())) {
+                invitationRepository.findByVisitId(recovery.getVisitId())
+                        .ifPresent(inv -> invitationsByVisit.put(inv.getVisitId(), inv));
+            }
+        }
+
         List<GuestVoiceSummaryDto.RecoveryItemDto> openRecoveries = recoveries.stream()
-                .map(rr -> GuestVoiceSummaryDto.RecoveryItemDto.builder()
-                        .recoveryId(rr.getId())
-                        .visitId(rr.getVisitId())
-                        .branchId(rr.getBranchId())
-                        .overallRating(rr.getOverallRating())
-                        .status(rr.getStatus().name())
-                        .createdAt(rr.getCreatedAt())
-                        .build())
+                .map(rr -> {
+                    Review linked = reviewsById.get(rr.getReviewId());
+                    ReviewInvitation invitation = invitationsByVisit.get(rr.getVisitId());
+                    return GuestVoiceSummaryDto.RecoveryItemDto.builder()
+                            .recoveryId(rr.getId())
+                            .visitId(rr.getVisitId())
+                            .branchId(rr.getBranchId())
+                            .branchName(invitation != null ? invitation.getBranchName() : null)
+                            .customerFirstName(invitation != null ? invitation.getCustomerFirstName() : null)
+                            .overallRating(rr.getOverallRating())
+                            .status(rr.getStatus().name())
+                            .improvementTags(linked != null
+                                    ? parseTags(linked.getImprovementTags()).stream().map(Enum::name).toList()
+                                    : List.of())
+                            .comment(linked != null ? linked.getComment() : null)
+                            .createdAt(rr.getCreatedAt())
+                            .build();
+                })
                 .toList();
 
         return GuestVoiceSummaryDto.builder()
@@ -99,8 +147,46 @@ public class GuestVoiceAnalyticsService {
                 .ratingDistribution(distribution)
                 .improvementTagCounts(tagCounts)
                 .categoryAverageRatings(categoryAverageRatings)
+                .reviews(reviewItems)
                 .openRecoveries(openRecoveries)
                 .build();
+    }
+
+    private Map<UUID, ReviewInvitation> loadInvitations(List<Review> reviews) {
+        if (reviews.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> invitationIds = reviews.stream().map(Review::getInvitationId).distinct().toList();
+        return invitationRepository.findAllById(invitationIds).stream()
+                .collect(Collectors.toMap(ReviewInvitation::getId, i -> i));
+    }
+
+    private static GuestVoiceReviewItemDto toReviewItem(Review review, ReviewInvitation invitation) {
+        Map<String, Integer> categoryRatings = new LinkedHashMap<>();
+        putCategoryRating(categoryRatings, ReviewCategory.SERVICE.name(), review.getServiceRating());
+        putCategoryRating(categoryRatings, ReviewCategory.AMBIENCE.name(), review.getAmbienceRating());
+        putCategoryRating(categoryRatings, ReviewCategory.STAFF.name(), review.getStaffRating());
+        putCategoryRating(categoryRatings, ReviewCategory.CLEANLINESS.name(), review.getCleanlinessRating());
+        putCategoryRating(categoryRatings, ReviewCategory.VALUE_FOR_MONEY.name(), review.getValueRating());
+
+        return GuestVoiceReviewItemDto.builder()
+                .reviewId(review.getId())
+                .visitId(review.getVisitId())
+                .branchId(review.getBranchId())
+                .branchName(invitation != null ? invitation.getBranchName() : null)
+                .customerFirstName(invitation != null ? invitation.getCustomerFirstName() : "Guest")
+                .overallRating(review.getOverallRating())
+                .categoryRatings(categoryRatings)
+                .improvementTags(parseTags(review.getImprovementTags()).stream().map(Enum::name).toList())
+                .comment(review.getComment())
+                .submittedAt(review.getSubmittedAt())
+                .build();
+    }
+
+    private static void putCategoryRating(Map<String, Integer> map, String key, Integer value) {
+        if (value != null) {
+            map.put(key, value);
+        }
     }
 
     private static void accumulateCategory(
