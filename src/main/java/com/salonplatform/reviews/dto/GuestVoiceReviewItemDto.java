@@ -21,4 +21,5 @@ public class GuestVoiceReviewItemDto {
     private List<String> improvementTags;
     private String comment;
     private Instant submittedAt;
+    private boolean googleReviewRedirected;
 }

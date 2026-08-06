@@ -5,6 +5,7 @@ import com.salonplatform.dto.analytics.*;
 import com.salonplatform.service.AnalyticsService;
 import com.salonplatform.service.AttendanceAnalyticsService;
 import com.salonplatform.service.BenchmarkService;
+import com.salonplatform.service.LocalSpotlightService;
 import com.salonplatform.service.PlAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -22,6 +23,7 @@ public class AnalyticsController {
     private final AttendanceAnalyticsService attendanceAnalyticsService;
     private final PlAnalyticsService plAnalyticsService;
     private final BenchmarkService benchmarkService;
+    private final LocalSpotlightService localSpotlightService;
 
     @GetMapping("/dashboard")
     public ApiResponse<DashboardResponse> dashboard(
@@ -130,5 +132,20 @@ public class AnalyticsController {
     public ApiResponse<Void> deleteLocalCompetitor(@PathVariable java.util.UUID id) {
         benchmarkService.deleteLocalCompetitor(id);
         return ApiResponse.ok(null);
+    }
+
+    @GetMapping("/local-spotlight")
+    public ApiResponse<LocalSpotlightResponse> localSpotlight(
+            @RequestParam(required = false) List<java.util.UUID> branchIds,
+            @RequestParam(defaultValue = "2") int radiusKm,
+            @RequestParam(defaultValue = "false") boolean refresh) {
+        return ApiResponse.ok(localSpotlightService.getLocalSpotlight(branchIds, radiusKm, refresh));
+    }
+
+    @PostMapping("/local-spotlight/sync")
+    public ApiResponse<LocalSpotlightSyncResponse> syncLocalSpotlight(
+            @RequestParam(defaultValue = "2") int radiusKm,
+            @RequestParam(defaultValue = "true") boolean force) {
+        return ApiResponse.ok(localSpotlightService.syncFromGoogle(radiusKm, force));
     }
 }

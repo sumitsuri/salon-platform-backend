@@ -45,6 +45,13 @@ public class BranchController {
         return ApiResponse.ok(branchService.update(id, request));
     }
 
+    @PatchMapping("/{id}/digital-presence")
+    public ApiResponse<BranchResponse> updateDigitalPresence(
+            @PathVariable UUID id,
+            @RequestBody com.salonplatform.dto.branch.UpdateBranchDigitalPresenceRequest request) {
+        return ApiResponse.ok(branchService.updateDigitalPresence(id, request));
+    }
+
     @PatchMapping("/{id}/geofence")
     public ApiResponse<BranchResponse> updateGeofence(
             @PathVariable UUID id,

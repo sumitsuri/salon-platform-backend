@@ -2,6 +2,7 @@ package com.salonplatform.service;
 
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.User;
+import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.UserRepository;
@@ -46,6 +47,7 @@ public class BranchManagementService {
                 .closeTime(request.getCloseTime())
                 .monthlySalesTarget(request.getMonthlySalesTarget())
                 .status(request.getStatus())
+                .businessType(request.getBusinessType() != null ? request.getBusinessType() : BranchBusinessType.SALON)
                 .build());
         return toResponse(branch);
     }
@@ -83,6 +85,38 @@ public class BranchManagementService {
         if (request.getCloseTime() != null) branch.setCloseTime(request.getCloseTime());
         if (request.getMonthlySalesTarget() != null) branch.setMonthlySalesTarget(request.getMonthlySalesTarget());
         if (request.getStatus() != null) branch.setStatus(request.getStatus());
+        if (request.getBusinessType() != null && request.getBusinessType() != branch.getBusinessType()) {
+            branch.setBusinessType(request.getBusinessType());
+            branch.setGoogleSearchRankData(null);
+            branch.setDigitalPresenceUpdatedAt(null);
+        } else if (request.getBusinessType() != null) {
+            branch.setBusinessType(request.getBusinessType());
+        }
+
+        return toResponse(branchRepository.save(branch));
+    }
+
+    @Transactional
+    public BranchResponse updateDigitalPresence(UUID id, com.salonplatform.dto.branch.UpdateBranchDigitalPresenceRequest request) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Branch branch = requireBranch(tenantId, id);
+
+        if (request.getGooglePlaceId() != null) branch.setGooglePlaceId(blankToNull(request.getGooglePlaceId()));
+        if (request.getGoogleMapsUrl() != null) branch.setGoogleMapsUrl(blankToNull(request.getGoogleMapsUrl()));
+        if (request.getGoogleReviewUrl() != null) branch.setGoogleReviewUrl(blankToNull(request.getGoogleReviewUrl()));
+        if (request.getGoogleReviewAutoPublish() != null) branch.setGoogleReviewAutoPublish(request.getGoogleReviewAutoPublish());
+        if (request.getGoogleRating() != null) branch.setGoogleRating(request.getGoogleRating());
+        if (request.getGoogleReviewCount() != null) branch.setGoogleReviewCount(request.getGoogleReviewCount());
+        if (request.getGbpPhotoCount() != null) branch.setGbpPhotoCount(request.getGbpPhotoCount());
+        if (request.getGbpVideoCount() != null) branch.setGbpVideoCount(request.getGbpVideoCount());
+        if (request.getGbpHasPhone() != null) branch.setGbpHasPhone(request.getGbpHasPhone());
+        if (request.getGbpHasWebsite() != null) branch.setGbpHasWebsite(request.getGbpHasWebsite());
+        if (request.getGbpHasHours() != null) branch.setGbpHasHours(request.getGbpHasHours());
+        if (request.getGbpHasBookButton() != null) branch.setGbpHasBookButton(request.getGbpHasBookButton());
+        if (request.getGbpServicesListedCount() != null) branch.setGbpServicesListedCount(request.getGbpServicesListedCount());
+        if (request.getEstimatedSearchRank() != null) branch.setEstimatedSearchRank(request.getEstimatedSearchRank());
+        branch.setDigitalPresenceUpdatedAt(java.time.Instant.now());
 
         return toResponse(branchRepository.save(branch));
     }
@@ -142,7 +176,27 @@ public class BranchManagementService {
                 .attendanceGraceMinutes(b.getAttendanceGraceMinutes())
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
+                .businessType(b.getBusinessType())
+                .googleReviewUrl(b.getGoogleReviewUrl())
+                .googleReviewAutoPublish(b.getGoogleReviewAutoPublish())
+                .googlePlaceId(b.getGooglePlaceId())
+                .googleMapsUrl(b.getGoogleMapsUrl())
+                .googleRating(b.getGoogleRating())
+                .googleReviewCount(b.getGoogleReviewCount())
+                .gbpPhotoCount(b.getGbpPhotoCount())
+                .gbpVideoCount(b.getGbpVideoCount())
+                .gbpHasPhone(b.getGbpHasPhone())
+                .gbpHasWebsite(b.getGbpHasWebsite())
+                .gbpHasHours(b.getGbpHasHours())
+                .gbpHasBookButton(b.getGbpHasBookButton())
+                .gbpServicesListedCount(b.getGbpServicesListedCount())
+                .estimatedSearchRank(b.getEstimatedSearchRank())
+                .digitalPresenceUpdatedAt(b.getDigitalPresenceUpdatedAt())
                 .createdAt(b.getCreatedAt())
                 .build();
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 }

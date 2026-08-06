@@ -1,5 +1,6 @@
 package com.salonplatform.dto.branch;
 
+import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
 import lombok.Data;
 
@@ -17,4 +18,5 @@ public class UpdateBranchRequest {
     private String closeTime;
     private BigDecimal monthlySalesTarget;
     private BranchStatus status;
+    private BranchBusinessType businessType;
 }

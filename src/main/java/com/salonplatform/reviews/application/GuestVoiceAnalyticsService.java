@@ -180,6 +180,7 @@ public class GuestVoiceAnalyticsService {
                 .improvementTags(parseTags(review.getImprovementTags()).stream().map(Enum::name).toList())
                 .comment(review.getComment())
                 .submittedAt(review.getSubmittedAt())
+                .googleReviewRedirected(review.isGoogleReviewRedirected())
                 .build();
     }
 

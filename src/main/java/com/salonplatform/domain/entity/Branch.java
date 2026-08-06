@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -58,8 +59,40 @@ public class Branch {
     @Builder.Default
     private BranchStatus status = BranchStatus.ACTIVE;
 
+    /** Salon / spa positioning for Local Spotlight keyword and rival discovery. */
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private BranchBusinessType businessType = BranchBusinessType.SALON;
+
     /** Google Business review URL used after 4–5★ internal ratings. */
     private String googleReviewUrl;
+
+    /** When true, 4★+ internal ratings auto-open the Google review page for the guest. */
+    @Builder.Default
+    private Boolean googleReviewAutoPublish = true;
+
+    /** Google Maps / Business Profile identifiers and public metrics (manual or synced). */
+    private String googlePlaceId;
+    private String googleMapsUrl;
+    private Double googleRating;
+    private Integer googleReviewCount;
+    private Integer googleLowRatingReviewCount;
+    private Integer googleReviewsSampleSize;
+    private Integer gbpPhotoCount;
+    private Integer gbpVideoCount;
+    private Boolean gbpHasPhone;
+    private Boolean gbpHasWebsite;
+    private Boolean gbpHasHours;
+    private Boolean gbpHasBookButton;
+    private Integer gbpServicesListedCount;
+    /** Estimated local pack rank for primary locality keyword (1 = top). */
+    private Integer estimatedSearchRank;
+    /** Exact address from Google Business Profile when synced. */
+    private String googleFormattedAddress;
+    /** JSON array of keyword rank snapshots from last Google sync. */
+    @Column(columnDefinition = "TEXT")
+    private String googleSearchRankData;
+    private Instant digitalPresenceUpdatedAt;
 
     @CreationTimestamp
     private Instant createdAt;

@@ -1,5 +1,6 @@
 package com.salonplatform.dto.branch;
 
+import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
@@ -20,4 +21,5 @@ public class CreateBranchRequest {
     private String closeTime;
     private BigDecimal monthlySalesTarget;
     private BranchStatus status = BranchStatus.ACTIVE;
+    private BranchBusinessType businessType = BranchBusinessType.SALON;
 }

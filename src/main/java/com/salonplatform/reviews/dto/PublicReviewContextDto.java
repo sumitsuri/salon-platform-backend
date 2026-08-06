@@ -14,6 +14,8 @@ public class PublicReviewContextDto {
     private boolean alreadySubmitted;
     private Integer submittedRating;
     private String googleReviewUrl;
+    private boolean googleReviewAutoPublish;
+    private int googleAutoPublishMinRating;
     private List<String> improvementTagOptions;
     private List<ReviewCategoryOptionDto> categoryOptions;
 }

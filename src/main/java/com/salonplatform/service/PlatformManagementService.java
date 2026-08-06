@@ -3,6 +3,7 @@ package com.salonplatform.service;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.entity.User;
+import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
 import com.salonplatform.domain.enums.TenantStatus;
 import com.salonplatform.domain.enums.UserRole;
@@ -110,6 +111,7 @@ public class PlatformManagementService {
                 .closeTime(request.getCloseTime() != null ? request.getCloseTime() : "21:00")
                 .monthlySalesTarget(request.getMonthlySalesTarget())
                 .status(request.getStatus() != null ? request.getStatus() : BranchStatus.ACTIVE)
+                .businessType(request.getBusinessType() != null ? request.getBusinessType() : BranchBusinessType.SALON)
                 .build());
         return toBranchResponse(branch);
     }
@@ -227,6 +229,7 @@ public class PlatformManagementService {
                 .closeTime(b.getCloseTime())
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
+                .businessType(b.getBusinessType())
                 .createdAt(b.getCreatedAt())
                 .build();
     }

@@ -17,4 +17,10 @@ public class UpsertLocalCompetitorRequest {
     private BigDecimal retailAttachPercent;
     private BigDecimal netMarginPercent;
     private BigDecimal repeatVisitRate;
+    private Double googleRating;
+    private Integer googleReviewCount;
+    private Integer gbpPhotoCount;
+    private Integer gbpVideoCount;
+    private Boolean gbpHasPhone;
+    private Integer estimatedSearchRank;
 }

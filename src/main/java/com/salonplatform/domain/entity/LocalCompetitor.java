@@ -46,6 +46,21 @@ public class LocalCompetitor {
     private BigDecimal netMarginPercent;
     private BigDecimal repeatVisitRate;
 
+    /** Public Google / GBP metrics for digital presence comparison. */
+    private Double googleRating;
+    private Integer googleReviewCount;
+    private Integer googleLowRatingReviewCount;
+    private Integer googleReviewsSampleSize;
+    private Integer gbpPhotoCount;
+    private Integer gbpVideoCount;
+    private Boolean gbpHasPhone;
+    private Integer estimatedSearchRank;
+
+    private String googlePlaceId;
+    private String googleMapsUrl;
+    private Boolean googleAutoDiscovered;
+    private Instant googleSyncedAt;
+
     @Builder.Default
     private boolean active = true;
 

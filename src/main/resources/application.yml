@@ -147,6 +147,16 @@ app:
     token-secret: ${REVIEWS_TOKEN_SECRET:salon-platform-jwt-secret-change-in-production-min-256-bits-long-key-here}
     token-expiry-days: 7
     public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:http://localhost:3000}
+    google-auto-publish-enabled: true
+    google-auto-publish-min-rating: 4
+
+  google:
+    places:
+      api-key: ${GOOGLE_PLACES_API_KEY:}
+      pilot-branch-code: VAR
+      pilot-tenant-slug: demo-brand
+      sync-cache-hours: 24
+      default-radius-meters: 2000
 
 springdoc:
   api-docs:

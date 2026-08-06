@@ -89,6 +89,12 @@ public class BenchmarkResponse {
         private BigDecimal repeatVisitRate;
         private String address;
         private String notes;
+        private Double googleRating;
+        private Integer googleReviewCount;
+        private Integer gbpPhotoCount;
+        private Integer gbpVideoCount;
+        private Boolean gbpHasPhone;
+        private Integer estimatedSearchRank;
     }
 
     @Data

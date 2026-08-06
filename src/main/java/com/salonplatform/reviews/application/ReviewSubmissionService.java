@@ -1,6 +1,9 @@
 package com.salonplatform.reviews.application;
 
+import com.salonplatform.domain.entity.Branch;
+import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.exception.BadRequestException;
+import com.salonplatform.reviews.config.ReviewsProperties;
 import com.salonplatform.reviews.domain.entity.Review;
 import com.salonplatform.reviews.domain.entity.ReviewInvitation;
 import com.salonplatform.reviews.domain.entity.ReviewRecovery;
@@ -35,6 +38,8 @@ public class ReviewSubmissionService {
     private final ReviewInvitationRepository invitationRepository;
     private final ReviewRepository reviewRepository;
     private final ReviewRecoveryRepository recoveryRepository;
+    private final BranchRepository branchRepository;
+    private final ReviewsProperties reviewsProperties;
 
     @Transactional(readOnly = true)
     public PublicReviewContextDto getContext(String token) {
@@ -44,6 +49,7 @@ public class ReviewSubmissionService {
 
         expireIfNeeded(invitation);
         Review existing = reviewRepository.findByInvitationId(invitationId).orElse(null);
+        Branch branch = branchRepository.findById(invitation.getBranchId()).orElse(null);
 
         return PublicReviewContextDto.builder()
                 .branchName(invitation.getBranchName())
@@ -52,6 +58,8 @@ public class ReviewSubmissionService {
                 .alreadySubmitted(existing != null)
                 .submittedRating(existing != null ? existing.getOverallRating() : null)
                 .googleReviewUrl(invitation.getGoogleReviewUrl())
+                .googleReviewAutoPublish(isAutoPublishEnabled(branch))
+                .googleAutoPublishMinRating(reviewsProperties.getGoogleAutoPublishMinRating())
                 .improvementTagOptions(Arrays.stream(ImprovementTag.values()).map(Enum::name).toList())
                 .categoryOptions(categoryOptions())
                 .build();
@@ -76,6 +84,10 @@ public class ReviewSubmissionService {
         List<ImprovementTag> tags = parseTags(request.getImprovementTags());
         String comment = sanitizeComment(request.getComment());
 
+        Branch branch = branchRepository.findById(invitation.getBranchId()).orElse(null);
+        boolean autoPublish = shouldAutoPublishToGoogle(branch, invitation, rating);
+        boolean googleReviewRedirected = autoPublish || request.isGoogleReviewRedirected();
+
         Review review = reviewRepository.save(Review.builder()
                 .invitationId(invitationId)
                 .tenantId(invitation.getTenantId())
@@ -89,7 +101,7 @@ public class ReviewSubmissionService {
                 .valueRating(categoryRatings.get(ReviewCategory.VALUE_FOR_MONEY.name()))
                 .improvementTags(serializeTags(tags))
                 .comment(comment)
-                .googleReviewRedirected(request.isGoogleReviewRedirected())
+                .googleReviewRedirected(googleReviewRedirected)
                 .build());
 
         invitation.setStatus(ReviewInvitationStatus.SUBMITTED);
@@ -109,18 +121,42 @@ public class ReviewSubmissionService {
             recoveryCreated = true;
         }
 
-        boolean promptGoogle = rating >= 4 && invitation.getGoogleReviewUrl() != null;
-        String thankYou = rating >= 4
-                ? "Thank you for your feedback!"
-                : "Thank you — your feedback helps us improve.";
+        boolean promptGoogle = qualifiesForGoogleReview(rating) && invitation.getGoogleReviewUrl() != null;
+        String thankYou = autoPublish
+                ? "Thank you! Opening Google so you can publish your review."
+                : rating >= reviewsProperties.getGoogleAutoPublishMinRating()
+                        ? "Thank you for your feedback!"
+                        : "Thank you — your feedback helps us improve.";
 
         return SubmitPublicReviewResponse.builder()
                 .overallRating(rating)
                 .promptGoogleReview(promptGoogle)
                 .googleReviewUrl(promptGoogle ? invitation.getGoogleReviewUrl() : null)
+                .autoRedirectGoogle(autoPublish)
+                .googleReviewAutoPublished(autoPublish)
                 .recoveryCreated(recoveryCreated)
                 .thankYouMessage(thankYou)
                 .build();
+    }
+
+    private boolean qualifiesForGoogleReview(int rating) {
+        return rating >= reviewsProperties.getGoogleAutoPublishMinRating();
+    }
+
+    private boolean isAutoPublishEnabled(Branch branch) {
+        if (!reviewsProperties.isGoogleAutoPublishEnabled()) {
+            return false;
+        }
+        if (branch == null || branch.getGoogleReviewAutoPublish() == null) {
+            return true;
+        }
+        return branch.getGoogleReviewAutoPublish();
+    }
+
+    private boolean shouldAutoPublishToGoogle(Branch branch, ReviewInvitation invitation, int rating) {
+        return qualifiesForGoogleReview(rating)
+                && invitation.getGoogleReviewUrl() != null
+                && isAutoPublishEnabled(branch);
     }
 
     private void expireIfNeeded(ReviewInvitation invitation) {

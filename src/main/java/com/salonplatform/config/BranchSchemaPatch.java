@@ -21,6 +21,11 @@ public class BranchSchemaPatch implements ApplicationRunner {
         try {
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS monthly_sales_target NUMERIC(19, 2)");
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS google_review_url VARCHAR(512)");
+            jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS business_type VARCHAR(32)");
+            jdbcTemplate.update(
+                    "UPDATE branches SET business_type = 'SALON_AND_SPA' WHERE code = 'VAR' AND (business_type IS NULL OR business_type = '')");
+            jdbcTemplate.update(
+                    "UPDATE branches SET business_type = 'SALON' WHERE business_type IS NULL OR business_type = ''");
             jdbcTemplate.update(
                     "UPDATE branches SET monthly_sales_target = 400000 WHERE code = 'LIT' AND monthly_sales_target IS NULL");
             jdbcTemplate.update(

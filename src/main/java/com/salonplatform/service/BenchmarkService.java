@@ -619,6 +619,12 @@ public class BenchmarkService {
                 .repeatVisitRate(c.getRepeatVisitRate())
                 .address(c.getAddress())
                 .notes(c.getNotes())
+                .googleRating(c.getGoogleRating())
+                .googleReviewCount(c.getGoogleReviewCount())
+                .gbpPhotoCount(c.getGbpPhotoCount())
+                .gbpVideoCount(c.getGbpVideoCount())
+                .gbpHasPhone(c.getGbpHasPhone())
+                .estimatedSearchRank(c.getEstimatedSearchRank())
                 .build();
     }
 
@@ -637,6 +643,12 @@ public class BenchmarkService {
         entity.setRetailAttachPercent(request.getRetailAttachPercent());
         entity.setNetMarginPercent(request.getNetMarginPercent());
         entity.setRepeatVisitRate(request.getRepeatVisitRate());
+        if (request.getGoogleRating() != null) entity.setGoogleRating(request.getGoogleRating());
+        if (request.getGoogleReviewCount() != null) entity.setGoogleReviewCount(request.getGoogleReviewCount());
+        if (request.getGbpPhotoCount() != null) entity.setGbpPhotoCount(request.getGbpPhotoCount());
+        if (request.getGbpVideoCount() != null) entity.setGbpVideoCount(request.getGbpVideoCount());
+        if (request.getGbpHasPhone() != null) entity.setGbpHasPhone(request.getGbpHasPhone());
+        if (request.getEstimatedSearchRank() != null) entity.setEstimatedSearchRank(request.getEstimatedSearchRank());
         entity.setActive(true);
         return entity;
     }
