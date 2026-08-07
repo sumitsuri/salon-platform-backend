@@ -42,6 +42,10 @@ public class SalonService {
     @Builder.Default
     private boolean active = true;
 
+    /** When true, billing may set unit price at or above branch list price (e.g. "from" rates). */
+    @Builder.Default
+    private boolean variablePricing = false;
+
     @CreationTimestamp
     private Instant createdAt;
 }

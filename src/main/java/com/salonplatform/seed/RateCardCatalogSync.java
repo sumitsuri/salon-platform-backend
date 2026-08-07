@@ -45,11 +45,25 @@ public class RateCardCatalogSync {
 
     @Transactional
     public List<SalonService> syncTenant(UUID tenantId, String tenantSlug, BigDecimal priceMultiplier) {
-        return syncTenant(tenantId, tenantSlug, priceMultiplier, false);
+        return syncTenant(tenantId, tenantSlug, priceMultiplier, false, null);
     }
 
     @Transactional
     public List<SalonService> syncTenant(UUID tenantId, String tenantSlug, BigDecimal priceMultiplier, boolean resetBranchOverrides) {
+        return syncTenant(tenantId, tenantSlug, priceMultiplier, resetBranchOverrides, null);
+    }
+
+    /**
+     * @param activeBranchCodes when non-null, only these branch codes receive active pricing;
+     *                          other branches have branch_services deactivated.
+     */
+    @Transactional
+    public List<SalonService> syncTenant(
+            UUID tenantId,
+            String tenantSlug,
+            BigDecimal priceMultiplier,
+            boolean resetBranchOverrides,
+            Set<String> activeBranchCodes) {
         Map<String, ServiceCategory> tops = new HashMap<>();
         Map<String, ServiceCategory> leaves = new HashMap<>();
         Set<UUID> keepCategoryIds = new HashSet<>();
@@ -92,6 +106,18 @@ public class RateCardCatalogSync {
         }
 
         for (Branch branch : branchRepository.findByTenantId(tenantId)) {
+            boolean branchActive = activeBranchCodes == null
+                    || activeBranchCodes.isEmpty()
+                    || activeBranchCodes.contains(branch.getCode());
+            if (!branchActive) {
+                for (BranchService bs : branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId())) {
+                    if (bs.isActive()) {
+                        bs.setActive(false);
+                        branchServiceRepository.save(bs);
+                    }
+                }
+                continue;
+            }
             BigDecimal branchExtra = "WEB".equals(branch.getCode()) ? new BigDecimal("1.1") : BigDecimal.ONE;
             BigDecimal multiplier = (priceMultiplier != null ? priceMultiplier : BigDecimal.ONE).multiply(branchExtra);
             for (SalonService svc : catalog) {
@@ -160,6 +186,7 @@ public class RateCardCatalogSync {
                     existing.setDurationMinutes(def.durationMinutes());
                     existing.setGstRate(GST);
                     existing.setSacCode(SAC);
+                    existing.setVariablePricing(def.variablePricing());
                     return salonServiceRepository.save(existing);
                 })
                 .orElseGet(() -> {
@@ -173,6 +200,7 @@ public class RateCardCatalogSync {
                                 existing.setDurationMinutes(def.durationMinutes());
                                 existing.setGstRate(GST);
                                 existing.setSacCode(SAC);
+                                existing.setVariablePricing(def.variablePricing());
                                 return salonServiceRepository.save(existing);
                             })
                             .orElseGet(() -> salonServiceRepository.save(SalonService.builder()
@@ -182,6 +210,7 @@ public class RateCardCatalogSync {
                                     .sacCode(SAC)
                                     .gstRate(GST)
                                     .durationMinutes(def.durationMinutes())
+                                    .variablePricing(def.variablePricing())
                                     .active(true)
                                     .build()));
                 });

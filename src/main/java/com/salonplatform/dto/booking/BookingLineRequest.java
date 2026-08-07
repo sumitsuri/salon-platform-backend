@@ -17,4 +17,6 @@ public class BookingLineRequest {
     private DiscountType lineDiscountType;
     private BigDecimal lineDiscountValue;
     private String lineDiscountNote;
+    /** Optional override for variable-priced services (must be >= branch list price). */
+    private BigDecimal unitPrice;
 }

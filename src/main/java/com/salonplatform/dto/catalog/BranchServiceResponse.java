@@ -22,6 +22,7 @@ public class BranchServiceResponse {
     private BigDecimal price;
     private BigDecimal gstRate;
     private Integer durationMinutes;
+    private boolean variablePricing;
     private String displayNameOverride;
     private boolean active;
 }

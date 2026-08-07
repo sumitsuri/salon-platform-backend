@@ -10,19 +10,20 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 /**
- * One-time style patch: replace Velvet Scissors dummy catalog with the PDF rate card
- * and apply list prices to all three branches (Indiranagar, Koramangala, Whitefield).
+ * Replace Mystic Wellness (demo-brand) dummy catalog with the PDF rate card on Mantri Lithos (LIT) only.
  */
 @Component
-@Order(5)
+@Order(6)
 @RequiredArgsConstructor
 @Slf4j
-public class VelvetScissorsCatalogPatch implements ApplicationRunner {
+public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
-    private static final String TENANT_SLUG = "velvet-scissors";
-    private static final String PATCH_VERSION = "velvet-pdf-catalog-v2";
+    private static final String TENANT_SLUG = "demo-brand";
+    private static final String PATCH_VERSION = "mystic-pdf-catalog-v1";
+    private static final Set<String> LITHOS_BRANCH = Set.of("LIT");
 
     private final TenantRepository tenantRepository;
     private final RateCardCatalogSync rateCardCatalogSync;
@@ -33,12 +34,13 @@ public class VelvetScissorsCatalogPatch implements ApplicationRunner {
             if (PATCH_VERSION.equals(tenant.getCatalogPatchVersion())) {
                 return;
             }
-            log.info("Applying Velvet Scissors PDF catalog patch ({})", PATCH_VERSION);
+            log.info("Applying Mystic Wellness PDF catalog patch ({}) for Mantri Lithos", PATCH_VERSION);
             rateCardCatalogSync.purgeTenantCatalog(tenant.getId());
-            rateCardCatalogSync.syncTenant(tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true);
+            rateCardCatalogSync.syncTenant(
+                    tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, LITHOS_BRANCH);
             tenant.setCatalogPatchVersion(PATCH_VERSION);
             tenantRepository.save(tenant);
-            log.info("Velvet Scissors catalog onboarded from PDF rate card");
+            log.info("Mystic Wellness catalog onboarded at Mantri Lithos (LIT)");
         });
     }
 }

@@ -12,10 +12,23 @@ public final class RateCardCatalog {
 
     private RateCardCatalog() {}
 
-    public record ServiceDef(String name, int price, int durationMinutes) {
+    public record ServiceDef(String name, int price, int durationMinutes, boolean variablePricing) {
         ServiceDef(String name, int price) {
-            this(name, price, 30);
+            this(name, price, 30, inferVariablePricing(name));
         }
+
+        ServiceDef(String name, int price, int durationMinutes) {
+            this(name, price, durationMinutes, inferVariablePricing(name));
+        }
+    }
+
+    /** Services priced "from X" / "onwards" allow extra amount at billing time. */
+    public static boolean inferVariablePricing(String name) {
+        if (name == null) {
+            return false;
+        }
+        String lower = name.toLowerCase();
+        return lower.contains("(from)") || lower.contains("onwards");
     }
 
     public record SubCategoryDef(String name, int sortOrder, List<ServiceDef> services) {}
@@ -31,9 +44,10 @@ public final class RateCardCatalog {
         return tops;
     }
 
-    /** Tenant-specific rate card — Velvet Scissors uses its own PDF catalog. */
+    /** Tenant-specific rate card — Velvet Scissors and Mystic Wellness (demo-brand) use the PDF catalog. */
     public static List<TopCategoryDef> forTenantSlug(String tenantSlug) {
-        if ("velvet-scissors".equalsIgnoreCase(tenantSlug)) {
+        if ("velvet-scissors".equalsIgnoreCase(tenantSlug)
+                || "demo-brand".equalsIgnoreCase(tenantSlug)) {
             return VelvetScissorsRateCardCatalog.all();
         }
         return all();
@@ -42,7 +56,6 @@ public final class RateCardCatalog {
     private static TopCategoryDef men() {
         return new TopCategoryDef("Men", 1, List.of(
                 sub("Hair Cut & Styling", 1, List.of(
-                        s("Baby Haircut", 149, 20),
                         s("Haircut", 199, 30),
                         s("Advanced Cut", 249, 40),
                         s("Change of Style", 349, 45)
@@ -109,12 +122,6 @@ public final class RateCardCatalog {
                         s("Mythic Oil Loreal Massage (30 min)", 749, 30)
                 )),
                 sub("Healthy Hair Spa", 4, List.of(
-                        s("Loreal Hair Spa (from)", 1199, 75),
-                        s("Hydra Hair Spa (from)", 1299, 75),
-                        s("Protein Hair Spa (from)", 1399, 75),
-                        s("Repair Hair Spa (from)", 1499, 75),
-                        s("Herbal Aromatherapy Spa (from)", 1599, 75),
-                        s("Keratin Hair Spa (from)", 1899, 90),
                         s("Anti-Dandruff Clear Dose (add-on)", 299, 15),
                         s("Clear Dose Only", 499, 20),
                         s("Loreal Hair Spa — Shoulder", 999, 75),

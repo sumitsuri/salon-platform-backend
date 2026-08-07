@@ -24,7 +24,6 @@ public final class VelvetScissorsRateCardCatalog {
     private static RateCardCatalog.TopCategoryDef men() {
         return new RateCardCatalog.TopCategoryDef("Men", 1, List.of(
                 sub("Hair Cut & Styling", 1, List.of(
-                        s("Baby Haircut", 149, 20),
                         s("Haircut", 199),
                         s("Advanced Cut", 249, 40),
                         s("Change of Style", 349, 45)
@@ -91,12 +90,6 @@ public final class VelvetScissorsRateCardCatalog {
                         s("Mythic Oil Loreal Massage (30 min)", 749)
                 )),
                 sub("Healthy Hair Spa", 4, List.of(
-                        s("Loreal Hair Spa (from)", 1199, 75),
-                        s("Hydra Hair Spa (from)", 1299, 75),
-                        s("Protein Hair Spa (from)", 1399, 75),
-                        s("Repair Hair Spa (from)", 1499, 75),
-                        s("Herbal Aromatherapy Spa (from)", 1599, 75),
-                        s("Keratin Hair Spa (from)", 1899, 90),
                         s("Anti-Dandruff Clear Dose (add-on)", 299, 15),
                         s("Clear Dose Only", 499, 20),
                         s("Loreal Hair Spa — Shoulder", 999, 75),

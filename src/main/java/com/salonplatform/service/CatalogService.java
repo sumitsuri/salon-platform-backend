@@ -297,6 +297,7 @@ public class CatalogService {
                             .price(bs.getPrice())
                             .gstRate(svc.getGstRate())
                             .durationMinutes(svc.getDurationMinutes())
+                            .variablePricing(svc.isVariablePricing())
                             .displayNameOverride(bs.getDisplayNameOverride())
                             .active(bs.isActive())
                             .build();
