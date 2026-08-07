@@ -245,7 +245,7 @@ public final class RateCardCatalog {
                 sub("Cleanup", 3, List.of(
                         s("Fruit Cleanup", 599, 30),
                         s("Lotus Cleanup", 699, 30),
-                        s("VLCC Cleanup", 899, 35),
+                        s("Sara Fruit Cleanup", 799, 35),
                         s("Raaga Cleanup", 799, 35)
                 )),
                 sub("Pedicure", 4, List.of(
@@ -257,8 +257,8 @@ public final class RateCardCatalog {
                         s("Sara Pedicure", 799, 50),
                         s("Raaga Pedicure", 899, 50),
                         s("Pedilogix O3+ Pedicure", 1299, 60),
-                        s("Lotus Crystal Spa Pedicure", 1099, 55),
-                        s("Bombani Pedicure", 1199, 55)
+                        s("Lotus Crystal Spa Pedicure", 1399, 55),
+                        s("Bombani Pedicure", 1599, 55)
                 )),
                 sub("Manicure", 5, List.of(
                         s("Normal Manicure", 399, 30),
@@ -269,8 +269,8 @@ public final class RateCardCatalog {
                         s("Sara Manicure", 599, 35),
                         s("Raaga Manicure", 699, 35),
                         s("Pedilogix O3+ Manicure", 999, 45),
-                        s("Lotus Crystal Spa Manicure", 1399, 45),
-                        s("Bombani Manicure", 1599, 45),
+                        s("Lotus Crystal Spa Manicure", 1099, 45),
+                        s("Bombani Manicure", 1199, 45),
                         s("Cut & Filing", 149, 15),
                         s("Nail Polish", 99, 10)
                 )),
