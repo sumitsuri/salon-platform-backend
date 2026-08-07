@@ -207,9 +207,8 @@ public final class RateCardCatalog {
     private static TopCategoryDef kids() {
         return new TopCategoryDef("Kids", 3, List.of(
                 sub("Hair Cut & Styling", 1, List.of(
-                        s("Baby Haircut (Below 5 yrs)", 249, 20),
-                        s("Kids Haircut", 149, 25),
-                        s("Kids Advanced Cut", 249, 30)
+                        s("Girl Baby Haircut (Below 5 yrs)", 249, 20),
+                        s("Boy Baby Haircut (Below 5 yrs)", 149, 25)
                 ))
         ));
     }
@@ -253,6 +252,8 @@ public final class RateCardCatalog {
                         s("Normal Pedicure", 499, 45),
                         s("Aroma Pedicure", 599, 45),
                         s("Vedic D-Tan Pedicure", 699, 50),
+                        s("H & F Pedicure", 899, 50),
+                        s("AVL Pedicure", 1299, 60),
                         s("Sara Pedicure", 799, 50),
                         s("Raaga Pedicure", 899, 50),
                         s("Pedilogix O3+ Pedicure", 1299, 60),
@@ -263,6 +264,8 @@ public final class RateCardCatalog {
                         s("Normal Manicure", 399, 30),
                         s("Aroma Manicure", 499, 30),
                         s("Vedic D-Tan Manicure", 599, 35),
+                        s("H & F Manicure", 799, 35),
+                        s("AVL Manicure", 999, 45),
                         s("Sara Manicure", 599, 35),
                         s("Raaga Manicure", 699, 35),
                         s("Pedilogix O3+ Manicure", 999, 45),

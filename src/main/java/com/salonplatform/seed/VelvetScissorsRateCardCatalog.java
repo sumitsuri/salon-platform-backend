@@ -186,9 +186,8 @@ public final class VelvetScissorsRateCardCatalog {
     private static RateCardCatalog.TopCategoryDef kids() {
         return new RateCardCatalog.TopCategoryDef("Kids", 3, List.of(
                 sub("Hair Cut & Styling", 1, List.of(
-                        s("Baby Haircut (Below 5 yrs)", 249, 20),
-                        s("Kids Haircut", 149, 25),
-                        s("Kids Advanced Cut", 249)
+                        s("Girl Baby Haircut (Below 5 yrs)", 249, 20),
+                        s("Boy Baby Haircut (Below 5 yrs)", 149, 25)
                 ))
         ));
     }
@@ -232,6 +231,8 @@ public final class VelvetScissorsRateCardCatalog {
                         s("Normal Pedicure", 499, 45),
                         s("Aroma Pedicure", 699, 45),
                         s("Vedic D-Tan Pedicure", 999, 50),
+                        s("H & F Pedicure", 899, 50),
+                        s("AVL Pedicure", 1299, 60),
                         s("Foot Massage (30 min)", 499),
                         s("Sara Pedicure", 799, 50),
                         s("Raaga Pedicure", 899, 50),
@@ -243,6 +244,8 @@ public final class VelvetScissorsRateCardCatalog {
                         s("Normal Manicure", 399),
                         s("Aroma Manicure", 599),
                         s("Vedic D-Tan Manicure", 799, 35),
+                        s("H & F Manicure", 799, 35),
+                        s("AVL Manicure", 999, 45),
                         s("Sara Manicure", 599, 35),
                         s("Raaga Manicure", 699, 35),
                         s("Pedilogix O3+ Manicure", 999, 45),
