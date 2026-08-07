@@ -94,6 +94,22 @@ public class DataSeeder implements CommandLineRunner {
                     .build());
         }
 
+        if ("demo-brand".equals(seed.slug()) || "velvet-scissors".equals(seed.slug())) {
+            // Catalog for these tenants is managed by startup patches (MysticWellness / VelvetScissors).
+            if (created) {
+                log.info("Seeded tenant '{}' ({}) — catalog applied by startup patch", seed.name(), seed.slug());
+                log.info("  Admin: {} / {}", seed.adminEmail(), seed.adminPassword());
+            }
+            for (BranchSeed branchSeed : seed.branches()) {
+                if (branchRepository.findByTenantIdAndCode(tenant.getId(), branchSeed.code()).isPresent()) {
+                    continue;
+                }
+                seedBranch(tenant.getId(), branchSeed, List.of(), seed.priceMultiplier());
+                log.info("Seeded additional branch for '{}': {}", seed.name(), branchSeed.name());
+            }
+            return;
+        }
+
         List<SalonService> catalog = rateCardCatalogSync.syncTenant(tenant.getId(), seed.slug(), seed.priceMultiplier());
         List<String> addedBranches = new ArrayList<>();
         for (BranchSeed branchSeed : seed.branches()) {

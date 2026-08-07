@@ -22,7 +22,7 @@ import java.util.Set;
 public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
     private static final String TENANT_SLUG = "demo-brand";
-    private static final String PATCH_VERSION = "mystic-pdf-catalog-v1";
+    private static final String PATCH_VERSION = "mystic-pdf-catalog-v2";
     private static final Set<String> LITHOS_BRANCH = Set.of("LIT");
 
     private final TenantRepository tenantRepository;
