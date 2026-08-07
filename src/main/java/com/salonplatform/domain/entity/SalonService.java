@@ -39,6 +39,9 @@ public class SalonService {
 
     private Integer durationMinutes;
 
+    /** Tenant-wide list price (shared across branches); synced from reference branch pricing. */
+    private BigDecimal listPrice;
+
     @Builder.Default
     private boolean active = true;
 

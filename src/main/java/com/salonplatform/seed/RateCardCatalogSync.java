@@ -178,6 +178,7 @@ public class RateCardCatalogSync {
     }
 
     private SalonService upsertService(UUID tenantId, UUID categoryId, ServiceDef def) {
+        BigDecimal list = RateCardCatalog.money(def.price());
         return salonServiceRepository.findByTenantIdAndCategoryIdAndActiveTrue(tenantId, categoryId).stream()
                 .filter(s -> def.name().equalsIgnoreCase(s.getName()))
                 .findFirst()
@@ -187,6 +188,7 @@ public class RateCardCatalogSync {
                     existing.setGstRate(GST);
                     existing.setSacCode(SAC);
                     existing.setVariablePricing(def.variablePricing());
+                    existing.setListPrice(list);
                     return salonServiceRepository.save(existing);
                 })
                 .orElseGet(() -> {
@@ -201,6 +203,7 @@ public class RateCardCatalogSync {
                                 existing.setGstRate(GST);
                                 existing.setSacCode(SAC);
                                 existing.setVariablePricing(def.variablePricing());
+                                existing.setListPrice(list);
                                 return salonServiceRepository.save(existing);
                             })
                             .orElseGet(() -> salonServiceRepository.save(SalonService.builder()
@@ -211,6 +214,7 @@ public class RateCardCatalogSync {
                                     .gstRate(GST)
                                     .durationMinutes(def.durationMinutes())
                                     .variablePricing(def.variablePricing())
+                                    .listPrice(list)
                                     .active(true)
                                     .build()));
                 });
@@ -268,5 +272,31 @@ public class RateCardCatalogSync {
             }
         }
         log.info("Purged active catalog for tenant {}", tenantId);
+    }
+
+    /** Copy active branch prices into each service's shared list price. */
+    @Transactional
+    public int syncSharedListPricesFromBranch(UUID tenantId, String branchCode) {
+        Branch branch = branchRepository.findByTenantId(tenantId).stream()
+                .filter(b -> branchCode.equals(b.getCode()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Reference branch not found for tenant " + tenantId + ": " + branchCode));
+        int updated = 0;
+        for (BranchService bs : branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId())) {
+            if (!bs.isActive()) {
+                continue;
+            }
+            SalonService svc = salonServiceRepository.findById(bs.getServiceId()).orElse(null);
+            if (svc == null || !svc.isActive()) {
+                continue;
+            }
+            svc.setListPrice(bs.getPrice());
+            salonServiceRepository.save(svc);
+            updated++;
+        }
+        log.info("Synced shared list prices from branch {} for tenant {}: {} services",
+                branchCode, tenantId, updated);
+        return updated;
     }
 }

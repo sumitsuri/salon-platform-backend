@@ -22,9 +22,10 @@ import java.util.Set;
 public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
     private static final String TENANT_SLUG = "mystic-wellness";
-    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v1";
+    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v2";
+    private static final String PREVIOUS_VERSION = "mystic-wellness-pdf-catalog-v1";
     /** Mantri Lithos branch code on the mystic-wellness tenant (not demo-brand LIT). */
-    private static final Set<String> LITHOS_BRANCH = Set.of("MW02");
+    private static final String LITHOS_BRANCH = "MW02";
 
     private final TenantRepository tenantRepository;
     private final RateCardCatalogSync rateCardCatalogSync;
@@ -35,10 +36,18 @@ public class MysticWellnessCatalogPatch implements ApplicationRunner {
             if (PATCH_VERSION.equals(tenant.getCatalogPatchVersion())) {
                 return;
             }
+            if (PREVIOUS_VERSION.equals(tenant.getCatalogPatchVersion())) {
+                log.info("Syncing Mystic Wellness shared list prices from Mantri Lithos ({})", LITHOS_BRANCH);
+                rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), LITHOS_BRANCH);
+                tenant.setCatalogPatchVersion(PATCH_VERSION);
+                tenantRepository.save(tenant);
+                return;
+            }
             log.info("Applying Mystic Wellness PDF catalog patch ({}) for Mantri Lithos", PATCH_VERSION);
             rateCardCatalogSync.purgeTenantCatalog(tenant.getId());
             rateCardCatalogSync.syncTenant(
-                    tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, LITHOS_BRANCH);
+                    tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, Set.of(LITHOS_BRANCH));
+            rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), LITHOS_BRANCH);
             tenant.setCatalogPatchVersion(PATCH_VERSION);
             tenantRepository.save(tenant);
             log.info("Mystic Wellness catalog onboarded at Mantri Lithos ({})", LITHOS_BRANCH);

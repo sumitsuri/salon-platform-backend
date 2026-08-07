@@ -344,6 +344,7 @@ public class CatalogService {
                 .gstRate(svc.getGstRate())
                 .durationMinutes(svc.getDurationMinutes())
                 .active(svc.isActive())
+                .listPrice(svc.getListPrice())
                 .branches(assignments)
                 .build();
     }

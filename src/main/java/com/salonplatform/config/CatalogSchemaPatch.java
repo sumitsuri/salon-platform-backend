@@ -27,6 +27,8 @@ public class CatalogSchemaPatch implements ApplicationRunner {
                     "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS catalog_patch_version VARCHAR(64)");
             jdbcTemplate.execute(
                     "ALTER TABLE services ADD COLUMN IF NOT EXISTS variable_pricing BOOLEAN DEFAULT FALSE");
+            jdbcTemplate.execute(
+                    "ALTER TABLE services ADD COLUMN IF NOT EXISTS list_price NUMERIC(12,2)");
             log.info("Catalog schema patch applied");
         } catch (Exception e) {
             log.warn("Catalog schema patch skipped or partial: {}", e.getMessage());

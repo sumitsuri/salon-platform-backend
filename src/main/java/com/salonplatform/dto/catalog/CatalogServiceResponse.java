@@ -22,6 +22,7 @@ public class CatalogServiceResponse {
     private BigDecimal gstRate;
     private Integer durationMinutes;
     private boolean active;
+    private BigDecimal listPrice;
     @Builder.Default
     private List<ServiceBranchAssignmentResponse> branches = new ArrayList<>();
 }
