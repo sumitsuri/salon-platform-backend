@@ -22,8 +22,8 @@ import java.util.Set;
 public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
     private static final String TENANT_SLUG = "mystic-wellness";
-    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v2";
-    private static final String PREVIOUS_VERSION = "mystic-wellness-pdf-catalog-v1";
+    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v3";
+    private static final String PREVIOUS_VERSION = "mystic-wellness-pdf-catalog-v2";
     /** Mantri Lithos branch code on the mystic-wellness tenant (not demo-brand LIT). */
     private static final String LITHOS_BRANCH = "MW02";
 
@@ -37,7 +37,9 @@ public class MysticWellnessCatalogPatch implements ApplicationRunner {
                 return;
             }
             if (PREVIOUS_VERSION.equals(tenant.getCatalogPatchVersion())) {
-                log.info("Syncing Mystic Wellness shared list prices from Mantri Lithos ({})", LITHOS_BRANCH);
+                log.info("Applying Mystic Wellness Women pricing update ({})", PATCH_VERSION);
+                rateCardCatalogSync.syncTenant(
+                        tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, Set.of(LITHOS_BRANCH));
                 rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), LITHOS_BRANCH);
                 tenant.setCatalogPatchVersion(PATCH_VERSION);
                 tenantRepository.save(tenant);
