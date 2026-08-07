@@ -285,8 +285,9 @@ public class LocalSpotlightService {
     }
 
     private List<LocalSpotlightResponse.SearchRankRow> buildSearchRanks(Branch branch, List<LocalCompetitor> rivals) {
+        List<String> expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch);
         List<GoogleSearchRankEntry> stored = digitalPresenceSyncService.readRankEntries(branch);
-        if (!stored.isEmpty()) {
+        if (!stored.isEmpty() && keywordsMatch(stored, expectedKeywords)) {
             return stored.stream()
                     .map(entry -> {
                         List<LocalSpotlightResponse.TopThreeRival> topThree = mapTopThreeRivals(entry);
@@ -306,13 +307,27 @@ public class LocalSpotlightService {
         }
 
         List<LocalSpotlightResponse.SearchRankRow> rows = new ArrayList<>();
-        List<String> keywords = LocalSpotlightKeywords.searchKeywords(branch);
-        if (keywords.isEmpty()) return rows;
+        if (expectedKeywords.isEmpty()) {
+            return rows;
+        }
 
-        for (String keyword : keywords) {
+        for (String keyword : expectedKeywords) {
             rows.add(buildFallbackSearchRankRow(branch, keyword, rivals));
         }
         return rows;
+    }
+
+    private boolean keywordsMatch(List<GoogleSearchRankEntry> stored, List<String> expected) {
+        if (stored.size() != expected.size()) {
+            return false;
+        }
+        for (int i = 0; i < expected.size(); i++) {
+            String storedKeyword = stored.get(i).getKeyword();
+            if (storedKeyword == null || !storedKeyword.equalsIgnoreCase(expected.get(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private LocalSpotlightResponse.SearchRankRow buildFallbackSearchRankRow(
@@ -421,14 +436,7 @@ public class LocalSpotlightService {
     }
 
     private String localityLabel(Branch branch) {
-        if (branch.getSocietyDefault() != null && !branch.getSocietyDefault().isBlank()) {
-            return branch.getSocietyDefault().trim();
-        }
-        if (branch.getAddress() != null && !branch.getAddress().isBlank()) {
-            String[] parts = branch.getAddress().split(",");
-            return parts.length > 0 ? parts[parts.length - 1].trim() : branch.getAddress().trim();
-        }
-        return branch.getName();
+        return LocalSpotlightKeywords.resolveLocality(branch);
     }
 
     private static boolean notBlank(String s) {

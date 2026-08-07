@@ -116,7 +116,7 @@ public final class SeedCatalog {
                                         staff("Meera", "Skin,Nails", "FP-MEERA-GP", "24000",
                                                 LocalDate.of(2024, 5, 20), false, null, "108000", "4")
                                 )),
-                        branch("Mystic Varthur", "VAR", "SLV Sunrise, Varthur, Bangalore", "Mystic Varthur",
+                        branch("Mystic Varthur", "VAR", "SLV Sunrise, Varthur, Bangalore", "Varthur",
                                 "29AABCU9603R1ZR", "9876543214", 12.9569, 77.7448, "280000",
                                 "Varthur Manager", "manager.varthur@demo-brand.local",
                                 List.of(

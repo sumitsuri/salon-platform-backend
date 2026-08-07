@@ -36,6 +36,11 @@ public class BranchSchemaPatch implements ApplicationRunner {
                     "UPDATE branches SET monthly_sales_target = 300000 WHERE code = 'GP' AND monthly_sales_target IS NULL");
             jdbcTemplate.update(
                     "UPDATE branches SET monthly_sales_target = 280000 WHERE code = 'VAR' AND monthly_sales_target IS NULL");
+            jdbcTemplate.update(
+                    "UPDATE branches SET society_default = 'Varthur' WHERE code = 'VAR' AND lower(trim(coalesce(society_default, ''))) IN ('mystic varthur', '')");
+            jdbcTemplate.update(
+                    "UPDATE branches SET google_search_rank_data = NULL, digital_presence_updated_at = NULL "
+                            + "WHERE code = 'VAR' AND google_search_rank_data IS NOT NULL");
             log.info("Branch schema patch applied");
         } catch (Exception e) {
             log.warn("Branch schema patch skipped or partial: {}", e.getMessage());

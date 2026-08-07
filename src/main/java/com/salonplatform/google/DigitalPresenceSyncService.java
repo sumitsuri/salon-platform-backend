@@ -182,12 +182,13 @@ public class DigitalPresenceSyncService {
         }
 
         String locality = LocalSpotlightKeywords.resolveLocality(branch);
+        String city = LocalSpotlightKeywords.resolveCity(branch);
         String typeTerm = LocalSpotlightKeywords.primaryListingQueryTerm(branch);
         String query = String.join(" ",
                 branch.getName(),
                 locality,
                 typeTerm,
-                "Bangalore").replaceAll("\\s+", " ").trim();
+                city).replaceAll("\\s+", " ").trim();
 
         List<GooglePlaceSnapshot> candidates = googlePlacesClient.searchText(
                 query,
@@ -198,7 +199,7 @@ public class DigitalPresenceSyncService {
 
         if (candidates.isEmpty()) {
             candidates = googlePlacesClient.searchText(
-                    typeTerm + " " + locality + " Bangalore",
+                    typeTerm + " " + locality + " " + city,
                     branch.getLatitude(),
                     branch.getLongitude(),
                     properties.getDefaultRadiusMeters(),
