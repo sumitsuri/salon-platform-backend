@@ -44,10 +44,11 @@ public final class RateCardCatalog {
         return tops;
     }
 
-    /** Tenant-specific rate card — Velvet Scissors and Mystic Wellness (demo-brand) use the PDF catalog. */
+    /** Tenant-specific rate card — Velvet Scissors and Mystic Wellness use the PDF catalog. */
     public static List<TopCategoryDef> forTenantSlug(String tenantSlug) {
         if ("velvet-scissors".equalsIgnoreCase(tenantSlug)
-                || "demo-brand".equalsIgnoreCase(tenantSlug)) {
+                || "demo-brand".equalsIgnoreCase(tenantSlug)
+                || "mystic-wellness".equalsIgnoreCase(tenantSlug)) {
             return VelvetScissorsRateCardCatalog.all();
         }
         return all();

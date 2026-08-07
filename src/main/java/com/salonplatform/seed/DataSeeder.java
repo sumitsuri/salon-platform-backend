@@ -94,7 +94,9 @@ public class DataSeeder implements CommandLineRunner {
                     .build());
         }
 
-        if ("demo-brand".equals(seed.slug()) || "velvet-scissors".equals(seed.slug())) {
+        if ("demo-brand".equals(seed.slug())
+                || "velvet-scissors".equals(seed.slug())
+                || "mystic-wellness".equals(seed.slug())) {
             // Catalog for these tenants is managed by startup patches (MysticWellness / VelvetScissors).
             if (created) {
                 log.info("Seeded tenant '{}' ({}) — catalog applied by startup patch", seed.name(), seed.slug());

@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 import java.util.Set;
 
 /**
- * Replace Mystic Wellness (demo-brand) dummy catalog with the PDF rate card on Mantri Lithos (LIT) only.
+ * Replace Mystic Wellness prod tenant catalog with the PDF rate card on Mantri Lithos (MW02) only.
  */
 @Component
 @Order(6)
@@ -21,9 +21,10 @@ import java.util.Set;
 @Slf4j
 public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
-    private static final String TENANT_SLUG = "demo-brand";
-    private static final String PATCH_VERSION = "mystic-pdf-catalog-v2";
-    private static final Set<String> LITHOS_BRANCH = Set.of("LIT");
+    private static final String TENANT_SLUG = "mystic-wellness";
+    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v1";
+    /** Mantri Lithos branch code on the mystic-wellness tenant (not demo-brand LIT). */
+    private static final Set<String> LITHOS_BRANCH = Set.of("MW02");
 
     private final TenantRepository tenantRepository;
     private final RateCardCatalogSync rateCardCatalogSync;
@@ -40,7 +41,7 @@ public class MysticWellnessCatalogPatch implements ApplicationRunner {
                     tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, LITHOS_BRANCH);
             tenant.setCatalogPatchVersion(PATCH_VERSION);
             tenantRepository.save(tenant);
-            log.info("Mystic Wellness catalog onboarded at Mantri Lithos (LIT)");
+            log.info("Mystic Wellness catalog onboarded at Mantri Lithos ({})", LITHOS_BRANCH);
         });
     }
 }
