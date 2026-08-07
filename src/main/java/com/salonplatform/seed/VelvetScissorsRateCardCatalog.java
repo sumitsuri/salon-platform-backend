@@ -179,6 +179,18 @@ public final class VelvetScissorsRateCardCatalog {
                         s("Full Back Wax (Rica)", 649, 40),
                         s("Bikini Wax (Rica)", 1399, 40),
                         s("Full Body Wax (Rica)", 2399, 90)
+                )),
+                sub("Waxing · Roll On", 9, List.of(
+                        s("Under Arms Wax (Roll On)", 249, 15),
+                        s("Half Arms Wax (Roll On)", 349, 20),
+                        s("Full Arms Wax (Roll On)", 549, 30),
+                        s("Half Legs Wax (Roll On)", 449, 30),
+                        s("Full Legs Wax (Roll On)", 699, 45),
+                        s("Stomach Wax (Roll On)", 499, 25),
+                        s("Full Front Wax (Roll On)", 649, 35),
+                        s("Full Back Wax (Roll On)", 699, 40),
+                        s("Bikini Wax (Roll On)", 1449, 40),
+                        s("Full Body Wax (Roll On)", 2449, 90)
                 ))
         ));
     }
