@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 import java.util.Set;
 
 /**
- * Replace Mystic Wellness prod tenant catalog with the PDF rate card on Mantri Lithos (MW02) only.
+ * Mystic Wellness PDF rate card on Mantri Lithos and sibling branches (not Varthur).
  */
 @Component
 @Order(6)
@@ -22,10 +22,15 @@ import java.util.Set;
 public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
     private static final String TENANT_SLUG = "mystic-wellness";
-    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v6";
-    private static final String PREVIOUS_VERSION = "mystic-wellness-pdf-catalog-v5";
-    /** Mantri Lithos branch code on the mystic-wellness tenant (not demo-brand LIT). */
-    private static final String LITHOS_BRANCH = "MW02";
+    private static final String PATCH_VERSION = "mystic-wellness-pdf-catalog-v7";
+    private static final String PREVIOUS_VERSION = "mystic-wellness-pdf-catalog-v6";
+    /** Shared list prices and Lithos branch pricing reference. */
+    private static final String REFERENCE_BRANCH = "MW02";
+    /**
+     * Branches on the standard Mystic Ocean PDF catalog (Mantri Lithos pricing).
+     * Varthur (MW01) is excluded — separate catalog.
+     */
+    private static final Set<String> PDF_CATALOG_BRANCHES = Set.of("MW02", "MW03", "MW04", "MW05");
 
     private final TenantRepository tenantRepository;
     private final RateCardCatalogSync rateCardCatalogSync;
@@ -37,22 +42,23 @@ public class MysticWellnessCatalogPatch implements ApplicationRunner {
                 return;
             }
             if (PREVIOUS_VERSION.equals(tenant.getCatalogPatchVersion())) {
-                log.info("Applying Mystic Wellness Women Roll On wax catalog update ({})", PATCH_VERSION);
+                log.info("Applying Mystic Wellness catalog to Webcity, Golden Palms, and Alpine Pyramid ({})",
+                        PATCH_VERSION);
                 rateCardCatalogSync.syncTenant(
-                        tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, Set.of(LITHOS_BRANCH));
-                rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), LITHOS_BRANCH);
+                        tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, PDF_CATALOG_BRANCHES);
+                rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), REFERENCE_BRANCH);
                 tenant.setCatalogPatchVersion(PATCH_VERSION);
                 tenantRepository.save(tenant);
                 return;
             }
-            log.info("Applying Mystic Wellness PDF catalog patch ({}) for Mantri Lithos", PATCH_VERSION);
+            log.info("Applying Mystic Wellness PDF catalog patch ({})", PATCH_VERSION);
             rateCardCatalogSync.purgeTenantCatalog(tenant.getId());
             rateCardCatalogSync.syncTenant(
-                    tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, Set.of(LITHOS_BRANCH));
-            rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), LITHOS_BRANCH);
+                    tenant.getId(), TENANT_SLUG, BigDecimal.ONE, true, PDF_CATALOG_BRANCHES);
+            rateCardCatalogSync.syncSharedListPricesFromBranch(tenant.getId(), REFERENCE_BRANCH);
             tenant.setCatalogPatchVersion(PATCH_VERSION);
             tenantRepository.save(tenant);
-            log.info("Mystic Wellness catalog onboarded at Mantri Lithos ({})", LITHOS_BRANCH);
+            log.info("Mystic Wellness catalog onboarded at branches {}", PDF_CATALOG_BRANCHES);
         });
     }
 }
