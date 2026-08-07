@@ -52,6 +52,9 @@ public class Tenant {
     @Builder.Default
     private SalonTier salonTier = SalonTier.MID_MARKET;
 
+    /** Tracks one-off catalog migration patches applied to this tenant. */
+    private String catalogPatchVersion;
+
     @CreationTimestamp
     private Instant createdAt;
 

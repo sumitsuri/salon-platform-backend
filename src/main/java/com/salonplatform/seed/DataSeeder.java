@@ -94,7 +94,7 @@ public class DataSeeder implements CommandLineRunner {
                     .build());
         }
 
-        List<SalonService> catalog = rateCardCatalogSync.syncTenant(tenant.getId(), seed.priceMultiplier());
+        List<SalonService> catalog = rateCardCatalogSync.syncTenant(tenant.getId(), seed.slug(), seed.priceMultiplier());
         List<String> addedBranches = new ArrayList<>();
         for (BranchSeed branchSeed : seed.branches()) {
             if (branchRepository.findByTenantIdAndCode(tenant.getId(), branchSeed.code()).isPresent()) {
@@ -104,7 +104,7 @@ public class DataSeeder implements CommandLineRunner {
             addedBranches.add(branchSeed.name());
         }
         // Ensure pricing for all existing branches after catalog upgrades.
-        rateCardCatalogSync.syncTenant(tenant.getId(), seed.priceMultiplier());
+        rateCardCatalogSync.syncTenant(tenant.getId(), seed.slug(), seed.priceMultiplier());
 
         if (created) {
             log.info("Seeded tenant '{}' ({}) with {} branches", seed.name(), seed.slug(), seed.branches().size());

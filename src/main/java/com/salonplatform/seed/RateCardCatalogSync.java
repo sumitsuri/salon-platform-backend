@@ -44,7 +44,12 @@ public class RateCardCatalogSync {
     private final BranchServiceRepository branchServiceRepository;
 
     @Transactional
-    public List<SalonService> syncTenant(UUID tenantId, BigDecimal priceMultiplier) {
+    public List<SalonService> syncTenant(UUID tenantId, String tenantSlug, BigDecimal priceMultiplier) {
+        return syncTenant(tenantId, tenantSlug, priceMultiplier, false);
+    }
+
+    @Transactional
+    public List<SalonService> syncTenant(UUID tenantId, String tenantSlug, BigDecimal priceMultiplier, boolean resetBranchOverrides) {
         Map<String, ServiceCategory> tops = new HashMap<>();
         Map<String, ServiceCategory> leaves = new HashMap<>();
         Set<UUID> keepCategoryIds = new HashSet<>();
@@ -52,7 +57,7 @@ public class RateCardCatalogSync {
         List<SalonService> catalog = new ArrayList<>();
         Map<UUID, BigDecimal> listPriceByService = new HashMap<>();
 
-        for (TopCategoryDef topDef : RateCardCatalog.all()) {
+        for (TopCategoryDef topDef : RateCardCatalog.forTenantSlug(tenantSlug)) {
             ServiceCategory top = upsertTop(tenantId, topDef.name(), topDef.sortOrder());
             tops.put(topDef.name(), top);
             keepCategoryIds.add(top.getId());
@@ -92,7 +97,7 @@ public class RateCardCatalogSync {
             for (SalonService svc : catalog) {
                 BigDecimal list = listPriceByService.get(svc.getId());
                 BigDecimal price = list.multiply(multiplier).setScale(0, RoundingMode.HALF_UP);
-                upsertBranchPrice(tenantId, branch.getId(), svc.getId(), price);
+                upsertBranchPrice(tenantId, branch.getId(), svc.getId(), price, resetBranchOverrides);
             }
             // Hide pricing for retired legacy services on this branch.
             for (BranchService bs : branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId())) {
@@ -183,10 +188,13 @@ public class RateCardCatalogSync {
     }
 
     private void upsertBranchPrice(UUID tenantId, UUID branchId, UUID serviceId, BigDecimal price) {
+        upsertBranchPrice(tenantId, branchId, serviceId, price, false);
+    }
+
+    private void upsertBranchPrice(UUID tenantId, UUID branchId, UUID serviceId, BigDecimal price, boolean resetOverrides) {
         branchServiceRepository.findByBranchIdAndServiceId(branchId, serviceId)
                 .ifPresentOrElse(existing -> {
-                    if (existing.isManualPriceOverride()) {
-                        // Keep CEO/admin price overrides; only ensure service stays available.
+                    if (existing.isManualPriceOverride() && !resetOverrides) {
                         if (!existing.isActive()) {
                             existing.setActive(true);
                             branchServiceRepository.save(existing);
@@ -195,6 +203,7 @@ public class RateCardCatalogSync {
                     }
                     existing.setPrice(price);
                     existing.setActive(true);
+                    existing.setManualPriceOverride(false);
                     branchServiceRepository.save(existing);
                 }, () -> branchServiceRepository.save(BranchService.builder()
                         .tenantId(tenantId)
@@ -204,5 +213,31 @@ public class RateCardCatalogSync {
                         .active(true)
                         .manualPriceOverride(false)
                         .build()));
+    }
+
+    /** Deactivate all catalog rows for a tenant before a full re-onboard. */
+    @Transactional
+    public void purgeTenantCatalog(UUID tenantId) {
+        for (Branch branch : branchRepository.findByTenantId(tenantId)) {
+            for (BranchService bs : branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId())) {
+                if (bs.isActive()) {
+                    bs.setActive(false);
+                    branchServiceRepository.save(bs);
+                }
+            }
+        }
+        for (SalonService svc : salonServiceRepository.findByTenantId(tenantId)) {
+            if (svc.isActive()) {
+                svc.setActive(false);
+                salonServiceRepository.save(svc);
+            }
+        }
+        for (ServiceCategory cat : categoryRepository.findByTenantId(tenantId)) {
+            if (cat.isActive()) {
+                cat.setActive(false);
+                categoryRepository.save(cat);
+            }
+        }
+        log.info("Purged active catalog for tenant {}", tenantId);
     }
 }

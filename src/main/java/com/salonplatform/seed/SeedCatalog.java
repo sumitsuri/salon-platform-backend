@@ -137,7 +137,7 @@ public final class SeedCatalog {
                 "Velvet Admin",
                 "ceo@velvet-scissors.local",
                 "ceo123",
-                new BigDecimal("1.15"),
+                new BigDecimal("1.0"),
                 1.25,
                 SalonTier.PREMIUM,
                 List.of(
