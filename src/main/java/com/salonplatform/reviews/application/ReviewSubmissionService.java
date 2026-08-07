@@ -122,11 +122,9 @@ public class ReviewSubmissionService {
         }
 
         boolean promptGoogle = qualifiesForGoogleReview(rating) && invitation.getGoogleReviewUrl() != null;
-        String thankYou = autoPublish
-                ? "Thank you! Opening Google so you can publish your review."
-                : rating >= reviewsProperties.getGoogleAutoPublishMinRating()
-                        ? "Thank you for your feedback!"
-                        : "Thank you — your feedback helps us improve.";
+        String thankYou = rating >= reviewsProperties.getGoogleAutoPublishMinRating()
+                ? "Thank you for sharing your feedback."
+                : "Thank you. Your feedback helps us improve.";
 
         return SubmitPublicReviewResponse.builder()
                 .overallRating(rating)
@@ -134,6 +132,8 @@ public class ReviewSubmissionService {
                 .googleReviewUrl(promptGoogle ? invitation.getGoogleReviewUrl() : null)
                 .autoRedirectGoogle(autoPublish)
                 .googleReviewAutoPublished(autoPublish)
+                .suggestedPublicReviewText(
+                        promptGoogle ? buildSuggestedPublicReviewText(invitation, rating, comment, tags) : null)
                 .recoveryCreated(recoveryCreated)
                 .thankYouMessage(thankYou)
                 .build();
@@ -229,5 +229,41 @@ public class ReviewSubmissionService {
         }
         String trimmed = comment.trim();
         return trimmed.isEmpty() ? null : trimmed.substring(0, Math.min(trimmed.length(), 2000));
+    }
+
+    private static String buildSuggestedPublicReviewText(
+            ReviewInvitation invitation,
+            int rating,
+            String comment,
+            List<ImprovementTag> tags) {
+        if (comment != null && !comment.isBlank()) {
+            return comment.trim();
+        }
+        String branch = invitation.getBranchName() != null ? invitation.getBranchName() : "this salon";
+        StringBuilder sb = new StringBuilder();
+        if (rating >= 4) {
+            sb.append("Excellent visit at ").append(branch).append(". Rated ").append(rating).append("/5.");
+        } else {
+            sb.append("Visited ").append(branch).append(". Rated ").append(rating).append("/5.");
+        }
+        if (tags != null && !tags.isEmpty()) {
+            sb.append(" Highlights: ");
+            sb.append(tags.stream()
+                    .map(ReviewSubmissionService::improvementTagLabel)
+                    .collect(Collectors.joining(", ")));
+            sb.append(".");
+        }
+        return sb.toString();
+    }
+
+    private static String improvementTagLabel(ImprovementTag tag) {
+        return switch (tag) {
+            case WAIT_TIME -> "wait time";
+            case STAFF_ATTITUDE -> "staff attitude";
+            case SERVICE_QUALITY -> "service quality";
+            case CLEANLINESS -> "cleanliness";
+            case VALUE_FOR_MONEY -> "value for money";
+            case OTHER -> "overall experience";
+        };
     }
 }
