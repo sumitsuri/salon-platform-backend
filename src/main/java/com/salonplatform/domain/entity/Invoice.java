@@ -60,6 +60,13 @@ public class Invoice {
 
     private String membershipLabel;
 
+    /** Member card fee sold with this visit (exempt from GST). */
+    @Column(precision = 14, scale = 2)
+    @Builder.Default
+    private BigDecimal membershipFeeAmount = BigDecimal.ZERO;
+
+    private String membershipFeeLabel;
+
     private String promoLabel;
 
     @Column(nullable = false, precision = 14, scale = 2)

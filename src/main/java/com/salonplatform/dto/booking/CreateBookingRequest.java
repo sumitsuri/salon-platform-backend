@@ -28,4 +28,6 @@ public class CreateBookingRequest {
      * When false/null, booking is marked {@code READY_FOR_BILLING} for immediate payment.
      */
     private Boolean keepOpen;
+    /** Optional membership plan to bill and activate on payment. */
+    private UUID pendingMembershipPlanId;
 }

@@ -159,6 +159,10 @@ public class GstCalculationService {
         if (promo.getMembershipSubscription() != null && promo.getMembershipPlan() != null) {
             membershipLabel = promo.getMembershipPlan().getName()
                     + " (−" + promo.getMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString() + "%)";
+        } else if (promo.getPendingMembershipPlan() != null) {
+            membershipLabel = promo.getPendingMembershipPlan().getName()
+                    + " (−" + promo.getPendingMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString()
+                    + "% · new)";
         }
         String promoLabel = null;
         if (promo.getCoupon() != null) {
@@ -177,6 +181,27 @@ public class GstCalculationService {
             }
             if (booking.getBillDiscountNote() != null && !booking.getBillDiscountNote().isBlank()) {
                 manualDiscountLabel = manualDiscountLabel + " · " + booking.getBillDiscountNote().trim();
+            }
+        }
+
+        BigDecimal membershipFeeAmount = BigDecimal.ZERO;
+        String membershipFeeLabel = null;
+        if (promo.getPendingMembershipPlan() != null && promo.getMembershipSubscription() == null) {
+            MembershipPlan pendingPlan = promo.getPendingMembershipPlan();
+            membershipFeeAmount = pendingPlan.getFeeAmount() != null ? pendingPlan.getFeeAmount() : BigDecimal.ZERO;
+            if (membershipFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
+                membershipFeeLabel = "Membership · " + pendingPlan.getName();
+                linePreviews.add(BillLinePreview.builder()
+                        .serviceName(membershipFeeLabel)
+                        .unitPrice(membershipFeeAmount)
+                        .quantity(1)
+                        .lineDiscount(BigDecimal.ZERO)
+                        .taxableAmount(BigDecimal.ZERO)
+                        .cgstAmount(BigDecimal.ZERO)
+                        .sgstAmount(BigDecimal.ZERO)
+                        .lineTotal(membershipFeeAmount)
+                        .build());
+                grandTotal = grandTotal.add(membershipFeeAmount);
             }
         }
 
@@ -199,6 +224,8 @@ public class GstCalculationService {
                         : booking.getMembershipSubscriptionId())
                 .membershipLabel(membershipLabel)
                 .promoLabel(promoLabel)
+                .membershipFeeAmount(membershipFeeAmount)
+                .membershipFeeLabel(membershipFeeLabel)
                 .build();
     }
 
@@ -232,6 +259,8 @@ public class GstCalculationService {
     public static class PromoContext {
         private MembershipSubscription membershipSubscription;
         private MembershipPlan membershipPlan;
+        /** Plan queued for sale on this visit (discount preview + fee line). */
+        private MembershipPlan pendingMembershipPlan;
         private Coupon coupon;
         private Offer offer;
 

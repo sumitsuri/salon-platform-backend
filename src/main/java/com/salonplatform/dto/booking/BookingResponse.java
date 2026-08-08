@@ -28,6 +28,7 @@ public class BookingResponse {
     private UUID couponId;
     private UUID offerId;
     private UUID membershipSubscriptionId;
+    private UUID pendingMembershipPlanId;
     private String notes;
     private BillPreviewResponse billPreview;
     private Instant createdAt;

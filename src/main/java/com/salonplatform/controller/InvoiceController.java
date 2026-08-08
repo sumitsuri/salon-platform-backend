@@ -4,6 +4,7 @@ import com.salonplatform.domain.entity.Invoice;
 import com.salonplatform.domain.repository.InvoiceRepository;
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.invoice.InvoiceDetailResponse;
+import com.salonplatform.util.InvoiceBillUtils;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.service.InvoicePdfService;
@@ -62,6 +63,7 @@ public class InvoiceController {
     }
 
     private InvoiceDetailResponse toDetail(Invoice invoice) {
+        InvoiceBillUtils.MembershipFeeView fee = InvoiceBillUtils.resolveMembershipFee(invoice);
         return InvoiceDetailResponse.builder()
                 .id(invoice.getId())
                 .bookingId(invoice.getBookingId())
@@ -72,6 +74,8 @@ public class InvoiceController {
                 .promoDiscountAmount(invoice.getPromoDiscountAmount())
                 .membershipLabel(invoice.getMembershipLabel())
                 .promoLabel(invoice.getPromoLabel())
+                .membershipFeeAmount(fee.amount())
+                .membershipFeeLabel(fee.label())
                 .taxableAmount(invoice.getTaxableAmount())
                 .cgstAmount(invoice.getCgstAmount())
                 .sgstAmount(invoice.getSgstAmount())

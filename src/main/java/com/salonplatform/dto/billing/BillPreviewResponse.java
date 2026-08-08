@@ -24,6 +24,9 @@ public class BillPreviewResponse {
     private UUID membershipSubscriptionId;
     private String membershipLabel;
     private String promoLabel;
+    /** Membership card fee included on this bill (exempt from GST). */
+    private java.math.BigDecimal membershipFeeAmount;
+    private String membershipFeeLabel;
     /** Manager FLAT/PERCENT discount when no coupon/offer is applied. */
     private BigDecimal manualDiscountAmount;
     private String manualDiscountLabel;

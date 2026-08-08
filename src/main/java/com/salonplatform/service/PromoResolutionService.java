@@ -36,17 +36,38 @@ public class PromoResolutionService {
             UUID customerId,
             UUID couponId,
             UUID offerId) {
+        return resolveForBooking(tenantId, branchId, customerId, couponId, offerId, null);
+    }
+
+    public GstCalculationService.PromoContext resolveForBooking(
+            UUID tenantId,
+            UUID branchId,
+            UUID customerId,
+            UUID couponId,
+            UUID offerId,
+            UUID pendingMembershipPlanId) {
         if (couponId != null && offerId != null) {
             throw new BadRequestException("Select either a coupon or an offer, not both");
         }
 
         MembershipSubscription membership = membershipService.findActive(tenantId, customerId).orElse(null);
         MembershipPlan plan = null;
+        MembershipPlan pendingPlan = null;
         if (membership != null) {
             plan = membershipPlanRepository.findById(membership.getPlanId()).orElse(null);
             if (plan != null && !PromoScopeUtils.branchAllowed(plan.getBranchIds(), branchId)) {
                 membership = null;
                 plan = null;
+            }
+        } else if (pendingMembershipPlanId != null) {
+            pendingPlan = membershipPlanRepository.findById(pendingMembershipPlanId).orElse(null);
+            if (pendingPlan != null) {
+                if (pendingPlan.getStatus() != PromoStatus.ACTIVE
+                        || !PromoScopeUtils.branchAllowed(pendingPlan.getBranchIds(), branchId)) {
+                    pendingPlan = null;
+                } else {
+                    plan = pendingPlan;
+                }
             }
         }
 
@@ -74,6 +95,7 @@ public class PromoResolutionService {
         return GstCalculationService.PromoContext.builder()
                 .membershipSubscription(membership)
                 .membershipPlan(plan)
+                .pendingMembershipPlan(pendingPlan)
                 .coupon(coupon)
                 .offer(offer)
                 .build();

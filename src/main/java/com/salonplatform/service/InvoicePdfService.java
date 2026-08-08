@@ -22,6 +22,7 @@ import com.salonplatform.domain.repository.BookingLineItemRepository;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.InvoiceRepository;
 import com.salonplatform.domain.repository.TenantRepository;
+import com.salonplatform.util.InvoiceBillUtils;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -252,6 +253,7 @@ public class InvoicePdfService {
 
             boolean alt = false;
             int idx = 1;
+            var membershipFee = InvoiceBillUtils.resolveMembershipFee(invoice);
             for (BookingLineItem line : lines) {
                 Color bg = alt ? ROW_ALT : SURFACE;
                 table.addCell(bodyCell(idx + "  " + nullSafe(line.getServiceName()), smallFont, bg, Element.ALIGN_LEFT));
@@ -259,6 +261,13 @@ public class InvoicePdfService {
                 table.addCell(bodyCell(money(line.getUnitPrice()), smallFont, bg, Element.ALIGN_RIGHT));
                 alt = !alt;
                 idx++;
+            }
+            if (membershipFee.amount().compareTo(BigDecimal.ZERO) > 0) {
+                Color bg = alt ? ROW_ALT : SURFACE;
+                String feeName = membershipFee.label() != null ? membershipFee.label() : "Membership card";
+                table.addCell(bodyCell(idx + "  " + feeName, smallFont, bg, Element.ALIGN_LEFT));
+                table.addCell(bodyCell(money(membershipFee.amount()), smallFont, bg, Element.ALIGN_RIGHT));
+                table.addCell(bodyCell(money(membershipFee.amount()), smallFont, bg, Element.ALIGN_RIGHT));
             }
             document.add(table);
 
@@ -302,6 +311,10 @@ public class InvoicePdfService {
             }
             addTotalRow(totals, "CGST", money(invoice.getCgstAmount()), labelFont, bodyFont, SURFACE);
             addTotalRow(totals, "SGST", money(invoice.getSgstAmount()), labelFont, bodyFont, SURFACE);
+            if (membershipFee.amount().compareTo(BigDecimal.ZERO) > 0) {
+                String feeLabel = membershipFee.label() != null ? membershipFee.label() : "Member card";
+                addTotalRow(totals, feeLabel, money(membershipFee.amount()), labelFont, moneyBold, SURFACE);
+            }
             totalsCard.addElement(totals);
 
             PdfPTable grand = new PdfPTable(new float[]{1.4f, 1f});

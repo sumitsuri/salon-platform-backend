@@ -7,12 +7,14 @@ import com.salonplatform.domain.repository.*;
 import com.salonplatform.dto.billing.BillPreviewResponse;
 import com.salonplatform.dto.booking.*;
 import com.salonplatform.dto.common.PageResponse;
+import com.salonplatform.dto.membership.SellMembershipRequest;
 import com.salonplatform.dto.payment.RecordPaymentRequest;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.repository.BookingSpecifications;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.util.InvoiceBillUtils;
 import com.salonplatform.util.PageUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -57,6 +59,7 @@ public class BookingService {
     private final AuditService auditService;
     private final BillReceiptNotificationService billReceiptNotificationService;
     private final PromoResolutionService promoResolutionService;
+    private final MembershipService membershipService;
     private final InvoicePdfService invoicePdfService;
     private final com.salonplatform.reviews.domain.port.ReviewInvitationPort reviewInvitationPort;
 
@@ -80,7 +83,9 @@ public class BookingService {
 
         GstCalculationService.PromoContext promo = promoResolutionService.resolveForBooking(
                 tenantId, request.getBranchId(), customer.getId(),
-                request.getCouponId(), request.getOfferId());
+                request.getCouponId(), request.getOfferId(), request.getPendingMembershipPlanId());
+
+        assertPendingMembershipAllowed(tenantId, request.getBranchId(), customer.getId(), request.getPendingMembershipPlanId());
 
         Booking booking = bookingRepository.save(Booking.builder()
                 .tenantId(tenantId)
@@ -100,6 +105,7 @@ public class BookingService {
                 .offerId(promo.getOffer() != null ? promo.getOffer().getId() : null)
                 .membershipSubscriptionId(promo.getMembershipSubscription() != null
                         ? promo.getMembershipSubscription().getId() : null)
+                .pendingMembershipPlanId(request.getPendingMembershipPlanId())
                 .build());
 
         for (BookingLineRequest lineReq : request.getLines()) {
@@ -449,6 +455,7 @@ public class BookingService {
                 .couponId(booking.getCouponId())
                 .offerId(booking.getOfferId())
                 .membershipSubscriptionId(booking.getMembershipSubscriptionId())
+                .pendingMembershipPlanId(booking.getPendingMembershipPlanId())
                 .notes(booking.getNotes())
                 .billPreview(billPreview)
                 .createdAt(booking.getCreatedAt())
@@ -461,6 +468,7 @@ public class BookingService {
     }
 
     private BillPreviewResponse billPreviewFromInvoice(Invoice invoice) {
+        InvoiceBillUtils.MembershipFeeView fee = InvoiceBillUtils.resolveMembershipFee(invoice);
         return BillPreviewResponse.builder()
                 .subtotal(invoice.getSubtotal())
                 .membershipDiscountAmount(invoice.getMembershipDiscountAmount())
@@ -472,6 +480,8 @@ public class BookingService {
                 .grandTotal(invoice.getGrandTotal())
                 .membershipLabel(invoice.getMembershipLabel())
                 .promoLabel(invoice.getPromoLabel())
+                .membershipFeeAmount(fee.amount())
+                .membershipFeeLabel(fee.label())
                 .build();
     }
 
@@ -548,12 +558,35 @@ public class BookingService {
         });
 
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
+
+        UUID pendingPlanId = booking.getPendingMembershipPlanId();
+        BigDecimal membershipFeeCollected = BigDecimal.ZERO;
+        String membershipFeeLabel = null;
+        if (pendingPlanId != null
+                && membershipService.findActive(booking.getTenantId(), booking.getCustomerId()).isEmpty()) {
+            var plan = membershipService.loadPlan(pendingPlanId);
+            membershipFeeCollected = plan.getFeeAmount() != null ? plan.getFeeAmount() : BigDecimal.ZERO;
+            if (membershipFeeCollected.compareTo(BigDecimal.ZERO) > 0) {
+                membershipFeeLabel = "Membership · " + plan.getName();
+            }
+            SellMembershipRequest sellReq = new SellMembershipRequest();
+            sellReq.setCustomerId(booking.getCustomerId());
+            sellReq.setPlanId(pendingPlanId);
+            sellReq.setBranchId(booking.getBranchId());
+            sellReq.setPaymentMode(request.getMode());
+            sellReq.setPaymentReference(request.getReference());
+            sellReq.setAmount(membershipFeeCollected);
+            membershipService.sell(sellReq);
+            booking.setPendingMembershipPlanId(null);
+            bookingRepository.save(booking);
+        }
+
         GstCalculationService.PromoContext promo = promoContextFor(booking);
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
 
         BigDecimal cgstAmount = bill.getCgstAmount();
         BigDecimal sgstAmount = bill.getSgstAmount();
-        BigDecimal grandTotal = bill.getGrandTotal();
+        BigDecimal grandTotal = bill.getGrandTotal().add(membershipFeeCollected).setScale(2, RoundingMode.HALF_UP);
 
         boolean overrideCgst = request.getCgstAmount() != null;
         boolean overrideSgst = request.getSgstAmount() != null;
@@ -572,6 +605,7 @@ public class BookingService {
                     .subtract(bill.getSgstAmount())
                     .add(cgstAmount)
                     .add(sgstAmount)
+                    .add(membershipFeeCollected)
                     .max(BigDecimal.ZERO)
                     .setScale(2, RoundingMode.HALF_UP);
         }
@@ -603,6 +637,8 @@ public class BookingService {
                 .membershipSubscriptionId(bill.getMembershipSubscriptionId())
                 .membershipLabel(bill.getMembershipLabel())
                 .promoLabel(bill.getPromoLabel() != null ? bill.getPromoLabel() : bill.getManualDiscountLabel())
+                .membershipFeeAmount(membershipFeeCollected)
+                .membershipFeeLabel(membershipFeeLabel)
                 .taxableAmount(bill.getTaxableAmount())
                 .cgstAmount(cgstAmount)
                 .sgstAmount(sgstAmount)
@@ -745,13 +781,15 @@ public class BookingService {
                     .build();
         }).collect(Collectors.toList());
 
+        Invoice invoice = invoiceRepository.findByBookingId(booking.getId()).orElse(null);
         BillPreviewResponse billPreview = lines.isEmpty()
                 ? null
-                : gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+                : invoice != null
+                        ? billPreviewFromInvoice(invoice)
+                        : gstCalculationService.calculate(booking, lines, promoContextFor(booking));
 
-        UUID invoiceId = invoiceRepository.findByBookingId(booking.getId())
-                .map(Invoice::getId)
-                .orElse(null);
+        UUID invoiceId = invoice != null ? invoice.getId()
+                : invoiceRepository.findByBookingId(booking.getId()).map(Invoice::getId).orElse(null);
 
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -768,6 +806,7 @@ public class BookingService {
                 .couponId(booking.getCouponId())
                 .offerId(booking.getOfferId())
                 .membershipSubscriptionId(booking.getMembershipSubscriptionId())
+                .pendingMembershipPlanId(booking.getPendingMembershipPlanId())
                 .notes(booking.getNotes())
                 .billPreview(billPreview)
                 .createdAt(booking.getCreatedAt())
@@ -785,7 +824,40 @@ public class BookingService {
                 booking.getBranchId(),
                 booking.getCustomerId(),
                 booking.getCouponId(),
-                booking.getOfferId());
+                booking.getOfferId(),
+                booking.getPendingMembershipPlanId());
+    }
+
+    @Transactional
+    public BookingResponse setPendingMembershipPlan(UUID bookingId, SetPendingMembershipPlanRequest request) {
+        Booking booking = requireEditableBooking(bookingId);
+        UUID planId = request != null ? request.getPlanId() : null;
+        assertPendingMembershipAllowed(booking.getTenantId(), booking.getBranchId(), booking.getCustomerId(), planId);
+        booking.setPendingMembershipPlanId(planId);
+        persistPromoAmounts(booking, promoContextFor(booking));
+        bookingRepository.save(booking);
+        Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
+        Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
+        auditService.log("SET_PENDING_MEMBERSHIP", "Booking", bookingId,
+                planId != null ? "Membership plan queued on visit" : "Pending membership cleared");
+        return toResponse(booking, branch, customer);
+    }
+
+    private void assertPendingMembershipAllowed(
+            UUID tenantId, UUID branchId, UUID customerId, UUID pendingPlanId) {
+        if (pendingPlanId == null) {
+            return;
+        }
+        if (membershipService.findActive(tenantId, customerId).isPresent()) {
+            throw new BadRequestException("Customer already has an active membership");
+        }
+        var plan = membershipService.loadPlan(pendingPlanId);
+        if (plan.getStatus() != com.salonplatform.domain.enums.PromoStatus.ACTIVE) {
+            throw new BadRequestException("Membership plan is not active");
+        }
+        if (!com.salonplatform.util.PromoScopeUtils.branchAllowed(plan.getBranchIds(), branchId)) {
+            throw new BadRequestException("Plan not available at this branch");
+        }
     }
 
     private void persistPromoAmounts(Booking booking, GstCalculationService.PromoContext promo) {

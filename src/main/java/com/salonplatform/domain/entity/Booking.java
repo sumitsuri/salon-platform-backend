@@ -59,6 +59,9 @@ public class Booking {
 
     private UUID membershipSubscriptionId;
 
+    /** Membership plan to sell with this visit (fee on bill; discount preview before payment). */
+    private UUID pendingMembershipPlanId;
+
     @Column(precision = 14, scale = 2)
     private BigDecimal membershipDiscountAmount;
 
