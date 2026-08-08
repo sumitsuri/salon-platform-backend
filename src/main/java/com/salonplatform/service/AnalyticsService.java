@@ -34,8 +34,10 @@ public class AnalyticsService {
     private final WeekdaySalesService weekdaySalesService;
 
     public DashboardResponse getDashboard(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
-        SecurityUtils.assertBrandAdminOrAbove();
-        return computeDashboard(SecurityUtils.requireTenantId(), startDate, endDate, branchIds);
+        UserPrincipal user = SecurityUtils.currentUser();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
+        return computeDashboard(tenantId, startDate, endDate, resolvedBranchIds);
     }
 
     public RecommendationsResponse getRecommendations(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {

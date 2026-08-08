@@ -12,13 +12,17 @@ import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.CustomerRepository;
 import com.salonplatform.domain.repository.MembershipPlanRepository;
 import com.salonplatform.domain.repository.MembershipSubscriptionRepository;
+import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.membership.CreateMembershipPlanRequest;
+import com.salonplatform.dto.membership.MembershipListFilter;
 import com.salonplatform.dto.membership.MembershipPlanResponse;
 import com.salonplatform.dto.membership.MembershipSubscriptionResponse;
 import com.salonplatform.dto.membership.SellMembershipRequest;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.util.PageUtils;
 import com.salonplatform.util.PromoScopeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,8 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
@@ -156,6 +162,90 @@ public class MembershipService {
                     return toSubscriptionResponse(sub, customer, plan, branch);
                 })
                 .orElse(null);
+    }
+
+    public PageResponse<MembershipSubscriptionResponse> listActive(MembershipListFilter filter) {
+        UUID tenantId = SecurityUtils.requireTenantId();
+        UserPrincipal user = SecurityUtils.currentUser();
+        UUID branchId = filter.getBranchId();
+        if (SecurityUtils.isBrandAdmin() || user.getRole() == com.salonplatform.domain.enums.UserRole.PLATFORM_SUPER_ADMIN) {
+            if (branchId != null) {
+                SecurityUtils.assertBranchAccess(branchId);
+            }
+        } else {
+            branchId = user.getBranchId();
+            if (branchId == null) {
+                throw new BadRequestException("Branch context required");
+            }
+        }
+
+        LocalDate today = LocalDate.now(IST);
+        expireStaleSubscriptions(tenantId, today);
+
+        List<MembershipSubscription> raw = branchId != null
+                ? subscriptionRepository.findByTenantIdAndBranchIdAndStatusAndEndsOnGreaterThanEqualOrderByEndsOnAsc(
+                        tenantId, branchId, MembershipStatus.ACTIVE, today)
+                : subscriptionRepository.findByTenantIdAndStatusAndEndsOnGreaterThanEqualOrderByEndsOnAsc(
+                        tenantId, MembershipStatus.ACTIVE, today);
+
+        String q = filter.getQ() != null ? filter.getQ().trim().toLowerCase(Locale.ROOT) : "";
+        String phone = filter.getPhone() != null ? filter.getPhone().replaceAll("\\D", "") : "";
+        String card = filter.getCard() != null ? filter.getCard().trim().toLowerCase(Locale.ROOT) : "";
+        UUID planId = filter.getPlanId();
+        LocalDate endsBefore = filter.getEndsBefore();
+        LocalDate endsAfter = filter.getEndsAfter();
+
+        Map<UUID, Customer> customers = new HashMap<>();
+        Map<UUID, MembershipPlan> plans = new HashMap<>();
+        Map<UUID, Branch> branches = new HashMap<>();
+
+        List<MembershipSubscriptionResponse> mapped = raw.stream()
+                .filter(sub -> planId == null || planId.equals(sub.getPlanId()))
+                .filter(sub -> endsBefore == null || !sub.getEndsOn().isAfter(endsBefore))
+                .filter(sub -> endsAfter == null || !sub.getEndsOn().isBefore(endsAfter))
+                .map(sub -> {
+                    Customer customer = customers.computeIfAbsent(sub.getCustomerId(),
+                            id -> customerRepository.findById(id).orElse(null));
+                    MembershipPlan plan = plans.computeIfAbsent(sub.getPlanId(),
+                            id -> planRepository.findById(id).orElse(null));
+                    Branch branch = branches.computeIfAbsent(sub.getBranchId(),
+                            id -> branchRepository.findById(id).orElse(null));
+                    return toSubscriptionResponse(sub, customer, plan, branch);
+                })
+                .filter(row -> {
+                    if (card.isEmpty()) {
+                        return true;
+                    }
+                    String cardNumber = row.getCardNumber() != null ? row.getCardNumber().toLowerCase(Locale.ROOT) : "";
+                    return cardNumber.contains(card);
+                })
+                .filter(row -> {
+                    if (phone.isEmpty()) {
+                        return true;
+                    }
+                    String rowPhone = row.getCustomerPhone() != null ? row.getCustomerPhone().replaceAll("\\D", "") : "";
+                    return rowPhone.contains(phone);
+                })
+                .filter(row -> {
+                    if (q.isEmpty()) {
+                        return true;
+                    }
+                    String name = row.getCustomerName() != null ? row.getCustomerName().toLowerCase(Locale.ROOT) : "";
+                    return name.contains(q);
+                })
+                .collect(Collectors.toList());
+
+        int page = PageUtils.normalizePage(filter.getPage());
+        int size = PageUtils.normalizeSize(filter.getSize());
+        return PageUtils.slice(mapped, page, size);
+    }
+
+    private void expireStaleSubscriptions(UUID tenantId, LocalDate today) {
+        subscriptionRepository.findByTenantIdAndStatusAndEndsOnBefore(tenantId, MembershipStatus.ACTIVE, today)
+                .forEach(sub -> {
+                    sub.setStatus(MembershipStatus.EXPIRED);
+                    subscriptionRepository.save(sub);
+                });
     }
 
     public java.util.Optional<MembershipSubscription> findActive(UUID tenantId, UUID customerId) {

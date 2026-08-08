@@ -16,4 +16,13 @@ public interface MembershipSubscriptionRepository extends JpaRepository<Membersh
             UUID tenantId, UUID customerId, MembershipStatus status, LocalDate onOrAfter);
 
     List<MembershipSubscription> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+
+    List<MembershipSubscription> findByTenantIdAndStatusAndEndsOnGreaterThanEqualOrderByEndsOnAsc(
+            UUID tenantId, MembershipStatus status, LocalDate onOrAfter);
+
+    List<MembershipSubscription> findByTenantIdAndBranchIdAndStatusAndEndsOnGreaterThanEqualOrderByEndsOnAsc(
+            UUID tenantId, UUID branchId, MembershipStatus status, LocalDate onOrAfter);
+
+    List<MembershipSubscription> findByTenantIdAndStatusAndEndsOnBefore(
+            UUID tenantId, MembershipStatus status, LocalDate before);
 }
