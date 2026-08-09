@@ -584,9 +584,13 @@ public class BookingService {
         GstCalculationService.PromoContext promo = promoContextFor(booking);
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
 
-        BigDecimal cgstAmount = bill.getCgstAmount();
-        BigDecimal sgstAmount = bill.getSgstAmount();
-        BigDecimal grandTotal = bill.getGrandTotal().add(membershipFeeCollected).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal cgstAmount = BigDecimal.ZERO;
+        BigDecimal sgstAmount = BigDecimal.ZERO;
+        BigDecimal grandTotal = bill.getGrandTotal()
+                .subtract(bill.getCgstAmount())
+                .subtract(bill.getSgstAmount())
+                .add(membershipFeeCollected)
+                .setScale(2, RoundingMode.HALF_UP);
 
         boolean overrideCgst = request.getCgstAmount() != null;
         boolean overrideSgst = request.getSgstAmount() != null;
