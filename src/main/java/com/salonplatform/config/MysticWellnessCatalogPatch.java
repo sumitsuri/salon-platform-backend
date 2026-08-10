@@ -2,6 +2,7 @@ package com.salonplatform.config;
 
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.seed.RateCardCatalogSync;
+import com.salonplatform.service.ProductionTenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -14,6 +15,7 @@ import java.util.Set;
 
 /**
  * Mystic Wellness PDF rate card on Mantri Lithos and sibling branches (not Varthur).
+ * Disabled in production via {@link ProductionTenantGuard} — live customer data must not be overwritten on deploy.
  */
 @Component
 @Order(6)
@@ -34,9 +36,15 @@ public class MysticWellnessCatalogPatch implements ApplicationRunner {
 
     private final TenantRepository tenantRepository;
     private final RateCardCatalogSync rateCardCatalogSync;
+    private final ProductionTenantGuard productionTenantGuard;
 
     @Override
     public void run(ApplicationArguments args) {
+        if (productionTenantGuard.shouldSkipSystemMutation(TENANT_SLUG)) {
+            log.info("Skipping Mystic Wellness catalog patch — {} is a protected production tenant",
+                    TENANT_SLUG);
+            return;
+        }
         tenantRepository.findBySlug(TENANT_SLUG).ifPresent(tenant -> {
             if (PATCH_VERSION.equals(tenant.getCatalogPatchVersion())) {
                 return;

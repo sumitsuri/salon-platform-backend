@@ -8,6 +8,7 @@ import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.BranchServiceRepository;
 import com.salonplatform.domain.repository.SalonServiceRepository;
 import com.salonplatform.domain.repository.ServiceCategoryRepository;
+import com.salonplatform.service.ProductionTenantGuard;
 import com.salonplatform.seed.RateCardCatalog.ServiceDef;
 import com.salonplatform.seed.RateCardCatalog.SubCategoryDef;
 import com.salonplatform.seed.RateCardCatalog.TopCategoryDef;
@@ -42,6 +43,7 @@ public class RateCardCatalogSync {
     private final SalonServiceRepository salonServiceRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceRepository branchServiceRepository;
+    private final ProductionTenantGuard productionTenantGuard;
 
     @Transactional
     public List<SalonService> syncTenant(UUID tenantId, String tenantSlug, BigDecimal priceMultiplier) {
@@ -64,6 +66,10 @@ public class RateCardCatalogSync {
             BigDecimal priceMultiplier,
             boolean resetBranchOverrides,
             Set<String> activeBranchCodes) {
+        if (productionTenantGuard.shouldSkipSystemMutation(tenantSlug)) {
+            log.info("Skipping catalog sync for protected production tenant {}", tenantSlug);
+            return List.of();
+        }
         Map<String, ServiceCategory> tops = new HashMap<>();
         Map<String, ServiceCategory> leaves = new HashMap<>();
         Set<UUID> keepCategoryIds = new HashSet<>();
@@ -251,6 +257,10 @@ public class RateCardCatalogSync {
     /** Deactivate all catalog rows for a tenant before a full re-onboard. */
     @Transactional
     public void purgeTenantCatalog(UUID tenantId) {
+        if (productionTenantGuard.shouldSkipSystemMutation(tenantId)) {
+            log.info("Skipping catalog purge for protected production tenant {}", tenantId);
+            return;
+        }
         for (Branch branch : branchRepository.findByTenantId(tenantId)) {
             for (BranchService bs : branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId())) {
                 if (bs.isActive()) {
@@ -277,6 +287,10 @@ public class RateCardCatalogSync {
     /** Copy active branch prices into each service's shared list price. */
     @Transactional
     public int syncSharedListPricesFromBranch(UUID tenantId, String branchCode) {
+        if (productionTenantGuard.shouldSkipSystemMutation(tenantId)) {
+            log.info("Skipping shared list price sync for protected production tenant {}", tenantId);
+            return 0;
+        }
         Branch branch = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> branchCode.equals(b.getCode()))
                 .findFirst()

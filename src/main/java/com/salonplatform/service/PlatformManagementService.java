@@ -19,6 +19,7 @@ import com.salonplatform.dto.user.PlatformUserResponse;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.service.ProductionTenantGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,7 @@ public class PlatformManagementService {
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ProductionTenantGuard productionTenantGuard;
 
     @Transactional
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -74,6 +76,7 @@ public class PlatformManagementService {
     @Transactional
     public void deactivateTenant(UUID tenantId) {
         SecurityUtils.assertPlatformAdmin();
+        productionTenantGuard.assertAdminMutationAllowed(tenantId);
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
         tenant.setStatus(TenantStatus.SUSPENDED);
@@ -185,6 +188,7 @@ public class PlatformManagementService {
     @Transactional
     public void updateTenantStatus(UUID tenantId, TenantStatus status) {
         SecurityUtils.assertPlatformAdmin();
+        productionTenantGuard.assertAdminMutationAllowed(tenantId);
         Tenant tenant = requireTenant(tenantId);
         tenant.setStatus(status);
         tenantRepository.save(tenant);

@@ -10,6 +10,7 @@ import com.salonplatform.domain.repository.*;
 import com.salonplatform.seed.SeedCatalog.BranchSeed;
 import com.salonplatform.seed.SeedCatalog.StaffSeed;
 import com.salonplatform.seed.SeedCatalog.TenantSeed;
+import com.salonplatform.service.ProductionTenantGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -38,6 +39,7 @@ public class DataSeeder implements CommandLineRunner {
     private final BranchServiceRepository branchServiceRepository;
     private final PasswordEncoder passwordEncoder;
     private final RateCardCatalogSync rateCardCatalogSync;
+    private final ProductionTenantGuard productionTenantGuard;
 
     @Override
     @Transactional
@@ -63,6 +65,10 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void ensureTenant(TenantSeed seed) {
+        if (productionTenantGuard.shouldSkipSystemMutation(seed.slug())) {
+            log.info("Skipping seed mutations for protected production tenant {}", seed.slug());
+            return;
+        }
         Tenant tenant = tenantRepository.findBySlug(seed.slug()).orElse(null);
         boolean created = false;
         if (tenant == null) {

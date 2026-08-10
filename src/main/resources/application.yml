@@ -157,6 +157,10 @@ app:
       pilot-tenant-slug: demo-brand
       sync-cache-hours: 24
       default-radius-meters: 2000
+  production-data-protection:
+    enabled: false
+    protected-tenant-slugs:
+      - mystic-wellness
 
 springdoc:
   api-docs:
