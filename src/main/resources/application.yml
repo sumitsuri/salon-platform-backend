@@ -163,6 +163,7 @@ app:
       - mystic-wellness
     allowed-branch-catalog-patches:
       - varthur-menu-v1
+      - varthur-menu-v2
 
 springdoc:
   api-docs:

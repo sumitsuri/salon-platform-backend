@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class MysticWellnessVarthurCatalogPatch implements ApplicationRunner {
 
-    public static final String PATCH_ID = "varthur-menu-v1";
+    public static final String PATCH_ID = "varthur-menu-v2";
     private static final String TENANT_SLUG = "mystic-wellness";
     private static final String BRANCH_CODE = "MW01";
 

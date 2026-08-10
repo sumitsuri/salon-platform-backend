@@ -14,4 +14,11 @@ class MysticWellnessVarthurRateCardCatalogTest {
                 .count();
         assertTrue(serviceCount >= 120, "Expected full Varthur menu coverage, got " + serviceCount);
     }
+
+    @Test
+    void catalogHasSpaTopCategory() {
+        boolean hasSpa = MysticWellnessVarthurRateCardCatalog.all().stream()
+                .anyMatch(top -> "Spa".equals(top.name()));
+        assertTrue(hasSpa);
+    }
 }

@@ -16,6 +16,7 @@ public final class MysticWellnessVarthurRateCardCatalog {
         tops.add(men());
         tops.add(women());
         tops.add(shared());
+        tops.add(spa());
         return tops;
     }
 
@@ -177,42 +178,47 @@ public final class MysticWellnessVarthurRateCardCatalog {
                         s("Ragga Pedicure", 900, 50),
                         s("Spa Pedicure", 900, 50),
                         s("AVL Pedicure", 1200, 60)
-                )),
-                sub("Body Skin Care", 4, List.of(
+                ))
+        ));
+    }
+
+    private static RateCardCatalog.TopCategoryDef spa() {
+        return new RateCardCatalog.TopCategoryDef("Spa", 4, List.of(
+                sub("Body Skin Care", 1, List.of(
                         s("Almond Scrub", 1500, 45),
                         s("Coffee Scrub", 1700, 45),
                         s("Fruit Polishing", 2000, 50),
                         s("Chocolate In Wine Polishing", 3000, 60)
                 )),
-                sub("Mini Spa (30 min)", 5, List.of(
+                sub("Mini Spa (30 min)", 2, List.of(
                         s("Back Massage (30 min)", 700, 30),
                         s("Foot Massage (30 min)", 500, 30),
                         s("Hand Massage (30 min)", 500, 30),
                         s("Full Leg Massage (30 min)", 1000, 30),
                         s("Face Massage (30 min)", 500, 30)
                 )),
-                sub("SPA · 60 min", 6, List.of(
+                sub("SPA · 60 min", 3, List.of(
                         s("Swedish Massage (60 min)", 1800, 60),
                         s("Aroma Massage (60 min)", 1900, 60),
                         s("Deep Tissue Massage (60 min)", 2000, 60),
                         s("Balinese Massage (60 min)", 2200, 60),
                         s("Thai Massage (60 min)", 2100, 60)
                 )),
-                sub("SPA · 90 min", 7, List.of(
+                sub("SPA · 90 min", 4, List.of(
                         s("Swedish Massage (90 min)", 2700, 90),
                         s("Aroma Massage (90 min)", 2800, 90),
                         s("Deep Tissue Massage (90 min)", 3000, 90),
                         s("Balinese Massage (90 min)", 3200, 90),
                         s("Thai Massage (90 min)", 3000, 90)
                 )),
-                sub("SPA Package · 5 Sittings / 4 Months", 8, List.of(
+                sub("SPA Package · 5 Sittings / 4 Months", 5, List.of(
                         s("Swedish SPA Package — 5 Sittings (60 min)", 7000, 60),
                         s("Aroma SPA Package — 5 Sittings (60 min)", 7500, 60),
                         s("Deep Tissue SPA Package — 5 Sittings (60 min)", 8000, 60),
                         s("Thai SPA Package — 5 Sittings (60 min)", 8000, 60),
                         s("Balinese SPA Package — 5 Sittings (60 min)", 8500, 60)
                 )),
-                sub("SPA Package · 10 Sittings / 6 Months", 9, List.of(
+                sub("SPA Package · 10 Sittings / 6 Months", 6, List.of(
                         s("Swedish SPA Package — 10 Sittings (60 min)", 12000, 60),
                         s("Aroma SPA Package — 10 Sittings (60 min)", 13000, 60),
                         s("Deep Tissue SPA Package — 10 Sittings (60 min)", 14000, 60),
