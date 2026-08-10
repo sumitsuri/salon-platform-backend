@@ -60,3 +60,5 @@ app:
     enabled: true
     protected-tenant-slugs:
       - mystic-wellness
+    allowed-branch-catalog-patches:
+      - varthur-menu-v1

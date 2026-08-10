@@ -94,6 +94,9 @@ public class Branch {
     private String googleSearchRankData;
     private Instant digitalPresenceUpdatedAt;
 
+    /** Tracks branch-scoped catalog migration patches (e.g. Varthur printed menu). */
+    private String catalogPatchVersion;
+
     @CreationTimestamp
     private Instant createdAt;
 

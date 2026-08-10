@@ -23,4 +23,10 @@ public class ProductionDataProtectionProperties {
 
     /** Tenant slugs whose data must not be mutated by startup jobs (e.g. mystic-wellness). */
     private List<String> protectedTenantSlugs = new ArrayList<>(List.of("mystic-wellness"));
+
+    /**
+     * One-shot branch catalog patch IDs allowed on protected tenants (e.g. Varthur menu upload).
+     * All other automated catalog mutations remain blocked.
+     */
+    private List<String> allowedBranchCatalogPatches = new ArrayList<>();
 }

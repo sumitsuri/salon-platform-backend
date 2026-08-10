@@ -52,4 +52,13 @@ public class ProductionTenantGuard {
                     "This tenant is a protected production brand and cannot be modified from platform admin.");
         }
     }
+
+    /** Explicit allowlist for one-shot branch catalog patches on protected production tenants. */
+    public boolean isBranchCatalogPatchAllowed(String patchId) {
+        if (patchId == null || patchId.isBlank()) {
+            return false;
+        }
+        return properties.getAllowedBranchCatalogPatches().stream()
+                .anyMatch(allowed -> allowed.equalsIgnoreCase(patchId.trim()));
+    }
 }

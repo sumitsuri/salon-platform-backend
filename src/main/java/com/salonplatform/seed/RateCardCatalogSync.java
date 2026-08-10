@@ -313,4 +313,49 @@ public class RateCardCatalogSync {
                 branchCode, tenantId, updated);
         return updated;
     }
+
+    /**
+     * Upserts tenant catalog entries and applies pricing for a single branch only.
+     * Does not deactivate tenant services or touch other branches' branch_services rows.
+     */
+    @Transactional
+    public int syncSingleBranchCatalog(
+            UUID tenantId,
+            String branchCode,
+            List<TopCategoryDef> catalogDefs,
+            boolean resetBranchOverrides) {
+        Branch branch = branchRepository.findByTenantId(tenantId).stream()
+                .filter(b -> branchCode.equals(b.getCode()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "Branch not found for tenant " + tenantId + ": " + branchCode));
+
+        Set<UUID> keepServiceIds = new HashSet<>();
+        int branchPriceCount = 0;
+
+        for (TopCategoryDef topDef : catalogDefs) {
+            ServiceCategory top = upsertTop(tenantId, topDef.name(), topDef.sortOrder());
+            for (SubCategoryDef subDef : topDef.subs()) {
+                ServiceCategory leaf = upsertLeaf(tenantId, top.getId(), subDef.name(), subDef.sortOrder());
+                for (ServiceDef svcDef : subDef.services()) {
+                    SalonService svc = upsertService(tenantId, leaf.getId(), svcDef);
+                    keepServiceIds.add(svc.getId());
+                    BigDecimal price = RateCardCatalog.money(svcDef.price());
+                    upsertBranchPrice(tenantId, branch.getId(), svc.getId(), price, resetBranchOverrides);
+                    branchPriceCount++;
+                }
+            }
+        }
+
+        for (BranchService bs : branchServiceRepository.findByTenantIdAndBranchId(tenantId, branch.getId())) {
+            if (!keepServiceIds.contains(bs.getServiceId()) && bs.isActive()) {
+                bs.setActive(false);
+                branchServiceRepository.save(bs);
+            }
+        }
+
+        log.info("Branch catalog synced for tenant {} branch {}: {} priced services",
+                tenantId, branchCode, branchPriceCount);
+        return branchPriceCount;
+    }
 }

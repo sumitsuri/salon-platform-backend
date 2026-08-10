@@ -161,6 +161,8 @@ app:
     enabled: false
     protected-tenant-slugs:
       - mystic-wellness
+    allowed-branch-catalog-patches:
+      - varthur-menu-v1
 
 springdoc:
   api-docs:
