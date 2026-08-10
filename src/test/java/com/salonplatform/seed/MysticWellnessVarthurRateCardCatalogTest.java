@@ -16,9 +16,14 @@ class MysticWellnessVarthurRateCardCatalogTest {
     }
 
     @Test
-    void catalogHasSpaTopCategory() {
-        boolean hasSpa = MysticWellnessVarthurRateCardCatalog.all().stream()
-                .anyMatch(top -> "Spa".equals(top.name()));
-        assertTrue(hasSpa);
+    void spaCategoryHasOnlySessionAndPackageServices() {
+        var spa = MysticWellnessVarthurRateCardCatalog.all().stream()
+                .filter(top -> "Spa".equals(top.name()))
+                .findFirst()
+                .orElseThrow();
+        var subNames = spa.subs().stream().map(RateCardCatalog.SubCategoryDef::name).toList();
+        assertTrue(subNames.stream().allMatch(n -> n.startsWith("SPA")));
+        assertTrue(subNames.contains("SPA · 60 min"));
+        assertTrue(subNames.contains("SPA Package · 5 Sittings / 4 Months"));
     }
 }

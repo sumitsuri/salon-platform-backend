@@ -164,6 +164,7 @@ app:
     allowed-branch-catalog-patches:
       - varthur-menu-v1
       - varthur-menu-v2
+      - varthur-menu-v3
 
 springdoc:
   api-docs:
