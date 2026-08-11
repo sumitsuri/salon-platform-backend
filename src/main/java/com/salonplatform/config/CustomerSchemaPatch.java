@@ -31,6 +31,11 @@ public class CustomerSchemaPatch implements ApplicationRunner {
         try {
             jdbcTemplate.execute(
                     "ALTER TABLE branches ADD COLUMN IF NOT EXISTS phone_number_required BOOLEAN NOT NULL DEFAULT true");
+            // Mystic Wellness Varthur (MW01): phone optional for walk-in registration.
+            jdbcTemplate.update(
+                    "UPDATE branches SET phone_number_required = false "
+                            + "WHERE lower(code) = 'mw01' "
+                            + "AND tenant_id IN (SELECT id FROM tenants WHERE lower(slug) = 'mystic-wellness')");
 
             jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS visit_pass_id VARCHAR(32)");
             jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS identity_status VARCHAR(24)");
