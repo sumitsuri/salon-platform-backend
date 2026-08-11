@@ -30,6 +30,10 @@ public final class CustomerSpecifications {
             String q = "%" + filter.getPhone().trim() + "%";
             spec = spec.and((root, query, cb) -> cb.like(root.get("phone"), q));
         }
+        if (filter.getVisitPassId() != null && !filter.getVisitPassId().isBlank()) {
+            String q = "%" + filter.getVisitPassId().trim().toUpperCase() + "%";
+            spec = spec.and((root, query, cb) -> cb.like(cb.upper(root.get("visitPassId")), q));
+        }
         if (filter.getMinVisitCount() != null) {
             spec = spec.and((root, query, cb) -> cb.greaterThanOrEqualTo(root.get("visitCount"), filter.getMinVisitCount()));
         }

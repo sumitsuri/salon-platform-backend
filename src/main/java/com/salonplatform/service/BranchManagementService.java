@@ -27,6 +27,7 @@ public class BranchManagementService {
 
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final GstPolicyService gstPolicyService;
 
     @Transactional
     public BranchResponse create(CreateBranchRequest request) {
@@ -48,6 +49,8 @@ public class BranchManagementService {
                 .monthlySalesTarget(request.getMonthlySalesTarget())
                 .status(request.getStatus())
                 .businessType(request.getBusinessType() != null ? request.getBusinessType() : BranchBusinessType.SALON)
+                .phoneNumberRequired(request.getPhoneNumberRequired() != null
+                        ? request.getPhoneNumberRequired() : true)
                 .build());
         return toResponse(branch);
     }
@@ -92,6 +95,10 @@ public class BranchManagementService {
         } else if (request.getBusinessType() != null) {
             branch.setBusinessType(request.getBusinessType());
         }
+        if (request.getPhoneNumberRequired() != null) {
+            branch.setPhoneNumberRequired(request.getPhoneNumberRequired());
+        }
+        applyGstPolicy(branch, request.getGstPolicy());
 
         return toResponse(branchRepository.save(branch));
     }
@@ -177,6 +184,9 @@ public class BranchManagementService {
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
                 .businessType(b.getBusinessType())
+                .phoneNumberRequired(b.getPhoneNumberRequired())
+                .gstEnabled(b.getGstEnabled())
+                .gstEffective(gstPolicyService.isGstEnabled(b.getTenantId(), b.getId()))
                 .googleReviewUrl(b.getGoogleReviewUrl())
                 .googleReviewAutoPublish(b.getGoogleReviewAutoPublish())
                 .googlePlaceId(b.getGooglePlaceId())
@@ -198,5 +208,17 @@ public class BranchManagementService {
 
     private static String blankToNull(String s) {
         return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    private static void applyGstPolicy(Branch branch, String gstPolicy) {
+        if (gstPolicy == null || gstPolicy.isBlank()) {
+            return;
+        }
+        switch (gstPolicy.trim().toUpperCase()) {
+            case "INHERIT" -> branch.setGstEnabled(null);
+            case "ENABLED" -> branch.setGstEnabled(true);
+            case "DISABLED" -> branch.setGstEnabled(false);
+            default -> throw new BadRequestException("Invalid gstPolicy: use INHERIT, ENABLED, or DISABLED");
+        }
     }
 }

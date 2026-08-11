@@ -16,10 +16,12 @@ import com.lowagie.text.pdf.PdfPageEventHelper;
 import com.lowagie.text.pdf.PdfWriter;
 import com.salonplatform.domain.entity.BookingLineItem;
 import com.salonplatform.domain.entity.Branch;
+import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.Invoice;
 import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.repository.BookingLineItemRepository;
 import com.salonplatform.domain.repository.BranchRepository;
+import com.salonplatform.domain.repository.CustomerRepository;
 import com.salonplatform.domain.repository.InvoiceRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.util.InvoiceBillUtils;
@@ -93,6 +95,7 @@ public class InvoicePdfService {
     private final BookingLineItemRepository lineItemRepository;
     private final TenantRepository tenantRepository;
     private final BranchRepository branchRepository;
+    private final CustomerRepository customerRepository;
     private final InvoicePdfStorageService storageService;
 
     public byte[] generatePdf(UUID invoiceId) {
@@ -143,6 +146,8 @@ public class InvoicePdfService {
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
         Tenant tenant = tenantRepository.findById(invoice.getTenantId()).orElse(null);
         Branch branch = branchRepository.findById(invoice.getBranchId()).orElse(null);
+        Customer customer = customerRepository.findById(invoice.getCustomerId()).orElse(null);
+        String visitPassId = customer != null ? customer.getVisitPassId() : null;
 
         String brandName = tenant != null && tenant.getName() != null ? tenant.getName() : "Salon";
         String branchName = branch != null && branch.getName() != null ? branch.getName() : "Branch";
@@ -226,7 +231,15 @@ public class InvoicePdfService {
             rightMeta.addElement(new Paragraph("BILLED TO", sectionFont));
             rightMeta.addElement(vspace(3f));
             rightMeta.addElement(new Paragraph(nullSafe(invoice.getCustomerName()), bodyBold));
-            rightMeta.addElement(new Paragraph(nullSafe(invoice.getCustomerPhone()), smallFont));
+            String phoneLine = invoice.getCustomerPhone() != null && !invoice.getCustomerPhone().isBlank()
+                    ? invoice.getCustomerPhone()
+                    : null;
+            if (phoneLine != null) {
+                rightMeta.addElement(new Paragraph(phoneLine, smallFont));
+            }
+            if (visitPassId != null && !visitPassId.isBlank()) {
+                rightMeta.addElement(new Paragraph("Visit Pass  " + visitPassId, smallFont));
+            }
             if (invoice.getCustomerSociety() != null && !invoice.getCustomerSociety().isBlank()) {
                 String loc = invoice.getCustomerSociety();
                 if (invoice.getCustomerFlat() != null && !invoice.getCustomerFlat().isBlank()) {
@@ -342,6 +355,13 @@ public class InvoicePdfService {
             thanks.setSpacingBefore(6f);
             thanks.setSpacingAfter(2f);
             document.add(thanks);
+
+            if (visitPassId != null && !visitPassId.isBlank()) {
+                Paragraph passLine = new Paragraph("Your Visit Pass: " + visitPassId + " — show on your next visit for offers & membership.", smallMuted);
+                passLine.setAlignment(Element.ALIGN_CENTER);
+                passLine.setSpacingAfter(4f);
+                document.add(passLine);
+            }
 
             Paragraph powered = new Paragraph(brandName + "  ·  " + branchName, smallMuted);
             powered.setAlignment(Element.ALIGN_CENTER);

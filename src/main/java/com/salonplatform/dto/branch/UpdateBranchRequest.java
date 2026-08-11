@@ -19,4 +19,8 @@ public class UpdateBranchRequest {
     private BigDecimal monthlySalesTarget;
     private BranchStatus status;
     private BranchBusinessType businessType;
+    /** Default true — phone required for customer registration at this branch. */
+    private Boolean phoneNumberRequired;
+    /** INHERIT, ENABLED, or DISABLED — branch GST policy override. */
+    private String gstPolicy;
 }

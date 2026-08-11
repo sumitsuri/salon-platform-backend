@@ -16,5 +16,6 @@ public class TenantResponse {
     private String logoUrl;
     private String primaryColor;
     private TenantStatus status;
+    private Boolean gstEnabled;
     private Instant createdAt;
 }

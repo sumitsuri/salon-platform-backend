@@ -42,6 +42,7 @@ public class BookingController {
     @GetMapping
     public ApiResponse<PageResponse<BookingResponse>> list(
             @RequestParam(required = false) UUID branchId,
+            @RequestParam(required = false) UUID customerId,
             @RequestParam(required = false) String customer,
             @RequestParam(required = false) String branch,
             @RequestParam(required = false) String service,
@@ -55,6 +56,7 @@ public class BookingController {
             @RequestParam(defaultValue = "20") int size) {
         BookingListFilter filter = BookingListFilter.builder()
                 .branchId(branchId)
+                .customerId(customerId)
                 .customer(customer)
                 .branch(branch)
                 .service(service)

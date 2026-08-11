@@ -22,4 +22,6 @@ public class CreateBranchRequest {
     private BigDecimal monthlySalesTarget;
     private BranchStatus status = BranchStatus.ACTIVE;
     private BranchBusinessType businessType = BranchBusinessType.SALON;
+    /** Default true — phone required for walk-in registration. */
+    private Boolean phoneNumberRequired = true;
 }

@@ -413,6 +413,9 @@ public class DemoBookingSeeder implements CommandLineRunner {
                     .tenantId(tenantId)
                     .name(name)
                     .phone(phone)
+                    .visitPassId(uniqueDemoPassId(tenantId, branch, i))
+                    .identityStatus(CustomerIdentityStatus.PHONE_VERIFIED)
+                    .passPublicToken(UUID.randomUUID().toString().replace("-", ""))
                     .society(branch.getSocietyDefault())
                     .flatUnit(societies[i % societies.length] + "-" + (100 + i))
                     .visitCount(0)
@@ -421,5 +424,12 @@ public class DemoBookingSeeder implements CommandLineRunner {
             customers.add(c);
         }
         return customers;
+    }
+
+    private String uniqueDemoPassId(UUID tenantId, Branch branch, int index) {
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        String prefix = com.salonplatform.util.VisitPassUtils.tenantPrefix(tenant);
+        String branchCode = com.salonplatform.util.VisitPassUtils.normalizeBranchCode(branch.getCode());
+        return prefix + "-" + branchCode + "-" + String.format("%06d", 200000 + index);
     }
 }

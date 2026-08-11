@@ -115,6 +115,7 @@ public class PlatformManagementService {
                 .monthlySalesTarget(request.getMonthlySalesTarget())
                 .status(request.getStatus() != null ? request.getStatus() : BranchStatus.ACTIVE)
                 .businessType(request.getBusinessType() != null ? request.getBusinessType() : BranchBusinessType.SALON)
+                .phoneNumberRequired(true)
                 .build());
         return toBranchResponse(branch);
     }
@@ -216,6 +217,7 @@ public class PlatformManagementService {
                 .logoUrl(t.getLogoUrl())
                 .primaryColor(t.getPrimaryColor())
                 .status(t.getStatus())
+                .gstEnabled(t.getGstEnabled())
                 .createdAt(t.getCreatedAt())
                 .build();
     }
@@ -234,6 +236,7 @@ public class PlatformManagementService {
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
                 .businessType(b.getBusinessType())
+                .phoneNumberRequired(b.getPhoneNumberRequired())
                 .createdAt(b.getCreatedAt())
                 .build();
     }

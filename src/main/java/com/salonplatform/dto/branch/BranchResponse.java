@@ -28,6 +28,11 @@ public class BranchResponse {
     private BigDecimal monthlySalesTarget;
     private BranchStatus status;
     private BranchBusinessType businessType;
+    private Boolean phoneNumberRequired;
+    /** Branch override: null = inherit brand. */
+    private Boolean gstEnabled;
+    /** Resolved policy for billing (brand default + branch override). */
+    private Boolean gstEffective;
     private String googleReviewUrl;
     private Boolean googleReviewAutoPublish;
     private String googlePlaceId;

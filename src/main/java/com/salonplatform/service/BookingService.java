@@ -438,7 +438,9 @@ public class BookingService {
 
         BillPreviewResponse billPreview = invoice != null
                 ? billPreviewFromInvoice(invoice)
-                : estimateBillPreviewFromLines(lines);
+                : lines.isEmpty()
+                        ? null
+                        : gstCalculationService.calculate(booking, lines, promoContextFor(booking));
 
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -584,11 +586,15 @@ public class BookingService {
         GstCalculationService.PromoContext promo = promoContextFor(booking);
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
 
-        BigDecimal cgstAmount = BigDecimal.ZERO;
-        BigDecimal sgstAmount = BigDecimal.ZERO;
+        BigDecimal cgstAmount = bill.getCgstAmount() != null ? bill.getCgstAmount() : BigDecimal.ZERO;
+        BigDecimal sgstAmount = bill.getSgstAmount() != null ? bill.getSgstAmount() : BigDecimal.ZERO;
+        BigDecimal billCgst = bill.getCgstAmount() != null ? bill.getCgstAmount() : BigDecimal.ZERO;
+        BigDecimal billSgst = bill.getSgstAmount() != null ? bill.getSgstAmount() : BigDecimal.ZERO;
         BigDecimal grandTotal = bill.getGrandTotal()
-                .subtract(bill.getCgstAmount())
-                .subtract(bill.getSgstAmount())
+                .subtract(billCgst)
+                .subtract(billSgst)
+                .add(cgstAmount)
+                .add(sgstAmount)
                 .add(membershipFeeCollected)
                 .setScale(2, RoundingMode.HALF_UP);
 
@@ -605,8 +611,8 @@ public class BookingService {
             cgstAmount = request.getCgstAmount().setScale(2, RoundingMode.HALF_UP);
             sgstAmount = request.getSgstAmount().setScale(2, RoundingMode.HALF_UP);
             grandTotal = bill.getGrandTotal()
-                    .subtract(bill.getCgstAmount())
-                    .subtract(bill.getSgstAmount())
+                    .subtract(billCgst)
+                    .subtract(billSgst)
                     .add(cgstAmount)
                     .add(sgstAmount)
                     .add(membershipFeeCollected)
@@ -649,7 +655,7 @@ public class BookingService {
                 .grandTotal(grandTotal)
                 .branchGstin(branch.getGstin() != null ? branch.getGstin() : "")
                 .customerName(customer.getName())
-                .customerPhone(customer.getPhone())
+                .customerPhone(customer.getPhone() != null ? customer.getPhone() : "")
                 .customerSociety(customer.getSociety())
                 .customerFlat(customer.getFlatUnit())
                 .issuedAt(issuedAt)

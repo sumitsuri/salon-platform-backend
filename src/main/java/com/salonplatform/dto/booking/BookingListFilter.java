@@ -12,6 +12,7 @@ import java.util.UUID;
 @Builder
 public class BookingListFilter {
     private UUID branchId;
+    private UUID customerId;
     private String branch;
     private String customer;
     private String service;

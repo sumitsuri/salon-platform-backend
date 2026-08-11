@@ -52,6 +52,12 @@ public class Tenant {
     @Builder.Default
     private SalonTier salonTier = SalonTier.MID_MARKET;
 
+    /**
+     * When true, service GST rates apply on bills. Default false for all brands/environments.
+     */
+    @Builder.Default
+    private Boolean gstEnabled = false;
+
     /** Tracks one-off catalog migration patches applied to this tenant. */
     private String catalogPatchVersion;
 

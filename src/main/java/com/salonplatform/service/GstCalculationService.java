@@ -37,12 +37,14 @@ public class GstCalculationService {
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
 
     private final SalonServiceRepository salonServiceRepository;
+    private final GstPolicyService gstPolicyService;
 
     public BillPreviewResponse calculate(Booking booking, List<BookingLineItem> lines) {
         return calculate(booking, lines, PromoContext.empty());
     }
 
     public BillPreviewResponse calculate(Booking booking, List<BookingLineItem> lines, PromoContext promo) {
+        boolean gstEnabled = gstPolicyService.isGstEnabled(booking.getTenantId(), booking.getBranchId());
         Map<UUID, SalonService> serviceById = new HashMap<>();
         for (BookingLineItem line : lines) {
             if (line.getServiceId() != null) {
@@ -116,7 +118,8 @@ public class GstCalculationService {
             }
 
             BigDecimal taxable = scratch.afterManual.subtract(promoDiscount).max(BigDecimal.ZERO);
-            BigDecimal halfRate = line.getGstRate().divide(BigDecimal.valueOf(2), 4, ROUNDING);
+            BigDecimal lineGstRate = gstEnabled && line.getGstRate() != null ? line.getGstRate() : BigDecimal.ZERO;
+            BigDecimal halfRate = lineGstRate.divide(BigDecimal.valueOf(2), 4, ROUNDING);
             BigDecimal cgst = taxable.multiply(halfRate).divide(BigDecimal.valueOf(100), SCALE, ROUNDING);
             BigDecimal sgst = taxable.multiply(halfRate).divide(BigDecimal.valueOf(100), SCALE, ROUNDING);
             BigDecimal lineTotal = taxable.add(cgst).add(sgst);
@@ -158,29 +161,29 @@ public class GstCalculationService {
         String membershipLabel = null;
         if (promo.getMembershipSubscription() != null && promo.getMembershipPlan() != null) {
             membershipLabel = promo.getMembershipPlan().getName()
-                    + " (‚àí" + promo.getMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString() + "%)";
+                    + " (?" + promo.getMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString() + "%)";
         } else if (promo.getPendingMembershipPlan() != null) {
             membershipLabel = promo.getPendingMembershipPlan().getName()
-                    + " (‚àí" + promo.getPendingMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString()
-                    + "% ¬∑ new)";
+                    + " (?" + promo.getPendingMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString()
+                    + "% ù new)";
         }
         String promoLabel = null;
         if (promo.getCoupon() != null) {
-            promoLabel = "Coupon " + promo.getCoupon().getCode() + " ¬∑ " + promo.getCoupon().getName();
+            promoLabel = "Coupon " + promo.getCoupon().getCode() + " ù " + promo.getCoupon().getName();
         } else if (promo.getOffer() != null) {
-            promoLabel = "Offer ¬∑ " + promo.getOffer().getName();
+            promoLabel = "Offer ù " + promo.getOffer().getName();
         }
 
         String manualDiscountLabel = null;
         if (legacyBillDiscount.compareTo(BigDecimal.ZERO) > 0) {
             if (booking.getBillDiscountType() == DiscountType.PERCENT) {
-                manualDiscountLabel = "Manager discount (‚àí"
+                manualDiscountLabel = "Manager discount (?"
                         + booking.getBillDiscountValue().stripTrailingZeros().toPlainString() + "%)";
             } else {
                 manualDiscountLabel = "Manager discount";
             }
             if (booking.getBillDiscountNote() != null && !booking.getBillDiscountNote().isBlank()) {
-                manualDiscountLabel = manualDiscountLabel + " ¬∑ " + booking.getBillDiscountNote().trim();
+                manualDiscountLabel = manualDiscountLabel + " ù " + booking.getBillDiscountNote().trim();
             }
         }
 
@@ -190,7 +193,7 @@ public class GstCalculationService {
             MembershipPlan pendingPlan = promo.getPendingMembershipPlan();
             membershipFeeAmount = pendingPlan.getFeeAmount() != null ? pendingPlan.getFeeAmount() : BigDecimal.ZERO;
             if (membershipFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
-                membershipFeeLabel = "Membership ¬∑ " + pendingPlan.getName();
+                membershipFeeLabel = "Membership ù " + pendingPlan.getName();
                 linePreviews.add(BillLinePreview.builder()
                         .serviceName(membershipFeeLabel)
                         .unitPrice(membershipFeeAmount)

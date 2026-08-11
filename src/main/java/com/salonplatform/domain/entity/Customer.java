@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.CustomerIdentityStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -10,9 +11,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "customers", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"tenant_id", "phone"})
-})
+@Table(name = "customers")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -30,8 +29,18 @@ public class Customer {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, length = 15)
+    @Column(length = 15)
     private String phone;
+
+    @Column(nullable = false, length = 32)
+    private String visitPassId;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private CustomerIdentityStatus identityStatus = CustomerIdentityStatus.PHONE_VERIFIED;
+
+    /** Opaque token for public registration-card URL (no auth). */
+    private String passPublicToken;
 
     private String society;
     private String flatUnit;

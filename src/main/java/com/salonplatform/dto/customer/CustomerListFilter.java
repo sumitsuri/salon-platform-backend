@@ -12,6 +12,7 @@ public class CustomerListFilter {
     private String name;
     private String society;
     private String phone;
+    private String visitPassId;
     private Integer minVisitCount;
     private Integer maxVisitCount;
     private BigDecimal minLifetimeSpend;

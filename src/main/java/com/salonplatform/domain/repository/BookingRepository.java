@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,4 +24,20 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
                                            @Param("end") Instant end);
 
     List<Booking> findByTenantIdAndBranchIdAndStatus(UUID tenantId, UUID branchId, BookingStatus status);
+
+    @Query("""
+            SELECT b.customerId AS customerId,
+                   COUNT(b) AS visitCount,
+                   MAX(b.createdAt) AS lastVisitAt,
+                   COALESCE(SUM(i.grandTotal), 0) AS lifetimeSpend
+            FROM Booking b
+            LEFT JOIN Invoice i ON i.bookingId = b.id
+            WHERE b.customerId IN :customerIds
+              AND b.branchId = :branchId
+              AND b.status = com.salonplatform.domain.enums.BookingStatus.COMPLETED
+            GROUP BY b.customerId
+            """)
+    List<CustomerBranchStatsRow> aggregateBranchStatsForCustomers(
+            @Param("customerIds") Collection<UUID> customerIds,
+            @Param("branchId") UUID branchId);
 }

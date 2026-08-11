@@ -32,8 +32,11 @@ public final class BookingSpecifications {
         if (filter.getStatus() != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), filter.getStatus()));
         }
-        if (filter.getCustomer() != null && !filter.getCustomer().isBlank()) {
+        if (filter.getCustomerId() != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("customerId"), filter.getCustomerId()));
+        } else if (filter.getCustomer() != null && !filter.getCustomer().isBlank()) {
             String q = "%" + filter.getCustomer().trim().toLowerCase() + "%";
+            String passQ = "%" + filter.getCustomer().trim().toUpperCase() + "%";
             spec = spec.and((root, query, cb) -> {
                 var sq = query.subquery(Long.class);
                 var customer = sq.from(Customer.class);
@@ -42,7 +45,8 @@ public final class BookingSpecifications {
                         cb.equal(customer.get("id"), root.get("customerId")),
                         cb.or(
                                 cb.like(cb.lower(customer.get("name")), q),
-                                cb.like(customer.get("phone"), "%" + filter.getCustomer().trim() + "%")
+                                cb.like(customer.get("phone"), "%" + filter.getCustomer().trim() + "%"),
+                                cb.like(cb.upper(customer.get("visitPassId")), passQ)
                         )
                 ));
                 return cb.exists(sq);

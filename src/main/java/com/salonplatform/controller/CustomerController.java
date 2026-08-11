@@ -4,6 +4,7 @@ import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.customer.CreateCustomerRequest;
 import com.salonplatform.dto.customer.CustomerListFilter;
+import com.salonplatform.dto.customer.CustomerRegistrationCardResponse;
 import com.salonplatform.dto.customer.CustomerResponse;
 import com.salonplatform.service.CustomerService;
 import jakarta.validation.Valid;
@@ -28,9 +29,9 @@ public class CustomerController {
         return ApiResponse.ok(customerService.create(request));
     }
 
-    @GetMapping("/{id}")
-    public ApiResponse<CustomerResponse> get(@PathVariable UUID id) {
-        return ApiResponse.ok(customerService.getById(id));
+    @GetMapping("/search")
+    public ApiResponse<List<CustomerResponse>> search(@RequestParam String q) {
+        return ApiResponse.ok(customerService.search(q));
     }
 
     @GetMapping("/phone/{phone}")
@@ -38,9 +39,21 @@ public class CustomerController {
         return ApiResponse.ok(customerService.findByPhone(phone));
     }
 
-    @GetMapping("/search")
-    public ApiResponse<List<CustomerResponse>> search(@RequestParam String q) {
-        return ApiResponse.ok(customerService.search(q));
+    @GetMapping("/visit-pass/{visitPassId}")
+    public ApiResponse<CustomerResponse> byVisitPass(@PathVariable String visitPassId) {
+        return ApiResponse.ok(customerService.findByVisitPass(visitPassId));
+    }
+
+    @GetMapping("/{id}/registration-card")
+    public ApiResponse<CustomerRegistrationCardResponse> registrationCard(
+            @PathVariable UUID id,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(customerService.getRegistrationCard(id, branchId));
+    }
+
+    @GetMapping("/{id}")
+    public ApiResponse<CustomerResponse> get(@PathVariable UUID id) {
+        return ApiResponse.ok(customerService.getById(id));
     }
 
     @GetMapping
@@ -48,6 +61,7 @@ public class CustomerController {
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String society,
             @RequestParam(required = false) String phone,
+            @RequestParam(required = false) String visitPassId,
             @RequestParam(required = false) Integer minVisitCount,
             @RequestParam(required = false) Integer maxVisitCount,
             @RequestParam(required = false) BigDecimal minLifetimeSpend,
@@ -62,6 +76,7 @@ public class CustomerController {
                 .name(name)
                 .society(society)
                 .phone(phone)
+                .visitPassId(visitPassId)
                 .minVisitCount(minVisitCount)
                 .maxVisitCount(maxVisitCount)
                 .minLifetimeSpend(minLifetimeSpend)

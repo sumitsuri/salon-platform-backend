@@ -64,6 +64,18 @@ public class Branch {
     @Builder.Default
     private BranchBusinessType businessType = BranchBusinessType.SALON;
 
+    /**
+     * When true (default), walk-in registration requires a valid customer phone.
+     * When false, name + visit pass are sufficient; phone is optional.
+     */
+    @Builder.Default
+    private Boolean phoneNumberRequired = true;
+
+    /**
+     * Branch GST override: null = inherit brand {@link com.salonplatform.domain.entity.Tenant#gstEnabled}.
+     */
+    private Boolean gstEnabled;
+
     /** Google Business review URL used after 4–5★ internal ratings. */
     private String googleReviewUrl;
 

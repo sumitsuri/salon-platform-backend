@@ -28,7 +28,7 @@ public class NotificationService {
     private String publicUrl;
 
     public MessageDeliveryLog sendBillReceipt(Invoice invoice, Customer customer) {
-        String phone = PhoneUtils.normalizeIndianMobile(customer.getPhone());
+        String phone = customer.getPhone() != null ? PhoneUtils.normalizeIndianMobile(customer.getPhone()) : null;
         MessageDeliveryLog log = MessageDeliveryLog.builder()
                 .tenantId(invoice.getTenantId())
                 .customerId(customer.getId())
@@ -37,6 +37,12 @@ public class NotificationService {
                 .recipientPhone(phone)
                 .status(MessageDeliveryStatus.PENDING)
                 .build();
+
+        if (phone == null || phone.isBlank()) {
+            log.setStatus(MessageDeliveryStatus.SKIPPED);
+            log.setErrorMessage("Customer has no phone on file");
+            return deliveryLogRepository.save(log);
+        }
 
         if (!Boolean.TRUE.equals(customer.getWhatsappOptIn())) {
             log.setStatus(MessageDeliveryStatus.SKIPPED);
@@ -71,7 +77,7 @@ public class NotificationService {
             Customer customer,
             MessageChannel channel,
             String messageText) {
-        String phone = PhoneUtils.normalizeIndianMobile(customer.getPhone());
+        String phone = customer.getPhone() != null ? PhoneUtils.normalizeIndianMobile(customer.getPhone()) : null;
         MessageDeliveryLog log = MessageDeliveryLog.builder()
                 .tenantId(tenantId)
                 .campaignId(campaignId)
@@ -80,6 +86,12 @@ public class NotificationService {
                 .recipientPhone(phone)
                 .status(MessageDeliveryStatus.PENDING)
                 .build();
+
+        if (phone == null || phone.isBlank()) {
+            log.setStatus(MessageDeliveryStatus.SKIPPED);
+            log.setErrorMessage("Customer has no phone on file");
+            return deliveryLogRepository.save(log);
+        }
 
         if (channel == MessageChannel.WHATSAPP) {
             if (!Boolean.TRUE.equals(customer.getWhatsappOptIn())) {
