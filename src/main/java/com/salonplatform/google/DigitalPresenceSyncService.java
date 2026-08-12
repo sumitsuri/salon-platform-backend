@@ -79,7 +79,7 @@ public class DigitalPresenceSyncService {
         requireGeofence(branch);
         int radiusM = radiusKm > 0 ? radiusKm * 1000 : properties.getDefaultRadiusMeters();
 
-        GooglePlaceSnapshot ownListing = enrichSnapshot(resolveOwnListing(branch));
+        GooglePlaceSnapshot ownListing = enrichSnapshot(resolveOwnListing(branch, tenant));
         applySnapshotToBranch(branch, ownListing);
 
         List<GooglePlaceSnapshot> nearby = googlePlacesClient.searchNearby(
@@ -175,7 +175,7 @@ public class DigitalPresenceSyncService {
         return syncPilotBranch(tenantId, radiusKm, false);
     }
 
-    private GooglePlaceSnapshot resolveOwnListing(Branch branch) {
+    private GooglePlaceSnapshot resolveOwnListing(Branch branch, Tenant tenant) {
         if (branch.getGooglePlaceId() != null && !branch.getGooglePlaceId().isBlank()) {
             GooglePlaceSnapshot existing = googlePlacesClient.getPlace(branch.getGooglePlaceId());
             if (existing != null) return enrichSnapshot(existing);
@@ -184,37 +184,72 @@ public class DigitalPresenceSyncService {
         String locality = LocalSpotlightKeywords.resolveLocality(branch);
         String city = LocalSpotlightKeywords.resolveCity(branch);
         String typeTerm = LocalSpotlightKeywords.primaryListingQueryTerm(branch);
+        String landmark = extractAddressLandmark(branch.getAddress());
         String query = String.join(" ",
                 branch.getName(),
                 locality,
                 typeTerm,
                 city).replaceAll("\\s+", " ").trim();
 
-        List<GooglePlaceSnapshot> candidates = googlePlacesClient.searchText(
+        List<GooglePlaceSnapshot> candidates = new ArrayList<>(googlePlacesClient.searchText(
                 query,
                 branch.getLatitude(),
                 branch.getLongitude(),
                 properties.getDefaultRadiusMeters(),
-                5);
+                5));
 
         if (candidates.isEmpty()) {
-            candidates = googlePlacesClient.searchText(
+            candidates.addAll(googlePlacesClient.searchText(
                     typeTerm + " " + locality + " " + city,
                     branch.getLatitude(),
                     branch.getLongitude(),
                     properties.getDefaultRadiusMeters(),
-                    5);
+                    5));
         }
         if (candidates.isEmpty()) {
-            candidates = googlePlacesClient.searchText(
+            candidates.addAll(googlePlacesClient.searchText(
                     branch.getName() + " " + locality,
                     branch.getLatitude(),
                     branch.getLongitude(),
                     properties.getDefaultRadiusMeters(),
-                    5);
+                    5));
+        }
+        if (!landmark.isBlank()) {
+            candidates.addAll(googlePlacesClient.searchText(
+                    landmark + " " + typeTerm + " " + locality,
+                    branch.getLatitude(),
+                    branch.getLongitude(),
+                    properties.getDefaultRadiusMeters(),
+                    5));
+        }
+        if (tenant != null && tenant.getName() != null && !tenant.getName().isBlank() && !landmark.isBlank()) {
+            candidates.addAll(googlePlacesClient.searchText(
+                    tenant.getName() + " " + landmark + " " + locality,
+                    branch.getLatitude(),
+                    branch.getLongitude(),
+                    properties.getDefaultRadiusMeters(),
+                    5));
         }
 
-        return pickBestOwnMatch(branch, candidates);
+        return pickBestOwnMatch(branch, tenant, dedupeCandidates(candidates));
+    }
+
+    private static List<GooglePlaceSnapshot> dedupeCandidates(List<GooglePlaceSnapshot> candidates) {
+        Map<String, GooglePlaceSnapshot> byPlaceId = new LinkedHashMap<>();
+        for (GooglePlaceSnapshot candidate : candidates) {
+            if (candidate == null || candidate.getPlaceId() == null || candidate.getPlaceId().isBlank()) {
+                continue;
+            }
+            byPlaceId.putIfAbsent(GooglePlacesClient.normalizePlaceId(candidate.getPlaceId()), candidate);
+        }
+        return new ArrayList<>(byPlaceId.values());
+    }
+
+    static String extractAddressLandmark(String address) {
+        if (address == null || address.isBlank()) {
+            return "";
+        }
+        return address.split(",")[0].trim();
     }
 
     private GooglePlaceSnapshot enrichSnapshot(GooglePlaceSnapshot snap) {
@@ -222,12 +257,16 @@ public class DigitalPresenceSyncService {
         return googlePlacesClient.enrichWithReviewStats(snap);
     }
 
-    private GooglePlaceSnapshot pickBestOwnMatch(Branch branch, List<GooglePlaceSnapshot> candidates) {
+    private GooglePlaceSnapshot pickBestOwnMatch(Branch branch, Tenant tenant, List<GooglePlaceSnapshot> candidates) {
         if (candidates.isEmpty()) return null;
 
         String branchNameNorm = normalizeName(branch.getName());
         String societyNorm = branch.getSocietyDefault() != null ? normalizeName(branch.getSocietyDefault()) : "";
+        String landmarkNorm = normalizeName(extractAddressLandmark(branch.getAddress()));
         Set<String> branchTokens = nameTokens(branch.getName(), branch.getSocietyDefault(), branch.getAddress());
+        if (tenant != null && tenant.getName() != null) {
+            branchTokens.addAll(nameTokens(tenant.getName()));
+        }
 
         GooglePlaceSnapshot best = null;
         int bestScore = 0;
@@ -237,6 +276,10 @@ public class DigitalPresenceSyncService {
             if (nameNorm.contains(branchNameNorm) || branchNameNorm.contains(nameNorm)) score += 3;
             score += sharedTokenScore(branchTokens, nameTokens(c.getName(), c.getFormattedAddress()));
 
+            if (!landmarkNorm.isBlank() && c.getFormattedAddress() != null
+                    && normalizeName(c.getFormattedAddress()).contains(landmarkNorm)) {
+                score += 6;
+            }
             if (!societyNorm.isBlank() && c.getFormattedAddress() != null
                     && normalizeName(c.getFormattedAddress()).contains(societyNorm)) {
                 score += 2;
