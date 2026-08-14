@@ -14,6 +14,7 @@ import com.salonplatform.dto.customer.CreateCustomerRequest;
 import com.salonplatform.dto.customer.CustomerListFilter;
 import com.salonplatform.dto.customer.CustomerRegistrationCardResponse;
 import com.salonplatform.dto.customer.CustomerResponse;
+import com.salonplatform.dto.customer.UpdateCustomerRequest;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.repository.CustomerSpecifications;
@@ -89,6 +90,17 @@ public class CustomerService {
                 .build();
 
         return toResponse(customerRepository.save(customer));
+    }
+
+    @Transactional
+    public CustomerResponse update(UUID id, UpdateCustomerRequest request) {
+        Customer customer = requireCustomer(id);
+        String name = request.getName() != null ? request.getName().trim() : "";
+        if (name.isBlank()) {
+            throw new BadRequestException("error.customer.nameRequired");
+        }
+        customer.setName(name);
+        return toScopedResponse(customerRepository.save(customer));
     }
 
     public CustomerResponse getById(UUID id) {

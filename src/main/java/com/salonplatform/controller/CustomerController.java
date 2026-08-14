@@ -6,6 +6,7 @@ import com.salonplatform.dto.customer.CreateCustomerRequest;
 import com.salonplatform.dto.customer.CustomerListFilter;
 import com.salonplatform.dto.customer.CustomerRegistrationCardResponse;
 import com.salonplatform.dto.customer.CustomerResponse;
+import com.salonplatform.dto.customer.UpdateCustomerRequest;
 import com.salonplatform.service.CustomerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,13 @@ public class CustomerController {
     @PostMapping
     public ApiResponse<CustomerResponse> create(@Valid @RequestBody CreateCustomerRequest request) {
         return ApiResponse.ok(customerService.create(request));
+    }
+
+    @PatchMapping("/{id}")
+    public ApiResponse<CustomerResponse> update(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateCustomerRequest request) {
+        return ApiResponse.ok(customerService.update(id, request));
     }
 
     @GetMapping("/search")
