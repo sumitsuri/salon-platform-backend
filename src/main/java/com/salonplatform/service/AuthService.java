@@ -60,6 +60,8 @@ public class AuthService {
         if (token.getExpiresAt().isBefore(Instant.now())) {
             throw new BadRequestException("error.refreshToken.expired");
         }
+        token.setExpiresAt(Instant.now().plusMillis(jwtTokenProvider.getRefreshTokenExpiryMs()));
+        refreshTokenRepository.save(token);
         User user = userRepository.findById(token.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         UserPrincipal principal = new UserPrincipal(user);

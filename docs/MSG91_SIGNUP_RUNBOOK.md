@@ -32,27 +32,47 @@ Create both in MSG91 → WhatsApp → Templates → Create Template.
 
 ### Template A: `salon_promo` (Marketing)
 
+**Brand-agnostic** — Antrahq fills `{{3}}` from each tenant's name (Settings → brand name).
+
 | Field | Value |
 |-------|-------|
 | Category | Marketing |
 | Language | English |
 | Header | None |
-| Body | `Hi {{1}}, {{2}} — Book your next visit at Demo Salon Brand today!` |
+| Body | `Hi {{1}}, {{2}} Book your next visit at {{3}} today!` |
 | Footer | `Reply STOP to opt out` |
 | Sample {{1}} | `Rahul` |
-| Sample {{2}} | `20% off on hair spa this weekend!` |
+| Sample {{2}} | `20% off on hair care this weekend!` |
+| Sample {{3}} | `Mystic Wellness` |
+
+| Variable | Antrahq sends |
+|----------|----------------|
+| `{{1}}` | Customer name |
+| `{{2}}` | Campaign offer text (admin UI) |
+| `{{3}}` | Tenant brand name |
 
 ### Template B: `bill_receipt` (Utility)
+
+**Brand-agnostic** — Antrahq fills `{{2}}` from tenant name on each invoice.
 
 | Field | Value |
 |-------|-------|
 | Category | Utility |
 | Language | English |
 | Header | **Document** (dynamic) |
-| Body | `Hi {{1}}, thank you for your visit! Invoice {{2}} for ₹{{3}} is attached.` |
+| Body | `Hi {{1}}, thank you for visiting {{2}}! Your invoice {{3}} for Rs.{{4}} is attached.` |
 | Sample {{1}} | `Rahul` |
-| Sample {{2}} | `LIT-2026-00001` |
-| Sample {{3}} | `1500` |
+| Sample {{2}} | `Mystic Wellness` |
+| Sample {{3}} | `MW-2026-00001` |
+| Sample {{4}} | `1500` |
+
+| Variable | Antrahq sends |
+|----------|----------------|
+| Header | Invoice PDF URL |
+| `{{1}}` | Customer name |
+| `{{2}}` | Tenant brand name |
+| `{{3}}` | Invoice number |
+| `{{4}}` | Grand total |
 
 Submit both for Meta approval. Status must show **Approved** before API sends work.
 

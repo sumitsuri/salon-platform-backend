@@ -25,11 +25,15 @@ Create and get Meta approval for two templates in the MSG91 dashboard:
 ### `bill_receipt` (utility)
 
 - **Header:** Document (dynamic URL — PDF link)
-- **Body:** e.g. `Hi {{1}}, your invoice {{2}} for ₹{{3}} is attached. Thank you for visiting us!`
+- **Body:** `Hi {{1}}, thank you for visiting {{2}}! Your invoice {{3}} for Rs.{{4}} is attached.`
+- **Variables:** `{{1}}` customer name, `{{2}}` tenant brand name, `{{3}}` invoice #, `{{4}}` amount
 
 ### `salon_promo` (marketing)
 
-- **Body:** e.g. `Hi {{1}}, {{2}} — Book your next visit today!`
+- **Body:** `Hi {{1}}, {{2}} Book your next visit at {{3}} today!`
+- **Variables:** `{{1}}` customer name, `{{2}}` offer text, `{{3}}` tenant brand name
+
+One approved template set works for **all salon chains** on the platform; brand name comes from each tenant record, not hardcoded copy.
 
 Template names must match env vars (defaults: `bill_receipt`, `salon_promo`).
 

@@ -4,9 +4,11 @@ import com.salonplatform.config.Msg91Properties;
 import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.Invoice;
 import com.salonplatform.domain.entity.MessageDeliveryLog;
+import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.enums.MessageChannel;
 import com.salonplatform.domain.enums.MessageDeliveryStatus;
 import com.salonplatform.domain.repository.MessageDeliveryLogRepository;
+import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.service.InvoiceAccessTokenService;
 import com.salonplatform.util.PhoneUtils;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class NotificationService {
     private final Msg91Properties msg91Properties;
     private final MessageDeliveryLogRepository deliveryLogRepository;
     private final InvoiceAccessTokenService invoiceAccessTokenService;
+    private final TenantRepository tenantRepository;
 
     @Value("${app.public-url:http://localhost:8080}")
     private String publicUrl;
@@ -58,6 +61,7 @@ public class NotificationService {
         components.add(headerDocument(pdfUrl, filename));
         components.add(bodyParams(
                 customer.getName(),
+                resolveBrandName(invoice.getTenantId()),
                 invoice.getInvoiceNumber(),
                 invoice.getGrandTotal().toPlainString()
         ));
@@ -100,7 +104,10 @@ public class NotificationService {
                 return deliveryLogRepository.save(log);
             }
             List<Map<String, Object>> components = new ArrayList<>();
-            components.add(bodyParams(customer.getName(), messageText));
+            components.add(bodyParams(
+                    customer.getName(),
+                    messageText,
+                    resolveBrandName(tenantId)));
             Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
                     phone,
                     msg91Properties.getPromoTemplate(),
@@ -115,6 +122,7 @@ public class NotificationService {
             Map<String, String> vars = new LinkedHashMap<>();
             vars.put("VAR1", customer.getName());
             vars.put("VAR2", messageText);
+            vars.put("VAR3", resolveBrandName(tenantId));
             Msg91Client.Msg91SendResult result = msg91Client.sendSmsFlow(phone, vars);
             applyResult(log, result);
         }
@@ -133,6 +141,16 @@ public class NotificationService {
             deliveryLog.setStatus(MessageDeliveryStatus.FAILED);
             deliveryLog.setErrorMessage(result.error());
         }
+    }
+
+    private String resolveBrandName(UUID tenantId) {
+        if (tenantId == null) {
+            return "your salon";
+        }
+        return tenantRepository.findById(tenantId)
+                .map(Tenant::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .orElse("your salon");
     }
 
     private static Map<String, Object> bodyParams(String... values) {
