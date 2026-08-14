@@ -31,6 +31,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -77,6 +78,7 @@ public class BookingService {
         if (request.getLines().isEmpty()) {
             throw new BadRequestException("error.booking.servicesRequired");
         }
+        assertNoDuplicateServices(request.getLines());
         if (request.getCouponId() != null && request.getOfferId() != null) {
             throw new BadRequestException("Select either a coupon or an offer, not both");
         }
@@ -131,6 +133,7 @@ public class BookingService {
         if (request.getLines() == null || request.getLines().isEmpty()) {
             throw new BadRequestException("error.booking.servicesRequired");
         }
+        assertNoDuplicateServices(request.getLines());
 
         lineItemRepository.deleteByBookingId(bookingId);
         Instant start = booking.getServiceStartedAt() != null ? booking.getServiceStartedAt() : Instant.now();
@@ -202,6 +205,19 @@ public class BookingService {
             throw new BadRequestException("Cannot change services on this booking");
         }
         return booking;
+    }
+
+    private void assertNoDuplicateServices(List<BookingLineRequest> lines) {
+        Set<UUID> seen = new HashSet<>();
+        for (BookingLineRequest line : lines) {
+            UUID branchServiceId = line.getBranchServiceId();
+            if (branchServiceId == null) {
+                continue;
+            }
+            if (!seen.add(branchServiceId)) {
+                throw new BadRequestException("error.booking.duplicateService");
+            }
+        }
     }
 
     private void saveLine(UUID bookingId, BookingLineRequest lineReq, Instant startedAt) {
