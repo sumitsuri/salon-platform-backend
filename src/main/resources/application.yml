@@ -44,6 +44,13 @@ app:
     promo-template: ${MSG91_PROMO_TEMPLATE:salon_promo}
     promo-sms-flow-id: ${MSG91_PROMO_SMS_FLOW_ID:}
     sms-sender: ${MSG91_SMS_SENDER:}
+  ses:
+    enabled: ${SES_ENABLED:false}
+    from-address: ${SES_FROM_ADDRESS:}
+    region: ${AWS_REGION:ap-south-1}
+  password-reset:
+    token-expiry-minutes: 60
+    frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:http://localhost:3000}
   invoice-pdf:
     s3-bucket: ${INVOICE_S3_BUCKET:}
     key-prefix: ${INVOICE_S3_PREFIX:invoices/}

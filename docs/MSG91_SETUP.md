@@ -1,6 +1,6 @@
 # MSG91 setup (WhatsApp + SMS)
 
-Email via AWS SES is deferred. This guide covers MSG91 only.
+Transactional **email** (password reset) uses AWS SES — see [SES_SETUP.md](./SES_SETUP.md). This guide covers MSG91 only.
 
 ## Overview
 

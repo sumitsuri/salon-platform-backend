@@ -31,6 +31,13 @@ app:
     promo-template: ${MSG91_PROMO_TEMPLATE:salon_promo}
     promo-sms-flow-id: ${MSG91_PROMO_SMS_FLOW_ID:}
     sms-sender: ${MSG91_SMS_SENDER:}
+  ses:
+    enabled: ${SES_ENABLED:false}
+    from-address: ${SES_FROM_ADDRESS:}
+    region: ${AWS_REGION:ap-south-1}
+  password-reset:
+    token-expiry-minutes: 60
+    frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:https://app.antrahq.com}
   attendance:
     photos:
       # Prefer dedicated attendance bucket; otherwise reuse invoice/deploy bucket.
