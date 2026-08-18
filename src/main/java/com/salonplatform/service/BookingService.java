@@ -236,9 +236,6 @@ public class BookingService {
 
         BigDecimal unitPrice = bs.getPrice();
         if (lineReq.getUnitPrice() != null) {
-            if (!svc.isVariablePricing()) {
-                throw new BadRequestException("Unit price override is not allowed for this service");
-            }
             if (lineReq.getUnitPrice().compareTo(bs.getPrice()) < 0) {
                 throw new BadRequestException("Unit price cannot be below the list price");
             }

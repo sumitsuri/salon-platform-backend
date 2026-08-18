@@ -161,29 +161,29 @@ public class GstCalculationService {
         String membershipLabel = null;
         if (promo.getMembershipSubscription() != null && promo.getMembershipPlan() != null) {
             membershipLabel = promo.getMembershipPlan().getName()
-                    + " (?" + promo.getMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString() + "%)";
+                    + " (" + promo.getMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString() + "%)";
         } else if (promo.getPendingMembershipPlan() != null) {
             membershipLabel = promo.getPendingMembershipPlan().getName()
-                    + " (?" + promo.getPendingMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString()
-                    + "% ù new)";
+                    + " (" + promo.getPendingMembershipPlan().getBenefitPercent().stripTrailingZeros().toPlainString()
+                    + "% new)";
         }
         String promoLabel = null;
         if (promo.getCoupon() != null) {
-            promoLabel = "Coupon " + promo.getCoupon().getCode() + " ù " + promo.getCoupon().getName();
+            promoLabel = "Coupon " + promo.getCoupon().getCode() + " ? " + promo.getCoupon().getName();
         } else if (promo.getOffer() != null) {
-            promoLabel = "Offer ù " + promo.getOffer().getName();
+            promoLabel = "Offer ? " + promo.getOffer().getName();
         }
 
         String manualDiscountLabel = null;
         if (legacyBillDiscount.compareTo(BigDecimal.ZERO) > 0) {
             if (booking.getBillDiscountType() == DiscountType.PERCENT) {
-                manualDiscountLabel = "Manager discount (?"
+                manualDiscountLabel = "Manager discount ("
                         + booking.getBillDiscountValue().stripTrailingZeros().toPlainString() + "%)";
             } else {
                 manualDiscountLabel = "Manager discount";
             }
             if (booking.getBillDiscountNote() != null && !booking.getBillDiscountNote().isBlank()) {
-                manualDiscountLabel = manualDiscountLabel + " ù " + booking.getBillDiscountNote().trim();
+                manualDiscountLabel = manualDiscountLabel + " ? " + booking.getBillDiscountNote().trim();
             }
         }
 
@@ -193,7 +193,7 @@ public class GstCalculationService {
             MembershipPlan pendingPlan = promo.getPendingMembershipPlan();
             membershipFeeAmount = pendingPlan.getFeeAmount() != null ? pendingPlan.getFeeAmount() : BigDecimal.ZERO;
             if (membershipFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
-                membershipFeeLabel = "Membership ù " + pendingPlan.getName();
+                membershipFeeLabel = "Membership ∑ " + pendingPlan.getName();
                 linePreviews.add(BillLinePreview.builder()
                         .serviceName(membershipFeeLabel)
                         .unitPrice(membershipFeeAmount)
