@@ -35,6 +35,8 @@ public class GstCalculationService {
 
     private static final int SCALE = 2;
     private static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
+    /** Middle dot separator for human-readable bill labels (ASCII-safe in source). */
+    private static final String LABEL_SEP = " \u00b7 ";
 
     private final SalonServiceRepository salonServiceRepository;
     private final GstPolicyService gstPolicyService;
@@ -169,9 +171,9 @@ public class GstCalculationService {
         }
         String promoLabel = null;
         if (promo.getCoupon() != null) {
-            promoLabel = "Coupon " + promo.getCoupon().getCode() + " ? " + promo.getCoupon().getName();
+            promoLabel = "Coupon " + promo.getCoupon().getCode() + LABEL_SEP + promo.getCoupon().getName();
         } else if (promo.getOffer() != null) {
-            promoLabel = "Offer ? " + promo.getOffer().getName();
+            promoLabel = "Offer" + LABEL_SEP + promo.getOffer().getName();
         }
 
         String manualDiscountLabel = null;
@@ -183,7 +185,7 @@ public class GstCalculationService {
                 manualDiscountLabel = "Manager discount";
             }
             if (booking.getBillDiscountNote() != null && !booking.getBillDiscountNote().isBlank()) {
-                manualDiscountLabel = manualDiscountLabel + " ? " + booking.getBillDiscountNote().trim();
+                manualDiscountLabel = manualDiscountLabel + LABEL_SEP + booking.getBillDiscountNote().trim();
             }
         }
 
@@ -193,7 +195,7 @@ public class GstCalculationService {
             MembershipPlan pendingPlan = promo.getPendingMembershipPlan();
             membershipFeeAmount = pendingPlan.getFeeAmount() != null ? pendingPlan.getFeeAmount() : BigDecimal.ZERO;
             if (membershipFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
-                membershipFeeLabel = "Membership · " + pendingPlan.getName();
+                membershipFeeLabel = "Membership" + LABEL_SEP + pendingPlan.getName();
                 linePreviews.add(BillLinePreview.builder()
                         .serviceName(membershipFeeLabel)
                         .unitPrice(membershipFeeAmount)
