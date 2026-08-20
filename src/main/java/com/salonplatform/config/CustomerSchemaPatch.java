@@ -41,7 +41,14 @@ public class CustomerSchemaPatch implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS identity_status VARCHAR(24)");
             jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS pass_public_token VARCHAR(64)");
 
-            jdbcTemplate.execute("ALTER TABLE customers ALTER COLUMN visit_pass_id TYPE VARCHAR(32)");
+            // Allow pass-only customers before heavier backfill / type migrations.
+            jdbcTemplate.execute("ALTER TABLE customers ALTER COLUMN phone DROP NOT NULL");
+
+            try {
+                jdbcTemplate.execute("ALTER TABLE customers ALTER COLUMN visit_pass_id TYPE VARCHAR(32)");
+            } catch (Exception e) {
+                log.warn("visit_pass_id type migration skipped: {}", e.getMessage());
+            }
 
             backfillVisitPassIds();
 
@@ -51,8 +58,6 @@ public class CustomerSchemaPatch implements ApplicationRunner {
             jdbcTemplate.execute(
                     "UPDATE customers SET identity_status = 'PASS_ONLY' "
                             + "WHERE identity_status IS NULL");
-
-            jdbcTemplate.execute("ALTER TABLE customers ALTER COLUMN phone DROP NOT NULL");
 
             dropConstraintIfExists("customers", "customers_tenant_id_phone_key");
             dropConstraintIfExists("customers", "uk_customers_tenant_phone");

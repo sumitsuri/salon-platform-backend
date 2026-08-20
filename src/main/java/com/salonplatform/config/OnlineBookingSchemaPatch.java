@@ -66,9 +66,30 @@ public class OnlineBookingSchemaPatch implements ApplicationRunner {
                     CHECK (status IN ('DRAFT', 'CONFIRMED', 'IN_PROGRESS', 'READY_FOR_BILLING', 'COMPLETED', 'CANCELLED'))
                     """);
 
+            ensurePassOnlyCustomerSchema();
+
             log.info("Online booking schema patch applied");
         } catch (Exception e) {
             log.warn("Online booking schema patch skipped or partial: {}", e.getMessage());
+        }
+    }
+
+    /** Idempotent — online/walk-in pass-only customers may omit phone (e.g. Varthur MW01). */
+    private void ensurePassOnlyCustomerSchema() {
+        try {
+            jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS visit_pass_id VARCHAR(32)");
+            jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS identity_status VARCHAR(24)");
+            jdbcTemplate.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS pass_public_token VARCHAR(64)");
+            jdbcTemplate.execute("ALTER TABLE customers ALTER COLUMN phone DROP NOT NULL");
+            jdbcTemplate.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_tenant_visit_pass "
+                            + "ON customers (tenant_id, visit_pass_id)");
+            jdbcTemplate.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_tenant_phone_not_null "
+                            + "ON customers (tenant_id, phone) WHERE phone IS NOT NULL AND trim(phone) <> ''");
+            log.info("Pass-only customer schema ensured for online booking");
+        } catch (Exception e) {
+            log.warn("Pass-only customer schema patch partial: {}", e.getMessage());
         }
     }
 }
