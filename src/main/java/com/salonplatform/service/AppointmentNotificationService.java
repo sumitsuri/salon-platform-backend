@@ -43,6 +43,11 @@ public class AppointmentNotificationService {
 
     public void sendConfirmation(Booking booking, Branch branch, Customer customer, String serviceName, String staffName) {
         String phone = customer.getPhone() != null ? PhoneUtils.normalizeIndianMobile(customer.getPhone()) : null;
+        if (phone == null || phone.isBlank()) {
+            log.debug("Appointment WhatsApp skipped — no phone on file for booking {}", booking.getId());
+            return;
+        }
+
         MessageDeliveryLog deliveryLog = MessageDeliveryLog.builder()
                 .tenantId(booking.getTenantId())
                 .customerId(customer.getId())
@@ -50,13 +55,6 @@ public class AppointmentNotificationService {
                 .recipientPhone(phone)
                 .status(MessageDeliveryStatus.PENDING)
                 .build();
-
-        if (phone == null || phone.isBlank()) {
-            deliveryLog.setStatus(MessageDeliveryStatus.SKIPPED);
-            deliveryLog.setErrorMessage("Customer has no phone on file");
-            deliveryLogRepository.save(deliveryLog);
-            return;
-        }
 
         if (!Boolean.TRUE.equals(customer.getWhatsappOptIn())) {
             deliveryLog.setStatus(MessageDeliveryStatus.SKIPPED);

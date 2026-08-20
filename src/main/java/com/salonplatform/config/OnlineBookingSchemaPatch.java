@@ -21,6 +21,7 @@ public class OnlineBookingSchemaPatch implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        ensurePassOnlyCustomerSchema();
         try {
             jdbcTemplate.execute("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS online_booking_enabled BOOLEAN DEFAULT FALSE");
             jdbcTemplate.execute("ALTER TABLE tenants ALTER COLUMN online_booking_enabled SET DEFAULT FALSE");
@@ -65,8 +66,6 @@ public class OnlineBookingSchemaPatch implements ApplicationRunner {
                     ALTER TABLE bookings ADD CONSTRAINT bookings_status_check
                     CHECK (status IN ('DRAFT', 'CONFIRMED', 'IN_PROGRESS', 'READY_FOR_BILLING', 'COMPLETED', 'CANCELLED'))
                     """);
-
-            ensurePassOnlyCustomerSchema();
 
             log.info("Online booking schema patch applied");
         } catch (Exception e) {
