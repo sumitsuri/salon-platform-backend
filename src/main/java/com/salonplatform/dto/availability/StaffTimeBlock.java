@@ -21,4 +21,6 @@ public class StaffTimeBlock {
     private Integer actualMinutes;
     private boolean overdue;
     private List<String> services;
+    /** WALK_IN or ONLINE — used on floor schedule to highlight web bookings. */
+    private String source;
 }

@@ -37,6 +37,7 @@ public class TenantManagementService {
         if (request.getLogoUrl() != null) tenant.setLogoUrl(request.getLogoUrl());
         if (request.getPrimaryColor() != null) tenant.setPrimaryColor(request.getPrimaryColor());
         if (request.getGstEnabled() != null) tenant.setGstEnabled(request.getGstEnabled());
+        if (request.getOnlineBookingEnabled() != null) tenant.setOnlineBookingEnabled(request.getOnlineBookingEnabled());
 
         return toResponse(tenantRepository.save(tenant));
     }
@@ -50,6 +51,7 @@ public class TenantManagementService {
                 .primaryColor(t.getPrimaryColor())
                 .status(t.getStatus())
                 .gstEnabled(t.getGstEnabled())
+                .onlineBookingEnabled(t.getOnlineBookingEnabled())
                 .createdAt(t.getCreatedAt())
                 .build();
     }

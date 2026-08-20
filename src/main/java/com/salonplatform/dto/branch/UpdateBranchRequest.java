@@ -23,4 +23,8 @@ public class UpdateBranchRequest {
     private Boolean phoneNumberRequired;
     /** INHERIT, ENABLED, or DISABLED — branch GST policy override. */
     private String gstPolicy;
+    private Boolean onlineBookingEnabled;
+    private Integer onlineBookingMinLeadMinutes;
+    private Integer onlineBookingMaxAdvanceDays;
+    private Integer onlineBookingSlotMinutes;
 }

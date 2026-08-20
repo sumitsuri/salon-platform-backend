@@ -9,4 +9,6 @@ public class UpdateTenantRequest {
     private String primaryColor;
     /** When true, GST from service catalog applies on bills (default false). */
     private Boolean gstEnabled;
+    /** Brand-wide online booking master switch. */
+    private Boolean onlineBookingEnabled;
 }

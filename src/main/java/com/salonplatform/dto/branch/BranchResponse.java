@@ -49,4 +49,13 @@ public class BranchResponse {
     private Integer estimatedSearchRank;
     private Instant digitalPresenceUpdatedAt;
     private Instant createdAt;
+    /** Public booking URL segment — book.antrahq.com/{tenantSlug}/{code}. */
+    private String tenantSlug;
+    /** Customer online booking at book.antrahq.com/{slug}/{code}. */
+    private Boolean onlineBookingEnabled;
+    private Boolean onlineBookingBrandEnabled;
+    private Boolean onlineBookingEffective;
+    private Integer onlineBookingMinLeadMinutes;
+    private Integer onlineBookingMaxAdvanceDays;
+    private Integer onlineBookingSlotMinutes;
 }

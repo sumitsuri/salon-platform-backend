@@ -27,4 +27,17 @@ public class AuditService {
                 .details(details)
                 .build());
     }
+
+    /** Anonymous / customer-initiated actions (e.g. public online booking). */
+    public void logSystem(UUID tenantId, UUID branchId, String action, String entityType, UUID entityId, String details) {
+        auditLogRepository.save(AuditLog.builder()
+                .tenantId(tenantId)
+                .branchId(branchId)
+                .userId(null)
+                .action(action)
+                .entityType(entityType)
+                .entityId(entityId)
+                .details(details)
+                .build());
+    }
 }

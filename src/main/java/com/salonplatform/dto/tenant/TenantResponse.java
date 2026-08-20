@@ -17,5 +17,6 @@ public class TenantResponse {
     private String primaryColor;
     private TenantStatus status;
     private Boolean gstEnabled;
+    private Boolean onlineBookingEnabled;
     private Instant createdAt;
 }

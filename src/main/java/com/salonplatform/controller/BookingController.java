@@ -13,6 +13,7 @@ import com.salonplatform.dto.booking.UpdateBookingLinesRequest;
 import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.payment.RecordPaymentRequest;
 import com.salonplatform.service.BookingService;
+import com.salonplatform.service.OnlineBookingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -28,6 +29,7 @@ import java.util.UUID;
 public class BookingController {
 
     private final BookingService bookingService;
+    private final OnlineBookingService onlineBookingService;
 
     @PostMapping
     public ApiResponse<BookingResponse> create(@Valid @RequestBody CreateBookingRequest request) {
@@ -113,6 +115,12 @@ public class BookingController {
     @PostMapping("/{id}/payments")
     public ApiResponse<BookingResponse> pay(@PathVariable UUID id, @Valid @RequestBody RecordPaymentRequest request) {
         return ApiResponse.ok(bookingService.completePayment(id, request));
+    }
+
+    @PostMapping("/{id}/check-in")
+    public ApiResponse<Void> checkIn(@PathVariable UUID id) {
+        onlineBookingService.checkInOnlineBooking(id);
+        return ApiResponse.ok("Checked in", null);
     }
 
     @PostMapping("/{id}/cancel")

@@ -15,12 +15,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,6 +42,7 @@ public class DataSeeder implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final RateCardCatalogSync rateCardCatalogSync;
     private final ProductionTenantGuard productionTenantGuard;
+    private final Environment environment;
 
     @Override
     @Transactional
@@ -107,6 +110,9 @@ public class DataSeeder implements CommandLineRunner {
             if (created) {
                 log.info("Seeded tenant '{}' ({}) — catalog applied by startup patch", seed.name(), seed.slug());
                 log.info("  Admin: {} / {}", seed.adminEmail(), seed.adminPassword());
+            }
+            if ("demo-brand".equals(seed.slug()) && !isProdProfile()) {
+                enableDemoOnlineBooking(tenant);
             }
             for (BranchSeed branchSeed : seed.branches()) {
                 if (branchRepository.findByTenantIdAndCode(tenant.getId(), branchSeed.code()).isPresent()) {
@@ -195,5 +201,22 @@ public class DataSeeder implements CommandLineRunner {
 
         // Branch service pricing is applied by RateCardCatalogSync after all branches exist.
         return branch;
+    }
+
+    private boolean isProdProfile() {
+        return Arrays.asList(environment.getActiveProfiles()).contains("prod");
+    }
+
+    private void enableDemoOnlineBooking(Tenant tenant) {
+        if (!Boolean.TRUE.equals(tenant.getOnlineBookingEnabled())) {
+            tenant.setOnlineBookingEnabled(true);
+            tenantRepository.save(tenant);
+        }
+        branchRepository.findByTenantId(tenant.getId()).forEach(branch -> {
+            if (!Boolean.TRUE.equals(branch.getOnlineBookingEnabled())) {
+                branch.setOnlineBookingEnabled(true);
+                branchRepository.save(branch);
+            }
+        });
     }
 }

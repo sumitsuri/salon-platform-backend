@@ -5,8 +5,10 @@ import com.salonplatform.domain.entity.User;
 import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
 import com.salonplatform.domain.repository.BranchRepository;
+import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.domain.repository.UserRepository;
 import com.salonplatform.dto.branch.BranchResponse;
+import com.salonplatform.dto.branch.BulkOnlineBookingRequest;
 import com.salonplatform.dto.branch.CreateBranchRequest;
 import com.salonplatform.dto.branch.UpdateBranchGeofenceRequest;
 import com.salonplatform.dto.branch.UpdateBranchRequest;
@@ -26,6 +28,7 @@ import java.util.stream.Collectors;
 public class BranchManagementService {
 
     private final BranchRepository branchRepository;
+    private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final GstPolicyService gstPolicyService;
 
@@ -99,8 +102,45 @@ public class BranchManagementService {
             branch.setPhoneNumberRequired(request.getPhoneNumberRequired());
         }
         applyGstPolicy(branch, request.getGstPolicy());
+        if (request.getOnlineBookingEnabled() != null) {
+            branch.setOnlineBookingEnabled(request.getOnlineBookingEnabled());
+        }
+        if (request.getOnlineBookingMinLeadMinutes() != null) {
+            branch.setOnlineBookingMinLeadMinutes(request.getOnlineBookingMinLeadMinutes());
+        }
+        if (request.getOnlineBookingMaxAdvanceDays() != null) {
+            branch.setOnlineBookingMaxAdvanceDays(request.getOnlineBookingMaxAdvanceDays());
+        }
+        if (request.getOnlineBookingSlotMinutes() != null) {
+            branch.setOnlineBookingSlotMinutes(request.getOnlineBookingSlotMinutes());
+        }
 
         return toResponse(branchRepository.save(branch));
+    }
+
+    @Transactional
+    public List<BranchResponse> bulkUpdateOnlineBooking(BulkOnlineBookingRequest request) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        if (request.getEnabled() == null) {
+            throw new BadRequestException("enabled is required");
+        }
+        UUID tenantId = SecurityUtils.requireTenantId();
+        List<Branch> targets;
+        if (request.getBranchIds() != null && !request.getBranchIds().isEmpty()) {
+            targets = request.getBranchIds().stream()
+                    .map(id -> requireBranch(tenantId, id))
+                    .filter(b -> b.getStatus() != BranchStatus.INACTIVE)
+                    .toList();
+        } else {
+            targets = branchRepository.findByTenantId(tenantId).stream()
+                    .filter(b -> b.getStatus() != BranchStatus.INACTIVE)
+                    .toList();
+        }
+        for (Branch branch : targets) {
+            branch.setOnlineBookingEnabled(request.getEnabled());
+            branchRepository.save(branch);
+        }
+        return targets.stream().map(this::toResponse).toList();
     }
 
     @Transactional
@@ -167,6 +207,10 @@ public class BranchManagementService {
     }
 
     private BranchResponse toResponse(Branch b) {
+        boolean brandOnlineBooking = tenantRepository.findById(b.getTenantId())
+                .map(t -> Boolean.TRUE.equals(t.getOnlineBookingEnabled()))
+                .orElse(false);
+        boolean branchOnlineBooking = Boolean.TRUE.equals(b.getOnlineBookingEnabled());
         return BranchResponse.builder()
                 .id(b.getId())
                 .name(b.getName())
@@ -203,6 +247,13 @@ public class BranchManagementService {
                 .estimatedSearchRank(b.getEstimatedSearchRank())
                 .digitalPresenceUpdatedAt(b.getDigitalPresenceUpdatedAt())
                 .createdAt(b.getCreatedAt())
+                .tenantSlug(tenantRepository.findById(b.getTenantId()).map(t -> t.getSlug()).orElse(null))
+                .onlineBookingEnabled(branchOnlineBooking)
+                .onlineBookingBrandEnabled(brandOnlineBooking)
+                .onlineBookingEffective(brandOnlineBooking && branchOnlineBooking)
+                .onlineBookingMinLeadMinutes(b.getOnlineBookingMinLeadMinutes())
+                .onlineBookingMaxAdvanceDays(b.getOnlineBookingMaxAdvanceDays())
+                .onlineBookingSlotMinutes(b.getOnlineBookingSlotMinutes())
                 .build();
     }
 

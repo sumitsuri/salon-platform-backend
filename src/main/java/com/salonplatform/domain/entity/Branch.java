@@ -109,6 +109,21 @@ public class Branch {
     /** Tracks branch-scoped catalog migration patches (e.g. Varthur printed menu). */
     private String catalogPatchVersion;
 
+    @Builder.Default
+    private Boolean onlineBookingEnabled = false;
+
+    /** Minimum minutes before a slot can be booked (e.g. 120 = 2 hours). */
+    @Builder.Default
+    private Integer onlineBookingMinLeadMinutes = 60;
+
+    /** Maximum days in advance customers can book. */
+    @Builder.Default
+    private Integer onlineBookingMaxAdvanceDays = 30;
+
+    /** Slot grid step in minutes. */
+    @Builder.Default
+    private Integer onlineBookingSlotMinutes = 15;
+
     @CreationTimestamp
     private Instant createdAt;
 

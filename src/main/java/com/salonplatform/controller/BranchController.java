@@ -2,6 +2,7 @@ package com.salonplatform.controller;
 
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.branch.BranchResponse;
+import com.salonplatform.dto.branch.BulkOnlineBookingRequest;
 import com.salonplatform.dto.branch.BranchTargetPerformanceResponse;
 import com.salonplatform.dto.branch.BranchTargetTrendsResponse;
 import com.salonplatform.dto.branch.CreateBranchRequest;
@@ -43,6 +44,11 @@ public class BranchController {
     @PutMapping("/{id}")
     public ApiResponse<BranchResponse> update(@PathVariable UUID id, @RequestBody UpdateBranchRequest request) {
         return ApiResponse.ok(branchService.update(id, request));
+    }
+
+    @PatchMapping("/online-booking/bulk")
+    public ApiResponse<List<BranchResponse>> bulkUpdateOnlineBooking(@RequestBody BulkOnlineBookingRequest request) {
+        return ApiResponse.ok(branchService.bulkUpdateOnlineBooking(request));
     }
 
     @PatchMapping("/{id}/digital-presence")

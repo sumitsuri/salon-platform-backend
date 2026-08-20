@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.BookingSource;
 import com.salonplatform.domain.enums.BookingStatus;
 import com.salonplatform.domain.enums.DiscountScope;
 import com.salonplatform.domain.enums.DiscountType;
@@ -34,7 +35,7 @@ public class Booking {
     @Column(nullable = false)
     private UUID customerId;
 
-    @Column(nullable = false)
+    /** Staff user for desk bookings; null for customer online bookings. */
     private UUID createdByUserId;
 
     @Enumerated(EnumType.STRING)
@@ -69,6 +70,19 @@ public class Booking {
     private BigDecimal promoDiscountAmount;
 
     private String notes;
+
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private BookingSource source = BookingSource.WALK_IN;
+
+    /** Scheduled start for online appointments. */
+    private Instant scheduledStartAt;
+
+    /** Scheduled end for online appointments (from service durations). */
+    private Instant scheduledEndAt;
+
+    /** Public token for customer manage link (cancel/reschedule). */
+    private String manageToken;
 
     /** When service work began (walk-in: create time). Used for duration & floor blocks. */
     private Instant serviceStartedAt;

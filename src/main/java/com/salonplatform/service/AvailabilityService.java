@@ -47,12 +47,21 @@ public class AvailabilityService {
                 .filter(b -> b.getStatus() != BookingStatus.CANCELLED)
                 .collect(Collectors.toCollection(ArrayList::new));
 
+        Set<UUID> seen = dayBookings.stream().map(Booking::getId).collect(Collectors.toSet());
+        for (Booking confirmed : bookingRepository.findConfirmedScheduledBetween(tenantId, branchId, dayStart, dayEnd)) {
+            if (seen.add(confirmed.getId())) {
+                dayBookings.add(confirmed);
+            }
+        }
+
         if (isToday) {
-            Set<UUID> seen = dayBookings.stream().map(Booking::getId).collect(Collectors.toSet());
             for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, BookingStatus.IN_PROGRESS)) {
                 if (seen.add(open.getId())) dayBookings.add(open);
             }
             for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, BookingStatus.READY_FOR_BILLING)) {
+                if (seen.add(open.getId())) dayBookings.add(open);
+            }
+            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, BookingStatus.CONFIRMED)) {
                 if (seen.add(open.getId())) dayBookings.add(open);
             }
         }
@@ -88,7 +97,8 @@ public class AvailabilityService {
                 Instant end = resolveEnd(booking, start, estMinutes);
                 boolean openVisit = booking.getStatus() == BookingStatus.IN_PROGRESS
                         || booking.getStatus() == BookingStatus.READY_FOR_BILLING;
-                boolean overdue = openVisit && end.isBefore(now);
+                boolean scheduled = booking.getStatus() == BookingStatus.CONFIRMED;
+                boolean overdue = (openVisit && end.isBefore(now)) || (scheduled && end.isBefore(now));
 
                 Customer customer = customers.get(booking.getCustomerId());
                 blocks.add(StaffTimeBlock.builder()
@@ -103,6 +113,7 @@ public class AvailabilityService {
                         .actualMinutes(booking.getActualDurationMinutes())
                         .overdue(overdue)
                         .services(lines.stream().map(BookingLineItem::getServiceName).distinct().toList())
+                        .source(booking.getSource() != null ? booking.getSource().name() : null)
                         .build());
             }
             blocks.sort(Comparator.comparing(StaffTimeBlock::getStartAt));
@@ -271,6 +282,9 @@ public class AvailabilityService {
     }
 
     private static Instant resolveStart(Booking booking, List<BookingLineItem> lines) {
+        if (booking.getScheduledStartAt() != null) {
+            return booking.getScheduledStartAt();
+        }
         return lines.stream()
                 .map(BookingLineItem::getStartedAt)
                 .filter(Objects::nonNull)
@@ -279,6 +293,9 @@ public class AvailabilityService {
     }
 
     private static Instant resolveEnd(Booking booking, Instant start, int estMinutes) {
+        if (booking.getScheduledEndAt() != null) {
+            return booking.getScheduledEndAt();
+        }
         if (booking.getCompletedAt() != null) {
             return booking.getCompletedAt();
         }

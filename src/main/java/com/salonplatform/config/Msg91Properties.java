@@ -21,6 +21,9 @@ public class Msg91Properties {
     /** Approved WhatsApp template name for marketing promos. */
     private String promoTemplate = "salon_promo";
 
+    /** Approved WhatsApp template for online appointment confirmation. */
+    private String appointmentConfirmedTemplate = "salon_appointment_confirmed_v2";
+
     /** SMS Flow API flow id for marketing messages. */
     private String promoSmsFlowId = "";
 

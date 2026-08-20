@@ -7,6 +7,7 @@ Transactional **email** (password reset) uses AWS SES — see [SES_SETUP.md](./S
 | Feature | Channel | When it fires |
 |---------|---------|---------------|
 | Bill receipt with PDF | WhatsApp | After walk-in payment (`completePayment`) |
+| Appointment confirmation | WhatsApp | After online booking (`createAppointment`) |
 | Marketing campaigns | WhatsApp or SMS | CEO sends from `/admin/campaigns` |
 
 When `MSG91_AUTH_KEY` is empty, messaging is **disabled** — payments and campaigns still work; delivery logs show `SKIPPED`.
@@ -27,6 +28,13 @@ Create and get Meta approval for two templates in the MSG91 dashboard:
 - **Header:** Document (dynamic URL — PDF link)
 - **Body:** `Hi {{1}}, thank you for visiting {{2}}! Your invoice {{3}} for Rs.{{4}} is attached.`
 - **Variables:** `{{1}}` customer name, `{{2}}` tenant brand name, `{{3}}` invoice #, `{{4}}` amount
+
+### `salon_appointment_confirmed_v2` (utility)
+
+Online booking confirmation — see [WHATSAPP_META_TEMPLATES.md](./WHATSAPP_META_TEMPLATES.md) §3 for Meta-approved body copy.
+
+- **Body:** `Hello {{1}}, Your appointment at {{2}} is confirmed. Date: {{3}} Time: {{4}} Service: {{5}} …`
+- **Variables:** customer name, branch label (brand · branch), date, time, service name
 
 ### `salon_promo` (marketing)
 
@@ -52,6 +60,7 @@ Store secrets in AWS SSM Parameter Store under your prefix (e.g. `/salon-platfor
 | `msg91/auth_key` | `your-auth-key` |
 | `msg91/whatsapp_number` | `919876543210` |
 | `msg91/bill_receipt_template` | `bill_receipt` |
+| `msg91/appointment_confirmed_template` | `salon_appointment_confirmed_v2` |
 | `msg91/promo_template` | `salon_promo` |
 | `msg91/promo_sms_flow_id` | `flow-id-from-dashboard` |
 | `msg91/sms_sender` | `SALONX` |
@@ -71,6 +80,8 @@ export MSG91_AUTH_KEY=your-key
 export MSG91_WHATSAPP_NUMBER=919876543210
 export MSG91_PROMO_SMS_FLOW_ID=your-flow-id
 export MSG91_SMS_SENDER=SALONX
+export MSG91_APPOINTMENT_CONFIRMED_TEMPLATE=salon_appointment_confirmed_v2
+export PUBLIC_FRONTEND_BASE_URL=http://localhost:3000
 export PUBLIC_URL=http://localhost:8080
 ```
 

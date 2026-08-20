@@ -276,6 +276,15 @@ public class CatalogService {
 
     public List<BranchServiceResponse> listBranchServices(UUID branchId) {
         SecurityUtils.assertBranchAccess(branchId);
+        return mapActiveBranchServices(branchId);
+    }
+
+    /** Public online booking — no authenticated user context. */
+    public List<BranchServiceResponse> listBranchServicesPublic(UUID branchId) {
+        return mapActiveBranchServices(branchId);
+    }
+
+    private List<BranchServiceResponse> mapActiveBranchServices(UUID branchId) {
         return branchServiceRepository.findByBranchIdAndActiveTrue(branchId).stream()
                 .map(bs -> {
                     SalonService svc = salonServiceRepository.findById(bs.getServiceId()).orElse(null);

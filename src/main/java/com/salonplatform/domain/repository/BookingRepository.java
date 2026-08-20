@@ -26,6 +26,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<Booking> findByTenantIdAndBranchIdAndStatus(UUID tenantId, UUID branchId, BookingStatus status);
 
     @Query("""
+            SELECT b FROM Booking b
+            WHERE b.tenantId = :tenantId AND b.branchId = :branchId
+              AND b.status = com.salonplatform.domain.enums.BookingStatus.CONFIRMED
+              AND b.scheduledStartAt >= :start AND b.scheduledStartAt < :end
+            """)
+    List<Booking> findConfirmedScheduledBetween(@Param("tenantId") UUID tenantId,
+                                              @Param("branchId") UUID branchId,
+                                              @Param("start") Instant start,
+                                              @Param("end") Instant end);
+
+    @Query("""
             SELECT b.customerId AS customerId,
                    COUNT(b) AS visitCount,
                    MAX(b.createdAt) AS lastVisitAt,

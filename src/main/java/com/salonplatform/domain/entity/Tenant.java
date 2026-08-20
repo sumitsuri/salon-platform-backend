@@ -58,6 +58,10 @@ public class Tenant {
     @Builder.Default
     private Boolean gstEnabled = false;
 
+    /** Brand-wide master switch for customer online booking. Branches can opt out individually. */
+    @Builder.Default
+    private Boolean onlineBookingEnabled = false;
+
     /** Tracks one-off catalog migration patches applied to this tenant. */
     private String catalogPatchVersion;
 
