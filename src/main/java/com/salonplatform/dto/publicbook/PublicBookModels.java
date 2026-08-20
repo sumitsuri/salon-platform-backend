@@ -30,6 +30,10 @@ public final class PublicBookModels {
         private int maxAdvanceDays;
         private int slotMinutes;
         private String bookBaseUrl;
+        /** Branch requires phone at registration; false for e.g. Varthur walk-in style. */
+        private boolean phoneNumberRequired;
+        /** When true, customer must verify mobile OTP before booking (WhatsApp/SMS wired). */
+        private boolean otpRequired;
     }
 
     @Data
@@ -99,6 +103,9 @@ public final class PublicBookModels {
         private String staffName;
         private String branchName;
         private String customerName;
+        /** Show at salon check-in when phone was not collected. */
+        private String visitPassId;
+        private String visitPassUrl;
     }
 
     @Data

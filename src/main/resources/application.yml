@@ -31,6 +31,9 @@ app:
     allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:3002
   public-url: http://localhost:8080
   public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:http://localhost:3000}
+  online-booking:
+    # When false, customers confirm without WhatsApp/SMS OTP (Visit Pass shown instead).
+    otp-required: ${ONLINE_BOOKING_OTP_REQUIRED:false}
   attendance:
     photos:
       s3-bucket: ${ATTENDANCE_S3_BUCKET:}

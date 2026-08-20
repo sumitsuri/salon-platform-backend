@@ -44,6 +44,9 @@ public class OnlineBookingService {
     @Value("${app.public-frontend-base-url:http://localhost:3000}")
     private String publicFrontendBaseUrl;
 
+    @Value("${app.online-booking.otp-required:false}")
+    private boolean onlineBookingOtpRequired;
+
     public PublicBookModels.TenantBranchesResponse listTenantBranches(String tenantSlug) {
         Tenant tenant = requireTenant(tenantSlug);
         List<PublicBookModels.BranchSummary> branches = branchRepository.findByTenantId(tenant.getId()).stream()
@@ -82,6 +85,8 @@ public class OnlineBookingService {
                 .maxAdvanceDays(branch.getOnlineBookingMaxAdvanceDays() != null ? branch.getOnlineBookingMaxAdvanceDays() : 30)
                 .slotMinutes(branch.getOnlineBookingSlotMinutes() != null ? branch.getOnlineBookingSlotMinutes() : 15)
                 .bookBaseUrl(buildBookUrl(tenant.getSlug(), branch.getCode()))
+                .phoneNumberRequired(branch.getPhoneNumberRequired() == null || branch.getPhoneNumberRequired())
+                .otpRequired(onlineBookingOtpRequired)
                 .build();
     }
 
@@ -201,7 +206,17 @@ public class OnlineBookingService {
         if (branchServiceIds.isEmpty() || request.getStartAt() == null || request.getStartAt().isBlank()) {
             throw new BadRequestException("Service and time slot are required");
         }
-        customerOtpService.verifyOtp(tenant.getId(), request.getPhone(), request.getOtp());
+        boolean phoneRequired = branch.getPhoneNumberRequired() == null || branch.getPhoneNumberRequired();
+        String normalizedPhone = normalizePhone(request.getPhone());
+        if (phoneRequired && normalizedPhone == null) {
+            throw new BadRequestException("Valid phone number is required");
+        }
+        if (onlineBookingOtpRequired) {
+            if (normalizedPhone == null) {
+                throw new BadRequestException("Phone number is required for verification");
+            }
+            customerOtpService.verifyOtp(tenant.getId(), normalizedPhone, request.getOtp());
+        }
 
         Instant scheduledStart = Instant.parse(request.getStartAt());
         List<ResolvedService> selectedServices = resolveSelectedServices(branch, branchServiceIds);
@@ -277,6 +292,8 @@ public class OnlineBookingService {
                 .staffName(staff.getName())
                 .branchName(branch.getName())
                 .customerName(customer.getName())
+                .visitPassId(customer.getVisitPassId())
+                .visitPassUrl(buildVisitPassUrl(customer.getPassPublicToken()))
                 .build();
     }
 
@@ -360,55 +377,70 @@ public class OnlineBookingService {
     }
 
     private Customer findOrCreateCustomer(Tenant tenant, Branch branch, PublicBookCreateAppointmentRequest request) {
+        boolean phoneRequired = branch.getPhoneNumberRequired() == null || branch.getPhoneNumberRequired();
         String phone = normalizePhone(request.getPhone());
-        if (phone == null) {
+        if (phoneRequired && phone == null) {
             throw new BadRequestException("Valid phone number is required");
-        }
-        Optional<Customer> existing = customerRepository.findByTenantIdAndPhone(tenant.getId(), phone);
-        if (existing.isPresent()) {
-            Customer c = existing.get();
-            if (request.getCustomerName() != null && !request.getCustomerName().isBlank()) {
-                c.setName(request.getCustomerName().trim());
-            }
-            if (request.getSociety() != null && !request.getSociety().isBlank()) {
-                c.setSociety(request.getSociety().trim());
-            }
-            if (request.getFlatUnit() != null && !request.getFlatUnit().isBlank()) {
-                c.setFlatUnit(request.getFlatUnit().trim());
-            }
-            c.setWhatsappOptIn(true);
-            return customerRepository.save(c);
         }
 
         String name = request.getCustomerName() != null && !request.getCustomerName().isBlank()
                 ? request.getCustomerName().trim() : "Guest";
+
+        if (phone != null) {
+            Optional<Customer> existing = customerRepository.findByTenantIdAndPhone(tenant.getId(), phone);
+            if (existing.isPresent()) {
+                Customer c = existing.get();
+                c.setName(name);
+                if (request.getSociety() != null && !request.getSociety().isBlank()) {
+                    c.setSociety(request.getSociety().trim());
+                }
+                if (request.getFlatUnit() != null && !request.getFlatUnit().isBlank()) {
+                    c.setFlatUnit(request.getFlatUnit().trim());
+                }
+                c.setWhatsappOptIn(true);
+                c.setSmsOptIn(true);
+                return customerRepository.save(c);
+            }
+        }
+
+        CustomerIdentityStatus status = phone != null
+                ? CustomerIdentityStatus.PHONE_VERIFIED
+                : CustomerIdentityStatus.PASS_ONLY;
+
         return customerRepository.save(Customer.builder()
                 .tenantId(tenant.getId())
                 .name(name)
                 .phone(phone)
-                .visitPassId(generateVisitPassId(tenant, branch.getCode()))
-                .identityStatus(CustomerIdentityStatus.PHONE_VERIFIED)
+                .visitPassId(uniqueVisitPassId(tenant, branch.getCode()))
+                .identityStatus(status)
                 .passPublicToken(VisitPassUtils.generatePublicToken())
                 .society(request.getSociety())
                 .flatUnit(request.getFlatUnit())
-                .whatsappOptIn(true)
-                .smsOptIn(true)
+                .whatsappOptIn(phone != null)
+                .smsOptIn(phone != null)
                 .visitCount(0)
                 .lifetimeSpend(java.math.BigDecimal.ZERO)
                 .build());
     }
 
-    private String generateVisitPassId(Tenant tenant, String branchCode) {
-        String prefix = branchCode != null && branchCode.length() >= 2
-                ? branchCode.substring(0, 2).toUpperCase(Locale.ROOT)
-                : "BK";
+    private String uniqueVisitPassId(Tenant tenant, String branchCode) {
         for (int i = 0; i < 20; i++) {
-            String candidate = prefix + "-" + String.format("%04d", new Random().nextInt(10000));
+            String candidate = VisitPassUtils.generateVisitPassId(tenant, branchCode);
             if (customerRepository.findByTenantIdAndVisitPassId(tenant.getId(), candidate).isEmpty()) {
                 return candidate;
             }
         }
-        return prefix + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
+        throw new BadRequestException("Could not generate visit pass — please try again");
+    }
+
+    private String buildVisitPassUrl(String passPublicToken) {
+        if (passPublicToken == null || passPublicToken.isBlank()) {
+            return null;
+        }
+        String base = publicFrontendBaseUrl.endsWith("/")
+                ? publicFrontendBaseUrl.substring(0, publicFrontendBaseUrl.length() - 1)
+                : publicFrontendBaseUrl;
+        return base + "/pass/?token=" + passPublicToken;
     }
 
     private Map<UUID, List<TimeRange>> loadBusyRanges(UUID tenantId, UUID branchId, Instant windowStart, Instant windowEnd) {
