@@ -16,13 +16,13 @@ public class Msg91Properties {
     private String whatsappIntegratedNumber = "";
 
     /** Approved WhatsApp template name for bill receipts (utility). */
-    private String billReceiptTemplate = "bill_receipt";
+    private String billReceiptTemplate = "antrahq_bill_receipt_v1";
 
     /** Approved WhatsApp template name for marketing promos. */
-    private String promoTemplate = "salon_promo";
+    private String promoTemplate = "antrahq_salon_promo_v1";
 
     /** Approved WhatsApp template for online appointment confirmation. */
-    private String appointmentConfirmedTemplate = "salon_appointment_confirmed_v2";
+    private String appointmentConfirmedTemplate = "antrahq_salon_appointment_confirmed_v2";
 
     /** SMS Flow API flow id for marketing messages. */
     private String promoSmsFlowId = "";
