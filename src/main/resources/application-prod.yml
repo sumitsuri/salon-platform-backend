@@ -24,6 +24,7 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   public-url: ${PUBLIC_URL:http://localhost}
+  api-public-url: ${API_PUBLIC_URL:https://api.antrahq.com}
   public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:https://app.antrahq.com}
   msg91:
     auth-key: ${MSG91_AUTH_KEY:}

@@ -3,7 +3,6 @@ package com.salonplatform.service;
 import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.MarketingCampaign;
 import com.salonplatform.domain.enums.CampaignStatus;
-import com.salonplatform.domain.enums.MessageDeliveryStatus;
 import com.salonplatform.domain.repository.MarketingCampaignRepository;
 import com.salonplatform.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +31,7 @@ public class CampaignDispatchService {
 
         int sent = 0;
         int failed = 0;
+        int skipped = 0;
 
         for (Customer customer : recipients) {
             try {
@@ -42,10 +42,10 @@ public class CampaignDispatchService {
                         campaign.getChannel(),
                         campaign.getMessageText());
 
-                if (deliveryLog.getStatus() == MessageDeliveryStatus.SENT) {
-                    sent++;
-                } else if (deliveryLog.getStatus() == MessageDeliveryStatus.FAILED) {
-                    failed++;
+                switch (deliveryLog.getStatus()) {
+                    case SENT -> sent++;
+                    case FAILED -> failed++;
+                    default -> skipped++;
                 }
             } catch (Exception ex) {
                 failed++;
@@ -54,7 +54,7 @@ public class CampaignDispatchService {
         }
 
         campaign.setSentCount(sent);
-        campaign.setFailedCount(failed);
+        campaign.setFailedCount(failed + skipped);
         campaign.setStatus(failed == recipients.size() && sent == 0 && !recipients.isEmpty()
                 ? CampaignStatus.FAILED
                 : CampaignStatus.COMPLETED);

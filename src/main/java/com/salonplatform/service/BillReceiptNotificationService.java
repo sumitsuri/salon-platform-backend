@@ -2,10 +2,11 @@ package com.salonplatform.service;
 
 import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.Invoice;
+import com.salonplatform.domain.entity.MessageDeliveryLog;
+import com.salonplatform.domain.enums.MessageDeliveryStatus;
 import com.salonplatform.notification.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -15,12 +16,15 @@ public class BillReceiptNotificationService {
 
     private final NotificationService notificationService;
 
-    @Async
-    public void sendAfterPayment(Invoice invoice, Customer customer) {
+    public MessageDeliveryLog sendAfterPayment(Invoice invoice, Customer customer) {
         try {
-            notificationService.sendBillReceipt(invoice, customer);
+            return notificationService.sendBillReceipt(invoice, customer);
         } catch (Exception ex) {
             log.error("Failed to send bill receipt for invoice {}: {}", invoice.getId(), ex.getMessage());
+            return MessageDeliveryLog.builder()
+                    .status(MessageDeliveryStatus.FAILED)
+                    .errorMessage(ex.getMessage())
+                    .build();
         }
     }
 }

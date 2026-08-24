@@ -32,6 +32,7 @@ public class CampaignResponse {
     private Integer recipientCount;
     private Integer sentCount;
     private Integer failedCount;
+    private Integer skippedCount;
     private Instant sentAt;
     private Instant createdAt;
 }

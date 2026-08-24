@@ -38,6 +38,9 @@ public class BookingResponse {
     private Integer actualDurationMinutes;
     private UUID invoiceId;
     private Boolean receiptQueued;
+    /** SENT, SKIPPED, FAILED — WhatsApp bill receipt delivery outcome. */
+    private String receiptDeliveryStatus;
+    private String receiptDeliveryError;
     private String reviewInvitationUrl;
     private String reviewInvitationToken;
 }

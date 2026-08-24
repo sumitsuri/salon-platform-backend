@@ -176,6 +176,7 @@ public class CampaignService {
                 .recipientCount(c.getRecipientCount())
                 .sentCount(c.getSentCount())
                 .failedCount(c.getFailedCount())
+                .skippedCount(Math.max(0, c.getRecipientCount() - c.getSentCount() - c.getFailedCount()))
                 .sentAt(c.getSentAt())
                 .createdAt(c.getCreatedAt())
                 .build();

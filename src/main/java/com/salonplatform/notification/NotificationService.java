@@ -27,8 +27,8 @@ public class NotificationService {
     private final InvoiceAccessTokenService invoiceAccessTokenService;
     private final TenantRepository tenantRepository;
 
-    @Value("${app.public-url:http://localhost:8080}")
-    private String publicUrl;
+    @Value("${app.api-public-url:http://localhost:8080}")
+    private String apiPublicUrl;
 
     public MessageDeliveryLog sendBillReceipt(Invoice invoice, Customer customer) {
         String phone = customer.getPhone() != null ? PhoneUtils.normalizeIndianMobile(customer.getPhone()) : null;
@@ -37,7 +37,7 @@ public class NotificationService {
                 .customerId(customer.getId())
                 .invoiceId(invoice.getId())
                 .channel(MessageChannel.WHATSAPP)
-                .recipientPhone(phone)
+                .recipientPhone(phone != null ? phone : "")
                 .status(MessageDeliveryStatus.PENDING)
                 .build();
 
@@ -54,7 +54,7 @@ public class NotificationService {
         }
 
         String token = invoiceAccessTokenService.createToken(invoice.getId());
-        String pdfUrl = publicUrl + "/api/v1/public/invoices/" + invoice.getId() + "/pdf?token=" + token;
+        String pdfUrl = apiPublicUrl + "/api/v1/public/invoices/" + invoice.getId() + "/pdf?token=" + token;
         String filename = invoice.getInvoiceNumber() + ".pdf";
 
         List<Map<String, Object>> components = new ArrayList<>();
@@ -87,7 +87,7 @@ public class NotificationService {
                 .campaignId(campaignId)
                 .customerId(customer.getId())
                 .channel(channel)
-                .recipientPhone(phone)
+                .recipientPhone(phone != null ? phone : "")
                 .status(MessageDeliveryStatus.PENDING)
                 .build();
 

@@ -48,8 +48,8 @@ public class CustomerService {
     private final TenantRepository tenantRepository;
     private final BookingRepository bookingRepository;
 
-    @Value("${app.public-url:http://localhost:3000}")
-    private String publicAppUrl;
+    @Value("${app.public-frontend-base-url:http://localhost:3000}")
+    private String publicFrontendBaseUrl;
 
     @Transactional
     public CustomerResponse create(CreateCustomerRequest request) {
@@ -255,7 +255,9 @@ public class CustomerService {
     }
 
     private CustomerRegistrationCardResponse buildRegistrationCard(Customer customer, Tenant tenant, Branch branch) {
-        String baseUrl = publicAppUrl.endsWith("/") ? publicAppUrl.substring(0, publicAppUrl.length() - 1) : publicAppUrl;
+        String baseUrl = publicFrontendBaseUrl.endsWith("/")
+                ? publicFrontendBaseUrl.substring(0, publicFrontendBaseUrl.length() - 1)
+                : publicFrontendBaseUrl;
         String publicPassUrl = customer.getPassPublicToken() != null
                 ? baseUrl + "/pass/?token=" + customer.getPassPublicToken()
                 : null;

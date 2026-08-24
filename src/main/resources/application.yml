@@ -30,6 +30,8 @@ app:
   cors:
     allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:3002
   public-url: http://localhost:8080
+  # Backend base URL for signed invoice PDF links in WhatsApp (prod: https://api.antrahq.com).
+  api-public-url: ${API_PUBLIC_URL:${PUBLIC_URL:http://localhost:8080}}
   public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:http://localhost:3000}
   online-booking:
     # When false, customers confirm without WhatsApp/SMS OTP (Visit Pass shown instead).

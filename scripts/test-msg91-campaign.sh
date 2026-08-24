@@ -13,7 +13,7 @@ CEO_PASSWORD="${CEO_PASSWORD:-ceo123}"
 
 echo "==> Checking MSG91 templates..."
 curl -sS -H "authkey: $MSG91_AUTH_KEY" \
-  "https://api.msg91.com/api/v5/whatsapp/get-template-client/${MSG91_WHATSAPP_NUMBER}?template_name=salon_promo" | head -c 500
+  "https://api.msg91.com/api/v5/whatsapp/get-template-client/${MSG91_WHATSAPP_NUMBER}?template_name=antrahq_salon_promo_v1" | head -c 500
 echo ""
 
 login_resp=$(curl -sS -X POST "$API_BASE/api/v1/auth/login" \

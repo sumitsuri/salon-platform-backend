@@ -2,6 +2,7 @@ package com.salonplatform.service;
 
 import com.salonplatform.domain.entity.*;
 import com.salonplatform.domain.enums.BookingStatus;
+import com.salonplatform.domain.enums.MessageDeliveryStatus;
 import com.salonplatform.domain.enums.PaymentMode;
 import com.salonplatform.domain.repository.*;
 import com.salonplatform.dto.billing.BillPreviewResponse;
@@ -742,10 +743,12 @@ public class BookingService {
         customerRepository.save(customer);
 
         auditService.log("COMPLETE_PAYMENT", "Booking", booking.getId(), "Invoice: " + invoiceNumber);
-        billReceiptNotificationService.sendAfterPayment(invoice, customer);
+        var receiptLog = billReceiptNotificationService.sendAfterPayment(invoice, customer);
         BookingResponse response = toResponse(booking, branch, customer);
         response.setInvoiceId(invoice.getId());
-        response.setReceiptQueued(true);
+        response.setReceiptDeliveryStatus(receiptLog.getStatus() != null ? receiptLog.getStatus().name() : null);
+        response.setReceiptDeliveryError(receiptLog.getErrorMessage());
+        response.setReceiptQueued(receiptLog.getStatus() == MessageDeliveryStatus.SENT);
         var invitation = reviewInvitationPort.createAfterPayment(invoice, branch, customer);
         response.setReviewInvitationUrl(invitation.getReviewUrl());
         response.setReviewInvitationToken(invitation.getToken());
