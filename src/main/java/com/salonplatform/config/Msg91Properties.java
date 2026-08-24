@@ -37,10 +37,10 @@ public class Msg91Properties {
     private boolean billReceiptPilotEnabled = false;
 
     /** Tenant slug allowed to send WhatsApp bill receipts during pilot (e.g. mystic-wellness). */
-    private String billReceiptPilotTenantSlug = "mystic-wellness";
+    private String billReceiptPilotTenantSlug = "demo-brand";
 
-    /** Branch code allowed to send WhatsApp bill receipts during pilot (e.g. MW01). */
-    private String billReceiptPilotBranchCode = "MW01";
+    /** Branch code allowed to send WhatsApp bill receipts during pilot (e.g. VAR). */
+    private String billReceiptPilotBranchCode = "VAR";
 
     public boolean isEnabled() {
         return authKey != null && !authKey.isBlank();
