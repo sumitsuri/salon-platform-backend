@@ -30,7 +30,34 @@ public class Msg91Properties {
     /** DLT-registered SMS sender id. */
     private String smsSender = "";
 
+    /**
+     * When true, WhatsApp bill receipts are sent only from {@link #billReceiptPilotTenantSlug} /
+     * {@link #billReceiptPilotBranchCode}. Other branches skip with a pilot message.
+     */
+    private boolean billReceiptPilotEnabled = false;
+
+    /** Tenant slug allowed to send WhatsApp bill receipts during pilot (e.g. mystic-wellness). */
+    private String billReceiptPilotTenantSlug = "mystic-wellness";
+
+    /** Branch code allowed to send WhatsApp bill receipts during pilot (e.g. MW01). */
+    private String billReceiptPilotBranchCode = "MW01";
+
     public boolean isEnabled() {
         return authKey != null && !authKey.isBlank();
+    }
+
+    public boolean allowsBillReceiptFor(String tenantSlug, String branchCode) {
+        if (!billReceiptPilotEnabled) {
+            return true;
+        }
+        if (tenantSlug == null || branchCode == null) {
+            return false;
+        }
+        return billReceiptPilotTenantSlug.equalsIgnoreCase(tenantSlug.trim())
+                && billReceiptPilotBranchCode.equalsIgnoreCase(branchCode.trim());
+    }
+
+    public String billReceiptPilotLabel() {
+        return billReceiptPilotTenantSlug + " / " + billReceiptPilotBranchCode;
     }
 }

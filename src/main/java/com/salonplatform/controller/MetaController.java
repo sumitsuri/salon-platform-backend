@@ -52,6 +52,9 @@ public class MetaController {
                 .promoTemplate(msg91Properties.getPromoTemplate())
                 .appointmentConfirmedTemplate(msg91Properties.getAppointmentConfirmedTemplate())
                 .apiPublicUrl(apiPublicUrl)
+                .billReceiptPilotEnabled(msg91Properties.isBillReceiptPilotEnabled())
+                .billReceiptPilotTenantSlug(msg91Properties.getBillReceiptPilotTenantSlug())
+                .billReceiptPilotBranchCode(msg91Properties.getBillReceiptPilotBranchCode())
                 .build());
     }
 }

@@ -12,4 +12,7 @@ public class MessagingConfigResponse {
     private String promoTemplate;
     private String appointmentConfirmedTemplate;
     private String apiPublicUrl;
+    private boolean billReceiptPilotEnabled;
+    private String billReceiptPilotTenantSlug;
+    private String billReceiptPilotBranchCode;
 }

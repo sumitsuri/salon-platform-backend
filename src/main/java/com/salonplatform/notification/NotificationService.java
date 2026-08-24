@@ -7,6 +7,7 @@ import com.salonplatform.domain.entity.MessageDeliveryLog;
 import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.enums.MessageChannel;
 import com.salonplatform.domain.enums.MessageDeliveryStatus;
+import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.MessageDeliveryLogRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.service.InvoiceAccessTokenService;
@@ -26,6 +27,7 @@ public class NotificationService {
     private final MessageDeliveryLogRepository deliveryLogRepository;
     private final InvoiceAccessTokenService invoiceAccessTokenService;
     private final TenantRepository tenantRepository;
+    private final BranchRepository branchRepository;
 
     @Value("${app.api-public-url:http://localhost:8080}")
     private String apiPublicUrl;
@@ -50,6 +52,13 @@ public class NotificationService {
         if (!Boolean.TRUE.equals(customer.getWhatsappOptIn())) {
             log.setStatus(MessageDeliveryStatus.SKIPPED);
             log.setErrorMessage("Customer opted out of WhatsApp");
+            return deliveryLogRepository.save(log);
+        }
+
+        if (!isBillReceiptAllowedForBranch(invoice)) {
+            log.setStatus(MessageDeliveryStatus.SKIPPED);
+            log.setErrorMessage("WhatsApp bill receipt pilot — enabled only for "
+                    + msg91Properties.billReceiptPilotLabel());
             return deliveryLogRepository.save(log);
         }
 
@@ -151,6 +160,18 @@ public class NotificationService {
                 .map(Tenant::getName)
                 .filter(name -> name != null && !name.isBlank())
                 .orElse("your salon");
+    }
+
+    private boolean isBillReceiptAllowedForBranch(Invoice invoice) {
+        if (!msg91Properties.isBillReceiptPilotEnabled()) {
+            return true;
+        }
+        var branch = branchRepository.findById(invoice.getBranchId()).orElse(null);
+        var tenant = tenantRepository.findById(invoice.getTenantId()).orElse(null);
+        if (branch == null || tenant == null || tenant.getSlug() == null || branch.getCode() == null) {
+            return false;
+        }
+        return msg91Properties.allowsBillReceiptFor(tenant.getSlug(), branch.getCode());
     }
 
     private static Map<String, Object> bodyParams(String... values) {

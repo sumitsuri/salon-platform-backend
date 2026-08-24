@@ -34,6 +34,9 @@ app:
     appointment-confirmed-template: ${MSG91_APPOINTMENT_CONFIRMED_TEMPLATE:antrahq_salon_appointment_confirmed_v2}
     promo-sms-flow-id: ${MSG91_PROMO_SMS_FLOW_ID:}
     sms-sender: ${MSG91_SMS_SENDER:}
+    bill-receipt-pilot-enabled: ${MSG91_BILL_RECEIPT_PILOT_ENABLED:true}
+    bill-receipt-pilot-tenant-slug: ${MSG91_BILL_RECEIPT_PILOT_TENANT_SLUG:mystic-wellness}
+    bill-receipt-pilot-branch-code: ${MSG91_BILL_RECEIPT_PILOT_BRANCH_CODE:MW01}
   ses:
     enabled: ${SES_ENABLED:false}
     from-address: ${SES_FROM_ADDRESS:}
