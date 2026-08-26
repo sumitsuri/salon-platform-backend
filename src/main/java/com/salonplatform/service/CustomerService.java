@@ -87,6 +87,7 @@ public class CustomerService {
                 .notes(request.getNotes())
                 .visitCount(0)
                 .lifetimeSpend(BigDecimal.ZERO)
+                .whatsappOptIn(normalizedPhone != null)
                 .build();
 
         return toResponse(customerRepository.save(customer));

@@ -49,7 +49,7 @@ public class NotificationService {
             return deliveryLogRepository.save(log);
         }
 
-        if (!Boolean.TRUE.equals(customer.getWhatsappOptIn())) {
+        if (!isWhatsappOptIn(customer)) {
             log.setStatus(MessageDeliveryStatus.SKIPPED);
             log.setErrorMessage("Customer opted out of WhatsApp");
             return deliveryLogRepository.save(log);
@@ -107,7 +107,7 @@ public class NotificationService {
         }
 
         if (channel == MessageChannel.WHATSAPP) {
-            if (!Boolean.TRUE.equals(customer.getWhatsappOptIn())) {
+            if (!isWhatsappOptIn(customer)) {
                 log.setStatus(MessageDeliveryStatus.SKIPPED);
                 log.setErrorMessage("Customer opted out of WhatsApp");
                 return deliveryLogRepository.save(log);
@@ -160,6 +160,14 @@ public class NotificationService {
                 .map(Tenant::getName)
                 .filter(name -> name != null && !name.isBlank())
                 .orElse("your salon");
+    }
+
+    private boolean isWhatsappOptIn(Customer customer) {
+        Boolean optIn = customer.getWhatsappOptIn();
+        if (optIn == null) {
+            return customer.getPhone() != null && !customer.getPhone().isBlank();
+        }
+        return Boolean.TRUE.equals(optIn);
     }
 
     private boolean isBillReceiptAllowedForBranch(Invoice invoice) {
