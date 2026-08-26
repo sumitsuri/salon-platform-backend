@@ -9,6 +9,7 @@ import com.salonplatform.domain.repository.MarketingCampaignRepository;
 import com.salonplatform.dto.campaign.CampaignPreviewResponse;
 import com.salonplatform.dto.campaign.CampaignResponse;
 import com.salonplatform.dto.campaign.CreateCampaignRequest;
+import com.salonplatform.dto.customer.CustomerResponse;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.repository.CustomerSpecifications;
@@ -27,8 +28,11 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CampaignService {
 
+    private static final int PREVIEW_CUSTOMER_LIMIT = 100;
+
     private final MarketingCampaignRepository campaignRepository;
     private final CustomerRepository customerRepository;
+    private final CustomerService customerService;
     private final CampaignDispatchService campaignDispatchService;
 
     @Transactional
@@ -80,8 +84,12 @@ public class CampaignService {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
         Specification<Customer> spec = buildSpecFromRequest(tenantId, request);
+        long count = customerRepository.count(spec);
+        List<CustomerResponse> customers = customerService.listForCampaignPreview(spec, PREVIEW_CUSTOMER_LIMIT);
         return CampaignPreviewResponse.builder()
-                .matchingCustomers(customerRepository.count(spec))
+                .matchingCustomers(count)
+                .customers(customers)
+                .previewTruncated(count > customers.size())
                 .build();
     }
 

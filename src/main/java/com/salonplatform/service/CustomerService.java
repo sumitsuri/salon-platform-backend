@@ -158,6 +158,19 @@ public class CustomerService {
                 .collect(Collectors.toList());
     }
 
+    /** Returns up to {@code limit} customers matching a campaign audience spec (newest visits first). */
+    public List<CustomerResponse> listForCampaignPreview(Specification<Customer> spec, int limit) {
+        return customerRepository.findAll(
+                        spec,
+                        PageRequest.of(
+                                0,
+                                limit,
+                                Sort.by(Sort.Direction.DESC, "lastVisitAt", "createdAt")))
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     public PageResponse<CustomerResponse> listPaged(CustomerListFilter filter) {
         UUID tenantId = SecurityUtils.requireTenantId();
         int page = PageUtils.normalizePage(filter.getPage());
