@@ -1,9 +1,13 @@
 package com.salonplatform.controller;
 
 import com.salonplatform.dto.ApiResponse;
+import com.salonplatform.dto.campaign.CampaignDeliveryResponse;
+import com.salonplatform.dto.campaign.CampaignListFilter;
 import com.salonplatform.dto.campaign.CampaignPreviewResponse;
 import com.salonplatform.dto.campaign.CampaignResponse;
 import com.salonplatform.dto.campaign.CreateCampaignRequest;
+import com.salonplatform.domain.enums.CampaignStatus;
+import com.salonplatform.domain.enums.MessageChannel;
 import com.salonplatform.service.CampaignService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,8 +24,21 @@ public class CampaignController {
     private final CampaignService campaignService;
 
     @GetMapping
-    public ApiResponse<List<CampaignResponse>> list() {
-        return ApiResponse.ok(campaignService.list());
+    public ApiResponse<List<CampaignResponse>> list(
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) MessageChannel channel,
+            @RequestParam(required = false) CampaignStatus status) {
+        CampaignListFilter filter = CampaignListFilter.builder()
+                .name(name)
+                .channel(channel)
+                .status(status)
+                .build();
+        return ApiResponse.ok(campaignService.list(filter));
+    }
+
+    @GetMapping("/{id}/deliveries")
+    public ApiResponse<List<CampaignDeliveryResponse>> deliveries(@PathVariable UUID id) {
+        return ApiResponse.ok(campaignService.listDeliveries(id));
     }
 
     @GetMapping("/{id}")

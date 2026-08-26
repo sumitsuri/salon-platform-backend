@@ -4,8 +4,12 @@ import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.MarketingCampaign;
 import com.salonplatform.domain.enums.CampaignStatus;
 import com.salonplatform.domain.enums.MessageChannel;
+import com.salonplatform.domain.entity.MessageDeliveryLog;
 import com.salonplatform.domain.repository.CustomerRepository;
 import com.salonplatform.domain.repository.MarketingCampaignRepository;
+import com.salonplatform.domain.repository.MessageDeliveryLogRepository;
+import com.salonplatform.dto.campaign.CampaignDeliveryResponse;
+import com.salonplatform.dto.campaign.CampaignListFilter;
 import com.salonplatform.dto.campaign.CampaignPreviewResponse;
 import com.salonplatform.dto.campaign.CampaignResponse;
 import com.salonplatform.dto.campaign.CreateCampaignRequest;
@@ -21,6 +25,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -32,6 +38,7 @@ public class CampaignService {
 
     private final MarketingCampaignRepository campaignRepository;
     private final CustomerRepository customerRepository;
+    private final MessageDeliveryLogRepository deliveryLogRepository;
     private final CustomerService customerService;
     private final CampaignDispatchService campaignDispatchService;
 
@@ -67,12 +74,67 @@ public class CampaignService {
         return toResponse(campaignRepository.save(campaign));
     }
 
-    public List<CampaignResponse> list() {
+    public List<CampaignResponse> list(CampaignListFilter filter) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
+        CampaignListFilter effective = filter != null ? filter : CampaignListFilter.builder().build();
         return campaignRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+                .filter(c -> matchesListFilter(c, effective))
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    public List<CampaignDeliveryResponse> listDeliveries(UUID campaignId) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        MarketingCampaign campaign = loadCampaign(campaignId);
+        List<MessageDeliveryLog> logs = deliveryLogRepository
+                .findByTenantIdAndCampaignIdOrderByCreatedAtDesc(campaign.getTenantId(), campaignId);
+        if (logs.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> customerIds = logs.stream()
+                .map(MessageDeliveryLog::getCustomerId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, Customer> customersById = customerRepository.findAllById(customerIds).stream()
+                .collect(Collectors.toMap(Customer::getId, c -> c));
+        return logs.stream()
+                .map(log -> toDeliveryResponse(log, customersById.get(log.getCustomerId())))
+                .toList();
+    }
+
+    private CampaignDeliveryResponse toDeliveryResponse(MessageDeliveryLog log, Customer customer) {
+        return CampaignDeliveryResponse.builder()
+                .id(log.getId())
+                .customerId(log.getCustomerId())
+                .customerName(customer != null ? customer.getName() : null)
+                .recipientPhone(log.getRecipientPhone())
+                .status(log.getStatus())
+                .errorMessage(log.getErrorMessage())
+                .providerMessageId(log.getProviderMessageId())
+                .createdAt(log.getCreatedAt())
+                .build();
+    }
+
+    private boolean matchesListFilter(MarketingCampaign campaign, CampaignListFilter filter) {
+        if (filter.getName() != null && !filter.getName().isBlank()) {
+            String q = filter.getName().trim().toLowerCase();
+            if (campaign.getName() == null || !campaign.getName().toLowerCase().contains(q)) {
+                return false;
+            }
+        }
+        if (filter.getChannel() != null && campaign.getChannel() != filter.getChannel()) {
+            return false;
+        }
+        if (filter.getStatus() != null && campaign.getStatus() != filter.getStatus()) {
+            return false;
+        }
+        return true;
+    }
+
+    public List<CampaignResponse> list() {
+        return list(CampaignListFilter.builder().build());
     }
 
     public CampaignResponse get(UUID id) {
