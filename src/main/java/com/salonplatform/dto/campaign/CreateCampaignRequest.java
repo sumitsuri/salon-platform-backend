@@ -8,6 +8,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 @Data
 public class CreateCampaignRequest {
@@ -23,8 +24,10 @@ public class CreateCampaignRequest {
     private String messageText;
 
     private String filterName;
+    private List<String> filterNames;
     private String filterSociety;
     private String filterPhone;
+    private List<String> filterPhones;
     private Integer filterMinVisitCount;
     private Integer filterMaxVisitCount;
     private BigDecimal filterMinLifetimeSpend;

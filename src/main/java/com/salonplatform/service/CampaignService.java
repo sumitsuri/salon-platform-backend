@@ -19,6 +19,7 @@ import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.repository.CustomerSpecifications;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.util.CampaignFilterValues;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -53,9 +54,11 @@ public class CampaignService {
                 .name(request.getName())
                 .channel(request.getChannel())
                 .messageText(request.getMessageText())
-                .filterName(request.getFilterName())
+                .filterName(CampaignFilterValues.serialize(
+                        CampaignFilterValues.resolveNames(request.getFilterName(), request.getFilterNames())))
                 .filterSociety(request.getFilterSociety())
-                .filterPhone(request.getFilterPhone())
+                .filterPhone(CampaignFilterValues.serialize(
+                        CampaignFilterValues.resolveNames(request.getFilterPhone(), request.getFilterPhones())))
                 .filterMinVisitCount(request.getFilterMinVisitCount())
                 .filterMaxVisitCount(request.getFilterMaxVisitCount())
                 .filterMinLifetimeSpend(request.getFilterMinLifetimeSpend())
@@ -180,9 +183,9 @@ public class CampaignService {
     private Specification<Customer> buildSpec(MarketingCampaign campaign) {
         return CustomerSpecifications.fromCampaignFilters(
                 campaign.getTenantId(),
-                campaign.getFilterName(),
+                CampaignFilterValues.deserialize(campaign.getFilterName()),
+                CampaignFilterValues.deserialize(campaign.getFilterPhone()),
                 campaign.getFilterSociety(),
-                campaign.getFilterPhone(),
                 campaign.getFilterMinVisitCount(),
                 campaign.getFilterMaxVisitCount(),
                 campaign.getFilterMinLifetimeSpend(),
@@ -198,9 +201,9 @@ public class CampaignService {
     private Specification<Customer> buildSpecFromRequest(UUID tenantId, CreateCampaignRequest request) {
         return CustomerSpecifications.fromCampaignFilters(
                 tenantId,
-                request.getFilterName(),
+                CampaignFilterValues.resolveNames(request.getFilterName(), request.getFilterNames()),
+                CampaignFilterValues.resolveNames(request.getFilterPhone(), request.getFilterPhones()),
                 request.getFilterSociety(),
-                request.getFilterPhone(),
                 request.getFilterMinVisitCount(),
                 request.getFilterMaxVisitCount(),
                 request.getFilterMinLifetimeSpend(),
