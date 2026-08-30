@@ -71,7 +71,7 @@ public class StaffPerformanceService {
             BigDecimal target = staff.getMonthlySalesTarget() != null ? staff.getMonthlySalesTarget() : BigDecimal.ZERO;
             StaffSalesAggregate agg = salesByStaff.getOrDefault(staff.getId(), StaffSalesAggregate.empty());
             BigDecimal actual = agg.revenue();
-            long salesCount = agg.salesCount();
+            long salesCount = agg.serviceCount();
             BigDecimal avgTicketSize = salesCount > 0
                     ? actual.divide(BigDecimal.valueOf(salesCount), 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
@@ -233,13 +233,10 @@ public class StaffPerformanceService {
         Map<UUID, StaffSalesAggregate> sales = new HashMap<>();
         for (Invoice inv : invoices) {
             List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
-            Map<UUID, BigDecimal> staffTotals = new HashMap<>();
             for (BookingLineItem line : lines) {
-                staffTotals.merge(line.getStaffId(), line.getUnitPrice(), BigDecimal::add);
-            }
-            for (Map.Entry<UUID, BigDecimal> entry : staffTotals.entrySet()) {
-                sales.computeIfAbsent(entry.getKey(), k -> new StaffSalesAggregate())
-                        .add(entry.getValue(), inv.getId());
+                int qty = line.getQuantity() != null ? line.getQuantity() : 1;
+                sales.computeIfAbsent(line.getStaffId(), k -> new StaffSalesAggregate())
+                        .add(line.getUnitPrice(), qty);
             }
         }
         return sales;
@@ -247,23 +244,24 @@ public class StaffPerformanceService {
 
     private static final class StaffSalesAggregate {
         private BigDecimal revenue = BigDecimal.ZERO;
-        private final Set<UUID> invoiceIds = new HashSet<>();
+        private long serviceCount;
 
         static StaffSalesAggregate empty() {
             return new StaffSalesAggregate();
         }
 
-        void add(BigDecimal amount, UUID invoiceId) {
-            revenue = revenue.add(amount);
-            invoiceIds.add(invoiceId);
+        void add(BigDecimal unitPrice, int quantity) {
+            int q = Math.max(1, quantity);
+            revenue = revenue.add(unitPrice.multiply(BigDecimal.valueOf(q)));
+            serviceCount += q;
         }
 
         BigDecimal revenue() {
             return revenue;
         }
 
-        long salesCount() {
-            return invoiceIds.size();
+        long serviceCount() {
+            return serviceCount;
         }
     }
 

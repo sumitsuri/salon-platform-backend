@@ -15,7 +15,7 @@ public class StaffTargetPerformanceItem {
     private String branchName;
     private BigDecimal monthlySalesTarget;
     private BigDecimal actualSales;
-    /** Distinct invoices with line items for this staff in the period. */
+    /** Total services performed by this staff in the period (sum of line item quantities). */
     private long salesCount;
     private BigDecimal avgTicketSize;
     private BigDecimal achievementPercent;
