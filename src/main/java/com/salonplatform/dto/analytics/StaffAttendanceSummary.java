@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 @Data
 @Builder
@@ -20,4 +21,10 @@ public class StaffAttendanceSummary {
     private long geoFlags;
     private BigDecimal performanceScore;
     private int complianceScore;
+    /** Latest attendance record in the selected period (for overview check-in table). */
+    private String attendanceRecordId;
+    private Instant entryTime;
+    private Instant exitTime;
+    private boolean hasEntryPhoto;
+    private boolean hasExitPhoto;
 }

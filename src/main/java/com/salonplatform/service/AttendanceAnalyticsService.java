@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
@@ -108,6 +109,10 @@ public class AttendanceAnalyticsService {
 
             String branchName = branch != null ? branch.getName() : "";
 
+            Optional<AttendanceRecord> latestRecord = staffRecords.stream()
+                    .max(Comparator.comparing(AttendanceRecord::getWorkDate)
+                            .thenComparing(r -> r.getEntryTime() != null ? r.getEntryTime() : Instant.EPOCH));
+
             return StaffAttendanceSummary.builder()
                     .staffId(staff.getId().toString())
                     .staffName(staff.getName())
@@ -121,6 +126,11 @@ public class AttendanceAnalyticsService {
                     .geoFlags(geoFlags)
                     .performanceScore(performanceScore)
                     .complianceScore(complianceScore)
+                    .attendanceRecordId(latestRecord.map(r -> r.getId().toString()).orElse(null))
+                    .entryTime(latestRecord.map(AttendanceRecord::getEntryTime).orElse(null))
+                    .exitTime(latestRecord.map(AttendanceRecord::getExitTime).orElse(null))
+                    .hasEntryPhoto(latestRecord.map(r -> r.getEntryPhotoKey() != null && !r.getEntryPhotoKey().isBlank()).orElse(false))
+                    .hasExitPhoto(latestRecord.map(r -> r.getExitPhotoKey() != null && !r.getExitPhotoKey().isBlank()).orElse(false))
                     .build();
         }).sorted(Comparator.comparing(StaffAttendanceSummary::getComplianceScore).reversed())
                 .collect(Collectors.toList());
