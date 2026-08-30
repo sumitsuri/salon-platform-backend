@@ -7,10 +7,12 @@ import com.salonplatform.domain.entity.MessageDeliveryLog;
 import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.enums.MessageChannel;
 import com.salonplatform.domain.enums.MessageDeliveryStatus;
+import com.salonplatform.domain.enums.WhatsAppTemplateCode;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.MessageDeliveryLogRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.service.InvoiceAccessTokenService;
+import com.salonplatform.service.WhatsAppTemplateService;
 import com.salonplatform.util.PhoneUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +30,7 @@ public class NotificationService {
     private final InvoiceAccessTokenService invoiceAccessTokenService;
     private final TenantRepository tenantRepository;
     private final BranchRepository branchRepository;
+    private final WhatsAppTemplateService whatsAppTemplateService;
 
     @Value("${app.api-public-url:http://localhost:8080}")
     private String apiPublicUrl;
@@ -62,6 +65,12 @@ public class NotificationService {
             return deliveryLogRepository.save(log);
         }
 
+        if (!whatsAppTemplateService.isActive(invoice.getTenantId(), invoice.getBranchId(), WhatsAppTemplateCode.BILL_RECEIPT)) {
+            log.setStatus(MessageDeliveryStatus.SKIPPED);
+            log.setErrorMessage("Bill receipt WhatsApp template is disabled for this salon");
+            return deliveryLogRepository.save(log);
+        }
+
         String token = invoiceAccessTokenService.createToken(invoice.getId());
         String pdfUrl = apiPublicUrl + "/api/v1/public/invoices/" + invoice.getId() + "/pdf?token=" + token;
         String filename = invoice.getInvoiceNumber() + ".pdf";
@@ -77,7 +86,7 @@ public class NotificationService {
 
         Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
                 phone,
-                msg91Properties.getBillReceiptTemplate(),
+                whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.BILL_RECEIPT),
                 components);
 
         applyResult(log, result);
@@ -112,6 +121,11 @@ public class NotificationService {
                 log.setErrorMessage("Customer opted out of WhatsApp");
                 return deliveryLogRepository.save(log);
             }
+            if (!whatsAppTemplateService.isActive(tenantId, null, WhatsAppTemplateCode.PROMO_CAMPAIGN)) {
+                log.setStatus(MessageDeliveryStatus.SKIPPED);
+                log.setErrorMessage("Marketing promo WhatsApp template is disabled for this salon");
+                return deliveryLogRepository.save(log);
+            }
             List<Map<String, Object>> components = new ArrayList<>();
             components.add(bodyParams(
                     customer.getName(),
@@ -119,7 +133,7 @@ public class NotificationService {
                     resolveBrandName(tenantId)));
             Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
                     phone,
-                    msg91Properties.getPromoTemplate(),
+                    whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.PROMO_CAMPAIGN),
                     components);
             applyResult(log, result);
         } else {

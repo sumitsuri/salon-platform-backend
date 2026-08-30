@@ -54,6 +54,8 @@ app:
     bill-receipt-pilot-enabled: ${MSG91_BILL_RECEIPT_PILOT_ENABLED:false}
     bill-receipt-pilot-tenant-slug: ${MSG91_BILL_RECEIPT_PILOT_TENANT_SLUG:demo-brand}
     bill-receipt-pilot-branch-code: ${MSG91_BILL_RECEIPT_PILOT_BRANCH_CODE:VAR}
+    bill-receipt-pilot-additional-tenant-slugs:
+      - mystic-wellness
   ses:
     enabled: ${SES_ENABLED:false}
     from-address: ${SES_FROM_ADDRESS:}

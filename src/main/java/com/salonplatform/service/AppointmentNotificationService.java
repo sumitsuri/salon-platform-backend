@@ -10,6 +10,7 @@ import com.salonplatform.config.Msg91Properties;
 import com.salonplatform.domain.entity.MessageDeliveryLog;
 import com.salonplatform.domain.enums.MessageChannel;
 import com.salonplatform.domain.enums.MessageDeliveryStatus;
+import com.salonplatform.domain.enums.WhatsAppTemplateCode;
 import com.salonplatform.domain.repository.MessageDeliveryLogRepository;
 import com.salonplatform.util.PhoneUtils;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,7 @@ public class AppointmentNotificationService {
     private final Msg91Properties msg91Properties;
     private final MessageDeliveryLogRepository deliveryLogRepository;
     private final TenantRepository tenantRepository;
+    private final WhatsAppTemplateService whatsAppTemplateService;
 
     public void sendConfirmation(Booking booking, Branch branch, Customer customer, String serviceName, String staffName) {
         String phone = customer.getPhone() != null ? PhoneUtils.normalizeIndianMobile(customer.getPhone()) : null;
@@ -82,9 +84,16 @@ public class AppointmentNotificationService {
             return;
         }
 
+        if (!whatsAppTemplateService.isActive(booking.getTenantId(), branch.getId(), WhatsAppTemplateCode.APPOINTMENT_CONFIRMED)) {
+            deliveryLog.setStatus(MessageDeliveryStatus.SKIPPED);
+            deliveryLog.setErrorMessage("Appointment confirmation WhatsApp template is disabled for this salon");
+            deliveryLogRepository.save(deliveryLog);
+            return;
+        }
+
         Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
                 phone,
-                msg91Properties.getAppointmentConfirmedTemplate(),
+                whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.APPOINTMENT_CONFIRMED),
                 components);
 
         if (result.skipped()) {

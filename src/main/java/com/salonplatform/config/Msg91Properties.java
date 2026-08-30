@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Data
 @Component
 @ConfigurationProperties(prefix = "app.msg91")
@@ -42,6 +44,9 @@ public class Msg91Properties {
     /** Branch code allowed to send WhatsApp bill receipts during pilot (e.g. VAR). */
     private String billReceiptPilotBranchCode = "VAR";
 
+    /** Additional tenant slugs allowed for bill receipt WhatsApp during pilot (all branches). */
+    private List<String> billReceiptPilotAdditionalTenantSlugs = List.of("mystic-wellness");
+
     public boolean isEnabled() {
         return authKey != null && !authKey.isBlank();
     }
@@ -53,7 +58,15 @@ public class Msg91Properties {
         if (tenantSlug == null || branchCode == null) {
             return false;
         }
-        return billReceiptPilotTenantSlug.equalsIgnoreCase(tenantSlug.trim())
+        String slug = tenantSlug.trim();
+        if (billReceiptPilotAdditionalTenantSlugs != null) {
+            for (String allowed : billReceiptPilotAdditionalTenantSlugs) {
+                if (allowed != null && allowed.equalsIgnoreCase(slug)) {
+                    return true;
+                }
+            }
+        }
+        return billReceiptPilotTenantSlug.equalsIgnoreCase(slug)
                 && billReceiptPilotBranchCode.equalsIgnoreCase(branchCode.trim());
     }
 
