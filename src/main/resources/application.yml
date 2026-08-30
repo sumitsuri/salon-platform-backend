@@ -25,8 +25,8 @@ spring:
 app:
   jwt:
     secret: ${JWT_SECRET:salon-platform-jwt-secret-change-in-production-min-256-bits-long-key-here}
-    access-token-expiry-ms: 900000        # 15 minutes (silent refresh via refresh token)
-    refresh-token-expiry-ms: 1296000000   # 15 days — hard logout after this if unused
+    access-token-expiry-ms: ${JWT_ACCESS_TOKEN_EXPIRY_MS:900000}        # 15 minutes (silent refresh via refresh token)
+    refresh-token-expiry-ms: ${JWT_REFRESH_TOKEN_EXPIRY_MS:1728000000}   # 20 days — hard logout after this if unused
   cors:
     allowed-origins: http://localhost:3000,http://localhost:3001,http://localhost:3002
   public-url: http://localhost:8080

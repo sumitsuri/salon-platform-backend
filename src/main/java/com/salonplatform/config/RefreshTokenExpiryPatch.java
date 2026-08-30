@@ -13,8 +13,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 
 /**
- * Extends active refresh tokens to the configured session window (15 days).
- * One-time uplift for sessions created under the previous 7-day policy.
+ * Extends active refresh tokens to the configured session window (20 days).
+ * One-time uplift when the configured window is increased.
  */
 @Component
 @Order(2)
