@@ -1,4 +1,4 @@
-package com.salonplatform.dto.customer;
+package com.salonplatform.dto.campaign;
 
 import com.salonplatform.domain.enums.BookingSource;
 import com.salonplatform.domain.enums.CampaignMembershipFilter;
@@ -6,27 +6,18 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 @Data
 @Builder
-public class CustomerListFilter {
-    private String name;
-    private List<String> names;
-    private String society;
-    private String phone;
-    private List<String> phones;
-    private String visitPassId;
+public class CampaignTemplateFilterDto {
     private Integer minVisitCount;
     private Integer maxVisitCount;
     private BigDecimal minLifetimeSpend;
     private BigDecimal maxLifetimeSpend;
-    private LocalDate lastVisitFrom;
-    private LocalDate lastVisitTo;
-    private Boolean whatsappOptInOnly;
-    private Boolean smsOptInOnly;
+    private String lastVisitFrom;
+    private String lastVisitTo;
     private UUID branchId;
     private CampaignMembershipFilter membershipFilter;
     private Integer membershipExpiringWithinDays;
@@ -39,6 +30,4 @@ public class CustomerListFilter {
     private Boolean hasSubmittedReview;
     private Boolean googleReviewNotSubmitted;
     private BookingSource bookingSource;
-    private int page;
-    private int size;
 }

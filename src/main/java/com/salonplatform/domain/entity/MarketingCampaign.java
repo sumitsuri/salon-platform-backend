@@ -38,7 +38,7 @@ public class MarketingCampaign {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private CampaignStatus status = CampaignStatus.DRAFT;
+    private CampaignStatus status = CampaignStatus.ACTIVE;
 
     /** Promo text — WhatsApp template body var or SMS flow variable. */
     @Column(nullable = false, length = 500)
@@ -59,6 +59,33 @@ public class MarketingCampaign {
 
     @Builder.Default
     private Boolean filterSmsOptInOnly = true;
+
+    private UUID filterBranchId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private com.salonplatform.domain.enums.CampaignMembershipFilter filterMembershipFilter;
+
+    private Integer filterMembershipExpiringWithinDays;
+
+    /** JSON array or single UUID string. */
+    private String filterHasServiceIds;
+    private String filterExcludeServiceIds;
+    private String filterHasServiceCategoryIds;
+    private String filterExcludeServiceCategoryIds;
+
+    private Integer filterMaxOverallRating;
+    private Integer filterMinOverallRating;
+    private Boolean filterHasSubmittedReview;
+    private Boolean filterGoogleReviewNotSubmitted;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private com.salonplatform.domain.enums.BookingSource filterBookingSource;
+
+    /** Growth template reference, if campaign was created from library. */
+    @Column(length = 80)
+    private String templateId;
 
     @Builder.Default
     private Integer recipientCount = 0;

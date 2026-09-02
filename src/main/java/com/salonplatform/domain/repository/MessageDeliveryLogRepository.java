@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface MessageDeliveryLogRepository extends JpaRepository<MessageDeliveryLog, UUID> {
 
     List<MessageDeliveryLog> findByTenantIdAndCampaignIdOrderByCreatedAtDesc(UUID tenantId, UUID campaignId);
+
+    List<MessageDeliveryLog> findByTenantIdAndCampaignRunIdOrderByCreatedAtDesc(UUID tenantId, UUID campaignRunId);
 }

@@ -12,7 +12,8 @@ import java.util.UUID;
 @Entity
 @Table(name = "message_delivery_logs", indexes = {
         @Index(columnList = "tenant_id, created_at"),
-        @Index(columnList = "campaign_id")
+        @Index(columnList = "campaign_id"),
+        @Index(columnList = "campaign_run_id")
 })
 @Getter
 @Setter
@@ -29,6 +30,7 @@ public class MessageDeliveryLog {
     private UUID tenantId;
 
     private UUID campaignId;
+    private UUID campaignRunId;
     private UUID customerId;
     private UUID invoiceId;
 

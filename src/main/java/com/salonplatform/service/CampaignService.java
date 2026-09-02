@@ -1,16 +1,20 @@
 package com.salonplatform.service;
 
+import com.salonplatform.domain.entity.CampaignRun;
 import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.MarketingCampaign;
+import com.salonplatform.domain.enums.CampaignRunStatus;
 import com.salonplatform.domain.enums.CampaignStatus;
 import com.salonplatform.domain.enums.MessageChannel;
 import com.salonplatform.domain.entity.MessageDeliveryLog;
+import com.salonplatform.domain.repository.CampaignRunRepository;
 import com.salonplatform.domain.repository.CustomerRepository;
 import com.salonplatform.domain.repository.MarketingCampaignRepository;
 import com.salonplatform.domain.repository.MessageDeliveryLogRepository;
 import com.salonplatform.dto.campaign.CampaignDeliveryResponse;
 import com.salonplatform.dto.campaign.CampaignListFilter;
 import com.salonplatform.dto.campaign.CampaignPreviewResponse;
+import com.salonplatform.dto.campaign.CampaignRunResponse;
 import com.salonplatform.dto.campaign.CampaignResponse;
 import com.salonplatform.dto.campaign.CreateCampaignRequest;
 import com.salonplatform.dto.customer.CustomerResponse;
@@ -25,6 +29,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +43,7 @@ public class CampaignService {
     private static final int PREVIEW_CUSTOMER_LIMIT = 100;
 
     private final MarketingCampaignRepository campaignRepository;
+    private final CampaignRunRepository runRepository;
     private final CustomerRepository customerRepository;
     private final MessageDeliveryLogRepository deliveryLogRepository;
     private final CustomerService customerService;
@@ -54,6 +60,7 @@ public class CampaignService {
                 .name(request.getName())
                 .channel(request.getChannel())
                 .messageText(request.getMessageText())
+                .templateId(request.getTemplateId())
                 .filterName(CampaignFilterValues.serialize(
                         CampaignFilterValues.resolveNames(request.getFilterName(), request.getFilterNames())))
                 .filterSociety(request.getFilterSociety())
@@ -69,6 +76,18 @@ public class CampaignService {
                         ? request.getFilterWhatsappOptInOnly() : true)
                 .filterSmsOptInOnly(request.getFilterSmsOptInOnly() != null
                         ? request.getFilterSmsOptInOnly() : true)
+                .filterBranchId(request.getFilterBranchId())
+                .filterMembershipFilter(request.getFilterMembershipFilter())
+                .filterMembershipExpiringWithinDays(request.getFilterMembershipExpiringWithinDays())
+                .filterHasServiceIds(CampaignFilterValues.serializeUuids(request.getFilterHasServiceIds()))
+                .filterExcludeServiceIds(CampaignFilterValues.serializeUuids(request.getFilterExcludeServiceIds()))
+                .filterHasServiceCategoryIds(CampaignFilterValues.serializeUuids(request.getFilterHasServiceCategoryIds()))
+                .filterExcludeServiceCategoryIds(CampaignFilterValues.serializeUuids(request.getFilterExcludeServiceCategoryIds()))
+                .filterMaxOverallRating(request.getFilterMaxOverallRating())
+                .filterMinOverallRating(request.getFilterMinOverallRating())
+                .filterHasSubmittedReview(request.getFilterHasSubmittedReview())
+                .filterGoogleReviewNotSubmitted(request.getFilterGoogleReviewNotSubmitted())
+                .filterBookingSource(request.getFilterBookingSource())
                 .createdByUserId(user.getId())
                 .build();
 
@@ -82,6 +101,7 @@ public class CampaignService {
         UUID tenantId = SecurityUtils.requireTenantId();
         CampaignListFilter effective = filter != null ? filter : CampaignListFilter.builder().build();
         return campaignRepository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+                .filter(c -> c.getStatus() != CampaignStatus.ARCHIVED)
                 .filter(c -> matchesListFilter(c, effective))
                 .map(this::toResponse)
                 .collect(Collectors.toList());
@@ -92,6 +112,28 @@ public class CampaignService {
         MarketingCampaign campaign = loadCampaign(campaignId);
         List<MessageDeliveryLog> logs = deliveryLogRepository
                 .findByTenantIdAndCampaignIdOrderByCreatedAtDesc(campaign.getTenantId(), campaignId);
+        return mapDeliveries(logs);
+    }
+
+    public List<CampaignDeliveryResponse> listRunDeliveries(UUID campaignId, UUID runId) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        MarketingCampaign campaign = loadCampaign(campaignId);
+        CampaignRun run = loadRun(campaign, runId);
+        List<MessageDeliveryLog> logs = deliveryLogRepository
+                .findByTenantIdAndCampaignRunIdOrderByCreatedAtDesc(campaign.getTenantId(), run.getId());
+        return mapDeliveries(logs);
+    }
+
+    public List<CampaignRunResponse> listRuns(UUID campaignId) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        MarketingCampaign campaign = loadCampaign(campaignId);
+        return runRepository.findByTenantIdAndCampaignIdOrderByStartedAtDesc(campaign.getTenantId(), campaignId)
+                .stream()
+                .map(this::toRunResponse)
+                .toList();
+    }
+
+    private List<CampaignDeliveryResponse> mapDeliveries(List<MessageDeliveryLog> logs) {
         if (logs.isEmpty()) {
             return List.of();
         }
@@ -145,6 +187,19 @@ public class CampaignService {
         return toResponse(loadCampaign(id));
     }
 
+    public CampaignPreviewResponse previewCampaign(UUID campaignId) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        MarketingCampaign campaign = loadCampaign(campaignId);
+        Specification<Customer> spec = buildSpec(campaign);
+        long count = customerRepository.count(spec);
+        List<CustomerResponse> customers = customerService.listForCampaignPreview(spec, PREVIEW_CUSTOMER_LIMIT);
+        return CampaignPreviewResponse.builder()
+                .matchingCustomers(count)
+                .customers(customers)
+                .previewTruncated(count > customers.size())
+                .build();
+    }
+
     public CampaignPreviewResponse preview(CreateCampaignRequest request) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
@@ -161,19 +216,59 @@ public class CampaignService {
     @Transactional
     public CampaignResponse send(UUID id) {
         SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
         MarketingCampaign campaign = loadCampaign(id);
 
-        if (campaign.getStatus() != CampaignStatus.DRAFT) {
-            throw new BadRequestException("error.campaign.alreadySent");
+        if (campaign.getStatus() == CampaignStatus.ARCHIVED) {
+            throw new BadRequestException("error.campaign.archived");
+        }
+        if (runRepository.existsByCampaignIdAndStatus(id, CampaignRunStatus.SENDING)) {
+            throw new BadRequestException("error.campaign.sendInProgress");
         }
 
         List<Customer> recipients = customerRepository.findAll(buildSpec(campaign));
+        if (recipients.isEmpty()) {
+            throw new BadRequestException("error.campaign.noRecipients");
+        }
+
+        CampaignRun run = CampaignRun.builder()
+                .tenantId(tenantId)
+                .campaignId(campaign.getId())
+                .status(CampaignRunStatus.SENDING)
+                .recipientCount(recipients.size())
+                .startedAt(Instant.now())
+                .build();
+        run = runRepository.save(run);
+
         campaign.setRecipientCount(recipients.size());
-        campaign.setStatus(CampaignStatus.SENDING);
+        campaign.setStatus(CampaignStatus.ACTIVE);
         campaignRepository.save(campaign);
 
-        campaignDispatchService.dispatch(campaign.getId(), recipients);
+        campaignDispatchService.dispatch(campaign.getId(), run.getId(), recipients);
         return toResponse(campaign);
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        MarketingCampaign campaign = loadCampaign(id);
+        if (runRepository.existsByCampaignIdAndStatus(id, CampaignRunStatus.SENDING)) {
+            throw new BadRequestException("error.campaign.sendInProgress");
+        }
+
+        long runCount = runRepository.countByCampaignId(id);
+        if (runCount > 0) {
+            campaign.setStatus(CampaignStatus.ARCHIVED);
+            campaignRepository.save(campaign);
+            return;
+        }
+
+        List<MessageDeliveryLog> logs = deliveryLogRepository
+                .findByTenantIdAndCampaignIdOrderByCreatedAtDesc(campaign.getTenantId(), id);
+        if (!logs.isEmpty()) {
+            deliveryLogRepository.deleteAll(logs);
+        }
+        campaignRepository.delete(campaign);
     }
 
     private long countMatching(MarketingCampaign campaign) {
@@ -195,7 +290,19 @@ public class CampaignService {
                 campaign.getChannel() == MessageChannel.WHATSAPP
                         ? campaign.getFilterWhatsappOptInOnly() : false,
                 campaign.getChannel() == MessageChannel.SMS
-                        ? campaign.getFilterSmsOptInOnly() : false);
+                        ? campaign.getFilterSmsOptInOnly() : false,
+                campaign.getFilterBranchId(),
+                campaign.getFilterMembershipFilter(),
+                campaign.getFilterMembershipExpiringWithinDays(),
+                CampaignFilterValues.deserializeUuids(campaign.getFilterHasServiceIds()),
+                CampaignFilterValues.deserializeUuids(campaign.getFilterExcludeServiceIds()),
+                CampaignFilterValues.deserializeUuids(campaign.getFilterHasServiceCategoryIds()),
+                CampaignFilterValues.deserializeUuids(campaign.getFilterExcludeServiceCategoryIds()),
+                campaign.getFilterMaxOverallRating(),
+                campaign.getFilterMinOverallRating(),
+                campaign.getFilterHasSubmittedReview(),
+                campaign.getFilterGoogleReviewNotSubmitted(),
+                campaign.getFilterBookingSource());
     }
 
     private Specification<Customer> buildSpecFromRequest(UUID tenantId, CreateCampaignRequest request) {
@@ -215,7 +322,19 @@ public class CampaignService {
                         : false,
                 request.getChannel() == MessageChannel.SMS
                         ? (request.getFilterSmsOptInOnly() != null ? request.getFilterSmsOptInOnly() : true)
-                        : false);
+                        : false,
+                request.getFilterBranchId(),
+                request.getFilterMembershipFilter(),
+                request.getFilterMembershipExpiringWithinDays(),
+                request.getFilterHasServiceIds(),
+                request.getFilterExcludeServiceIds(),
+                request.getFilterHasServiceCategoryIds(),
+                request.getFilterExcludeServiceCategoryIds(),
+                request.getFilterMaxOverallRating(),
+                request.getFilterMinOverallRating(),
+                request.getFilterHasSubmittedReview(),
+                request.getFilterGoogleReviewNotSubmitted(),
+                request.getFilterBookingSource());
     }
 
     private MarketingCampaign loadCampaign(UUID id) {
@@ -228,13 +347,42 @@ public class CampaignService {
         return campaign;
     }
 
+    private CampaignRun loadRun(MarketingCampaign campaign, UUID runId) {
+        CampaignRun run = runRepository.findById(runId)
+                .orElseThrow(() -> new ResourceNotFoundException("error.campaign.runNotFound"));
+        if (!run.getCampaignId().equals(campaign.getId())
+                || !run.getTenantId().equals(campaign.getTenantId())) {
+            throw new ResourceNotFoundException("error.campaign.runNotFound");
+        }
+        return run;
+    }
+
+    private CampaignRunResponse toRunResponse(CampaignRun run) {
+        return CampaignRunResponse.builder()
+                .id(run.getId())
+                .campaignId(run.getCampaignId())
+                .status(run.getStatus())
+                .recipientCount(run.getRecipientCount())
+                .sentCount(run.getSentCount())
+                .failedCount(run.getFailedCount())
+                .skippedCount(Math.max(0, run.getRecipientCount() - run.getSentCount() - run.getFailedCount()))
+                .startedAt(run.getStartedAt())
+                .completedAt(run.getCompletedAt())
+                .build();
+    }
+
     private CampaignResponse toResponse(MarketingCampaign c) {
+        List<CampaignRun> runs = runRepository.findByTenantIdAndCampaignIdOrderByStartedAtDesc(
+                c.getTenantId(), c.getId());
+        Instant lastRunAt = runs.isEmpty() ? c.getSentAt() : runs.get(0).getStartedAt();
+        boolean sendInProgress = runs.stream().anyMatch(r -> r.getStatus() == CampaignRunStatus.SENDING);
         return CampaignResponse.builder()
                 .id(c.getId())
                 .name(c.getName())
                 .channel(c.getChannel())
                 .status(c.getStatus())
                 .messageText(c.getMessageText())
+                .templateId(c.getTemplateId())
                 .filterName(c.getFilterName())
                 .filterSociety(c.getFilterSociety())
                 .filterPhone(c.getFilterPhone())
@@ -246,12 +394,27 @@ public class CampaignService {
                 .filterLastVisitTo(c.getFilterLastVisitTo())
                 .filterWhatsappOptInOnly(c.getFilterWhatsappOptInOnly())
                 .filterSmsOptInOnly(c.getFilterSmsOptInOnly())
+                .filterBranchId(c.getFilterBranchId())
+                .filterMembershipFilter(c.getFilterMembershipFilter())
+                .filterMembershipExpiringWithinDays(c.getFilterMembershipExpiringWithinDays())
+                .filterHasServiceIds(CampaignFilterValues.deserializeUuids(c.getFilterHasServiceIds()))
+                .filterExcludeServiceIds(CampaignFilterValues.deserializeUuids(c.getFilterExcludeServiceIds()))
+                .filterHasServiceCategoryIds(CampaignFilterValues.deserializeUuids(c.getFilterHasServiceCategoryIds()))
+                .filterExcludeServiceCategoryIds(CampaignFilterValues.deserializeUuids(c.getFilterExcludeServiceCategoryIds()))
+                .filterMaxOverallRating(c.getFilterMaxOverallRating())
+                .filterMinOverallRating(c.getFilterMinOverallRating())
+                .filterHasSubmittedReview(c.getFilterHasSubmittedReview())
+                .filterGoogleReviewNotSubmitted(c.getFilterGoogleReviewNotSubmitted())
+                .filterBookingSource(c.getFilterBookingSource())
                 .recipientCount(c.getRecipientCount())
                 .sentCount(c.getSentCount())
                 .failedCount(c.getFailedCount())
                 .skippedCount(Math.max(0, c.getRecipientCount() - c.getSentCount() - c.getFailedCount()))
                 .sentAt(c.getSentAt())
                 .createdAt(c.getCreatedAt())
+                .runCount(runs.size())
+                .lastRunAt(lastRunAt)
+                .sendInProgress(sendInProgress)
                 .build();
     }
 }

@@ -96,6 +96,7 @@ public class NotificationService {
     public MessageDeliveryLog sendCampaignMessage(
             UUID tenantId,
             UUID campaignId,
+            UUID campaignRunId,
             Customer customer,
             MessageChannel channel,
             String messageText) {
@@ -103,6 +104,7 @@ public class NotificationService {
         MessageDeliveryLog log = MessageDeliveryLog.builder()
                 .tenantId(tenantId)
                 .campaignId(campaignId)
+                .campaignRunId(campaignRunId)
                 .customerId(customer.getId())
                 .channel(channel)
                 .recipientPhone(phone != null ? phone : "")

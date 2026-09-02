@@ -8,7 +8,10 @@ import com.salonplatform.dto.campaign.CampaignResponse;
 import com.salonplatform.dto.campaign.CreateCampaignRequest;
 import com.salonplatform.domain.enums.CampaignStatus;
 import com.salonplatform.domain.enums.MessageChannel;
+import com.salonplatform.dto.campaign.CampaignTemplateLibraryResponse;
+import com.salonplatform.dto.campaign.CampaignTemplateResponse;
 import com.salonplatform.service.CampaignService;
+import com.salonplatform.service.CampaignTemplateService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +25,17 @@ import java.util.UUID;
 public class CampaignController {
 
     private final CampaignService campaignService;
+    private final CampaignTemplateService campaignTemplateService;
+
+    @GetMapping("/templates")
+    public ApiResponse<CampaignTemplateLibraryResponse> templates() {
+        return ApiResponse.ok(campaignTemplateService.listLibrary());
+    }
+
+    @GetMapping("/templates/{templateId}")
+    public ApiResponse<CampaignTemplateResponse> template(@PathVariable String templateId) {
+        return ApiResponse.ok(campaignTemplateService.getTemplate(templateId));
+    }
 
     @GetMapping
     public ApiResponse<List<CampaignResponse>> list(
@@ -34,6 +48,23 @@ public class CampaignController {
                 .status(status)
                 .build();
         return ApiResponse.ok(campaignService.list(filter));
+    }
+
+    @GetMapping("/{id}/preview")
+    public ApiResponse<CampaignPreviewResponse> previewCampaign(@PathVariable UUID id) {
+        return ApiResponse.ok(campaignService.previewCampaign(id));
+    }
+
+    @GetMapping("/{id}/runs")
+    public ApiResponse<List<com.salonplatform.dto.campaign.CampaignRunResponse>> runs(@PathVariable UUID id) {
+        return ApiResponse.ok(campaignService.listRuns(id));
+    }
+
+    @GetMapping("/{id}/runs/{runId}/deliveries")
+    public ApiResponse<List<CampaignDeliveryResponse>> runDeliveries(
+            @PathVariable UUID id,
+            @PathVariable UUID runId) {
+        return ApiResponse.ok(campaignService.listRunDeliveries(id, runId));
     }
 
     @GetMapping("/{id}/deliveries")
@@ -59,5 +90,11 @@ public class CampaignController {
     @PostMapping("/{id}/send")
     public ApiResponse<CampaignResponse> send(@PathVariable UUID id) {
         return ApiResponse.ok(campaignService.send(id));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable UUID id) {
+        campaignService.delete(id);
+        return ApiResponse.ok(null);
     }
 }
