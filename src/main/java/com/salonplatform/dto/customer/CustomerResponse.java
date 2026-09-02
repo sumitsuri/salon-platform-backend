@@ -26,4 +26,5 @@ public class CustomerResponse {
     private Integer visitCount;
     private BigDecimal lifetimeSpend;
     private Instant lastVisitAt;
+    private String lastVisitBranchName;
 }

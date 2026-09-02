@@ -7,6 +7,7 @@ import com.salonplatform.domain.enums.CustomerIdentityStatus;
 import com.salonplatform.domain.repository.BookingRepository;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.CustomerBranchStatsRow;
+import com.salonplatform.domain.repository.CustomerLastVisitBranchRow;
 import com.salonplatform.domain.repository.CustomerRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.dto.common.PageResponse;
@@ -190,6 +191,22 @@ public class CustomerService {
                         : applyBranchStats(toResponse(c), c.getId(), statsByCustomer.get(c.getId())))
                 .sorted(customerListSort())
                 .toList();
+        Map<UUID, String> lastVisitBranchNames = resolveLastVisitBranchNames(
+                content.stream()
+                        .filter(c -> c.getLastVisitAt() != null)
+                        .map(CustomerResponse::getId)
+                        .toList(),
+                branchId);
+        if (!lastVisitBranchNames.isEmpty()) {
+            content = content.stream()
+                    .map(c -> {
+                        String branchName = lastVisitBranchNames.get(c.getId());
+                        return branchName != null
+                                ? c.toBuilder().lastVisitBranchName(branchName).build()
+                                : c;
+                    })
+                    .toList();
+        }
         return PageResponse.<CustomerResponse>builder()
                 .content(content)
                 .page(result.getNumber())
@@ -291,11 +308,21 @@ public class CustomerService {
 
     private CustomerResponse toScopedResponse(Customer c) {
         UUID branchId = managerBranchScope();
+        CustomerResponse response;
         if (branchId == null) {
-            return toResponse(c);
+            response = toResponse(c);
+        } else {
+            Map<UUID, CustomerBranchStatsRow> stats = loadBranchStats(List.of(c.getId()), branchId);
+            response = applyBranchStats(toResponse(c), c.getId(), stats.get(c.getId()));
         }
-        Map<UUID, CustomerBranchStatsRow> stats = loadBranchStats(List.of(c.getId()), branchId);
-        return applyBranchStats(toResponse(c), c.getId(), stats.get(c.getId()));
+        if (response.getLastVisitAt() == null) {
+            return response;
+        }
+        Map<UUID, String> branchNames = resolveLastVisitBranchNames(List.of(c.getId()), branchId);
+        String branchName = branchNames.get(c.getId());
+        return branchName != null
+                ? response.toBuilder().lastVisitBranchName(branchName).build()
+                : response;
     }
 
     /** Managers see visit stats for their branch only; brand admins see tenant-wide totals. */
@@ -312,6 +339,24 @@ public class CustomerService {
         }
         return bookingRepository.aggregateBranchStatsForCustomers(customerIds, branchId).stream()
                 .collect(Collectors.toMap(CustomerBranchStatsRow::getCustomerId, Function.identity()));
+    }
+
+    private Map<UUID, String> resolveLastVisitBranchNames(List<UUID> customerIds, UUID managerBranchId) {
+        if (customerIds.isEmpty()) {
+            return Map.of();
+        }
+        if (managerBranchId != null) {
+            String branchName = branchRepository.findById(managerBranchId).map(Branch::getName).orElse(null);
+            if (branchName == null) {
+                return Map.of();
+            }
+            return customerIds.stream().collect(Collectors.toMap(Function.identity(), id -> branchName));
+        }
+        return bookingRepository.findLastVisitBranchNamesForCustomers(customerIds).stream()
+                .collect(Collectors.toMap(
+                        CustomerLastVisitBranchRow::getCustomerId,
+                        CustomerLastVisitBranchRow::getBranchName,
+                        (a, b) -> a));
     }
 
     private CustomerResponse applyBranchStats(

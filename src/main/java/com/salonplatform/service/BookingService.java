@@ -454,7 +454,7 @@ public class BookingService {
                 ? billPreviewFromInvoice(invoice)
                 : lines.isEmpty()
                         ? null
-                        : gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+                        : billPreviewForList(booking, lines);
 
         return BookingResponse.builder()
                 .id(booking.getId())
@@ -481,6 +481,16 @@ public class BookingService {
                 .actualDurationMinutes(booking.getActualDurationMinutes())
                 .invoiceId(invoice != null ? invoice.getId() : null)
                 .build();
+    }
+
+    private BillPreviewResponse billPreviewForList(Booking booking, List<BookingLineItem> lines) {
+        GstCalculationService.PromoContext promo;
+        try {
+            promo = promoContextFor(booking);
+        } catch (BadRequestException | ResourceNotFoundException ex) {
+            promo = GstCalculationService.PromoContext.empty();
+        }
+        return gstCalculationService.calculate(booking, lines, promo);
     }
 
     private BillPreviewResponse billPreviewFromInvoice(Invoice invoice) {

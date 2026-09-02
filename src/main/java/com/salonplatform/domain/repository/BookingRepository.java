@@ -51,4 +51,19 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     List<CustomerBranchStatsRow> aggregateBranchStatsForCustomers(
             @Param("customerIds") Collection<UUID> customerIds,
             @Param("branchId") UUID branchId);
+
+    @Query(
+            value = """
+                    SELECT DISTINCT ON (b.customer_id)
+                           b.customer_id AS customerId,
+                           br.name AS branchName
+                    FROM bookings b
+                    JOIN branches br ON br.id = b.branch_id
+                    WHERE b.customer_id IN (:customerIds)
+                      AND b.status = 'COMPLETED'
+                    ORDER BY b.customer_id, COALESCE(b.completed_at, b.created_at) DESC
+                    """,
+            nativeQuery = true)
+    List<CustomerLastVisitBranchRow> findLastVisitBranchNamesForCustomers(
+            @Param("customerIds") Collection<UUID> customerIds);
 }
