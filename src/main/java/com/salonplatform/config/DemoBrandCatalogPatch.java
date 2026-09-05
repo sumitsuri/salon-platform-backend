@@ -23,7 +23,7 @@ import java.math.BigDecimal;
 public class DemoBrandCatalogPatch implements ApplicationRunner {
 
     private static final String TENANT_SLUG = "demo-brand";
-    private static final String PATCH_VERSION = "demo-brand-pdf-catalog-v1";
+    private static final String PATCH_VERSION = "demo-brand-pdf-catalog-v2";
 
     private final TenantRepository tenantRepository;
     private final RateCardCatalogSync rateCardCatalogSync;
@@ -36,9 +36,10 @@ public class DemoBrandCatalogPatch implements ApplicationRunner {
             }
             log.info("Applying demo-brand PDF catalog patch ({})", PATCH_VERSION);
             rateCardCatalogSync.syncTenant(tenant.getId(), TENANT_SLUG, BigDecimal.ONE, false, null);
+            int backfilled = rateCardCatalogSync.backfillBranchesMissingServices(tenant.getId(), BigDecimal.ONE);
             tenant.setCatalogPatchVersion(PATCH_VERSION);
             tenantRepository.save(tenant);
-            log.info("Demo-brand catalog synced for all branches (LIT, WEB, ALP, GP, VAR)");
+            log.info("Demo-brand catalog synced — backfilled {} empty branch(es)", backfilled);
         });
     }
 }

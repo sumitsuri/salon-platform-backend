@@ -94,4 +94,9 @@ public class CatalogController {
     public ApiResponse<List<BranchServiceResponse>> branchServices(@PathVariable UUID branchId) {
         return ApiResponse.ok(catalogService.listBranchServices(branchId));
     }
+
+    @PostMapping("/branches/{branchId}/bootstrap-services")
+    public ApiResponse<Integer> bootstrapBranchServices(@PathVariable UUID branchId) {
+        return ApiResponse.ok(catalogService.bootstrapBranchServices(branchId));
+    }
 }

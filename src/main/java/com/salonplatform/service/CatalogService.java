@@ -6,6 +6,7 @@ import com.salonplatform.dto.catalog.*;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.seed.RateCardCatalogSync;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.math.BigDecimal;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -26,6 +28,7 @@ public class CatalogService {
     private final SalonServiceRepository salonServiceRepository;
     private final BranchServiceRepository branchServiceRepository;
     private final BranchRepository branchRepository;
+    private final RateCardCatalogSync rateCardCatalogSync;
 
     @Transactional
     public ServiceCategory createCategory(CreateCategoryRequest request) {
@@ -383,5 +386,22 @@ public class CatalogService {
             throw new ResourceNotFoundException("Service not found");
         }
         return svc;
+    }
+
+    /** Backfill branch_services from tenant catalog when a branch has no walk-in services. */
+    @Transactional
+    public int bootstrapBranchServices(UUID branchId) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+        if (!branch.getTenantId().equals(tenantId)) {
+            throw new ResourceNotFoundException("Branch not found");
+        }
+        int priced = rateCardCatalogSync.backfillBranchIfEmpty(tenantId, branchId, BigDecimal.ONE);
+        if (priced == 0 && branchServiceRepository.findByBranchIdAndActiveTrue(branchId).isEmpty()) {
+            throw new BadRequestException("error.catalog.branchBootstrapEmpty");
+        }
+        return priced;
     }
 }

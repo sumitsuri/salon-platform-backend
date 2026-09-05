@@ -358,4 +358,68 @@ public class RateCardCatalogSync {
                 tenantId, branchCode, branchPriceCount);
         return branchPriceCount;
     }
+
+    /**
+     * Copy tenant catalog list prices onto branches that have zero active branch_services.
+     * Safe for prod: does not purge or deactivate other branches.
+     */
+    @Transactional
+    public int backfillBranchesMissingServices(UUID tenantId, BigDecimal priceMultiplier) {
+        List<SalonService> catalog = salonServiceRepository.findByTenantIdAndActiveTrue(tenantId);
+        if (catalog.isEmpty()) {
+            log.warn("Cannot backfill branch services — tenant {} has no active catalog", tenantId);
+            return 0;
+        }
+        int branchesFixed = 0;
+        for (Branch branch : branchRepository.findByTenantId(tenantId)) {
+            if (!branchServiceRepository.findByBranchIdAndActiveTrue(branch.getId()).isEmpty()) {
+                continue;
+            }
+            BigDecimal branchExtra = "WEB".equals(branch.getCode()) ? new BigDecimal("1.1") : BigDecimal.ONE;
+            BigDecimal multiplier = (priceMultiplier != null ? priceMultiplier : BigDecimal.ONE).multiply(branchExtra);
+            int priced = 0;
+            for (SalonService svc : catalog) {
+                BigDecimal list = svc.getListPrice();
+                if (list == null || list.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                BigDecimal price = list.multiply(multiplier).setScale(0, RoundingMode.HALF_UP);
+                upsertBranchPrice(tenantId, branch.getId(), svc.getId(), price, false);
+                priced++;
+            }
+            log.info("Backfilled {} services for branch {} ({})", priced, branch.getName(), branch.getCode());
+            branchesFixed++;
+        }
+        return branchesFixed;
+    }
+
+    @Transactional
+    public int backfillBranchIfEmpty(UUID tenantId, UUID branchId, BigDecimal priceMultiplier) {
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new IllegalStateException("Branch not found: " + branchId));
+        if (!tenantId.equals(branch.getTenantId())) {
+            throw new IllegalStateException("Branch does not belong to tenant");
+        }
+        if (!branchServiceRepository.findByBranchIdAndActiveTrue(branchId).isEmpty()) {
+            return 0;
+        }
+        List<SalonService> catalog = salonServiceRepository.findByTenantIdAndActiveTrue(tenantId);
+        if (catalog.isEmpty()) {
+            return 0;
+        }
+        BigDecimal branchExtra = "WEB".equals(branch.getCode()) ? new BigDecimal("1.1") : BigDecimal.ONE;
+        BigDecimal multiplier = (priceMultiplier != null ? priceMultiplier : BigDecimal.ONE).multiply(branchExtra);
+        int priced = 0;
+        for (SalonService svc : catalog) {
+            BigDecimal list = svc.getListPrice();
+            if (list == null || list.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal price = list.multiply(multiplier).setScale(0, RoundingMode.HALF_UP);
+            upsertBranchPrice(tenantId, branchId, svc.getId(), price, false);
+            priced++;
+        }
+        log.info("Backfilled {} services for branch {} ({})", priced, branch.getName(), branch.getCode());
+        return priced;
+    }
 }
