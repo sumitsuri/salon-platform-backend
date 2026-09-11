@@ -63,12 +63,6 @@ public class CustomerSchemaPatch implements ApplicationRunner {
             dropConstraintIfExists("customers", "uk_customers_tenant_phone");
 
             jdbcTemplate.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_tenant_visit_pass "
-                            + "ON customers (tenant_id, visit_pass_id)");
-            jdbcTemplate.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_tenant_phone_not_null "
-                            + "ON customers (tenant_id, phone) WHERE phone IS NOT NULL AND trim(phone) <> ''");
-            jdbcTemplate.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS uq_customers_pass_public_token "
                             + "ON customers (pass_public_token) WHERE pass_public_token IS NOT NULL");
 

@@ -38,18 +38,24 @@ public class CustomerController {
     }
 
     @GetMapping("/search")
-    public ApiResponse<List<CustomerResponse>> search(@RequestParam String q) {
-        return ApiResponse.ok(customerService.search(q));
+    public ApiResponse<List<CustomerResponse>> search(
+            @RequestParam String q,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(customerService.search(q, branchId));
     }
 
     @GetMapping("/phone/{phone}")
-    public ApiResponse<CustomerResponse> byPhone(@PathVariable String phone) {
-        return ApiResponse.ok(customerService.findByPhone(phone));
+    public ApiResponse<CustomerResponse> byPhone(
+            @PathVariable String phone,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(customerService.findByPhone(phone, branchId));
     }
 
     @GetMapping("/visit-pass/{visitPassId}")
-    public ApiResponse<CustomerResponse> byVisitPass(@PathVariable String visitPassId) {
-        return ApiResponse.ok(customerService.findByVisitPass(visitPassId));
+    public ApiResponse<CustomerResponse> byVisitPass(
+            @PathVariable String visitPassId,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(customerService.findByVisitPass(visitPassId, branchId));
     }
 
     @GetMapping("/{id}/registration-card")
@@ -70,6 +76,7 @@ public class CustomerController {
             @RequestParam(required = false) String society,
             @RequestParam(required = false) String phone,
             @RequestParam(required = false) String visitPassId,
+            @RequestParam(required = false) UUID branchId,
             @RequestParam(required = false) Integer minVisitCount,
             @RequestParam(required = false) Integer maxVisitCount,
             @RequestParam(required = false) BigDecimal minLifetimeSpend,
@@ -85,6 +92,7 @@ public class CustomerController {
                 .society(society)
                 .phone(phone)
                 .visitPassId(visitPassId)
+                .branchId(branchId)
                 .minVisitCount(minVisitCount)
                 .maxVisitCount(maxVisitCount)
                 .minLifetimeSpend(minLifetimeSpend)

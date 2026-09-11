@@ -75,6 +75,12 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
+        if (!customer.getTenantId().equals(tenantId)) {
+            throw new ResourceNotFoundException("Customer not found");
+        }
+        if (!customer.getBranchId().equals(request.getBranchId())) {
+            throw new BadRequestException("error.customer.branchMismatch");
+        }
 
         if (request.getLines().isEmpty()) {
             throw new BadRequestException("error.booking.servicesRequired");

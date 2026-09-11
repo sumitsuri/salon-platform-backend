@@ -12,6 +12,7 @@ import java.util.UUID;
 @Builder(toBuilder = true)
 public class CustomerResponse {
     private UUID id;
+    private UUID branchId;
     private String name;
     private String phone;
     private String visitPassId;

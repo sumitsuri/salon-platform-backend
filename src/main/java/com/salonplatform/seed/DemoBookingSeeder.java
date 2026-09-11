@@ -402,15 +402,16 @@ public class DemoBookingSeeder implements CommandLineRunner {
         List<Customer> customers = new ArrayList<>();
         for (int i = 0; i < 36; i++) {
             String phone = String.format("98%08d", 10000000 + i);
-            Customer existing = customerRepository.findByTenantIdAndPhone(tenantId, phone).orElse(null);
+            Branch branch = branches.get(i % branches.size());
+            Customer existing = customerRepository.findByBranchIdAndPhone(branch.getId(), phone).orElse(null);
             if (existing != null) {
                 customers.add(existing);
                 continue;
             }
-            Branch branch = branches.get(i % branches.size());
             String name = firstNames[i % firstNames.length] + " " + (char) ('A' + (i % 26));
             Customer c = customerRepository.save(Customer.builder()
                     .tenantId(tenantId)
+                    .branchId(branch.getId())
                     .name(name)
                     .phone(phone)
                     .visitPassId(uniqueDemoPassId(tenantId, branch, i))

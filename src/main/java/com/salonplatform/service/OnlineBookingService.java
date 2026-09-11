@@ -387,7 +387,7 @@ public class OnlineBookingService {
                 ? request.getCustomerName().trim() : "Guest";
 
         if (phone != null) {
-            Optional<Customer> existing = customerRepository.findByTenantIdAndPhone(tenant.getId(), phone);
+            Optional<Customer> existing = customerRepository.findByBranchIdAndPhone(branch.getId(), phone);
             if (existing.isPresent()) {
                 Customer c = existing.get();
                 c.setName(name);
@@ -409,9 +409,10 @@ public class OnlineBookingService {
 
         return customerRepository.save(Customer.builder()
                 .tenantId(tenant.getId())
+                .branchId(branch.getId())
                 .name(name)
                 .phone(phone)
-                .visitPassId(uniqueVisitPassId(tenant, branch.getCode()))
+                .visitPassId(uniqueVisitPassId(tenant, branch))
                 .identityStatus(status)
                 .passPublicToken(VisitPassUtils.generatePublicToken())
                 .society(request.getSociety())
@@ -423,10 +424,10 @@ public class OnlineBookingService {
                 .build());
     }
 
-    private String uniqueVisitPassId(Tenant tenant, String branchCode) {
+    private String uniqueVisitPassId(Tenant tenant, Branch branch) {
         for (int i = 0; i < 20; i++) {
-            String candidate = VisitPassUtils.generateVisitPassId(tenant, branchCode);
-            if (customerRepository.findByTenantIdAndVisitPassId(tenant.getId(), candidate).isEmpty()) {
+            String candidate = VisitPassUtils.generateVisitPassId(tenant, branch.getCode());
+            if (customerRepository.findByBranchIdAndVisitPassId(branch.getId(), candidate).isEmpty()) {
                 return candidate;
             }
         }

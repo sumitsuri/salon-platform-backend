@@ -33,6 +33,10 @@ public final class CustomerSpecifications {
     public static Specification<Customer> fromFilter(UUID tenantId, CustomerListFilter filter) {
         Specification<Customer> spec = (root, query, cb) -> cb.equal(root.get("tenantId"), tenantId);
 
+        if (filter.getBranchId() != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("branchId"), filter.getBranchId()));
+        }
+
         if (filter.getNames() != null && !filter.getNames().isEmpty()) {
             List<String> names = filter.getNames().stream()
                     .filter(n -> n != null && !n.isBlank())

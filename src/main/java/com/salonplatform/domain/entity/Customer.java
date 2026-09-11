@@ -27,6 +27,9 @@ public class Customer {
     private UUID tenantId;
 
     @Column(nullable = false)
+    private UUID branchId;
+
+    @Column(nullable = false)
     private String name;
 
     @Column(length = 15)

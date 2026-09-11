@@ -17,6 +17,7 @@ import com.salonplatform.dto.customer.CustomerRegistrationCardResponse;
 import com.salonplatform.dto.customer.CustomerResponse;
 import com.salonplatform.dto.customer.UpdateCustomerRequest;
 import com.salonplatform.exception.BadRequestException;
+import com.salonplatform.exception.ForbiddenException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.repository.CustomerSpecifications;
 import com.salonplatform.security.SecurityUtils;
@@ -58,14 +59,15 @@ public class CustomerService {
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
 
-        boolean phoneRequired = resolvePhoneRequired(request.getBranchId(), tenantId);
+        UUID branchId = requireBranchIdForWrite(request.getBranchId());
+        boolean phoneRequired = resolvePhoneRequired(branchId, tenantId);
         String normalizedPhone = normalizePhoneOrNull(request.getPhone());
 
         if (phoneRequired && (normalizedPhone == null || normalizedPhone.isBlank())) {
             throw new BadRequestException("error.customer.phoneRequired");
         }
         if (normalizedPhone != null) {
-            customerRepository.findByTenantIdAndPhone(tenantId, normalizedPhone).ifPresent(c -> {
+            customerRepository.findByBranchIdAndPhone(branchId, normalizedPhone).ifPresent(c -> {
                 throw new BadRequestException("error.customer.phoneExists");
             });
         }
@@ -74,13 +76,14 @@ public class CustomerService {
                 ? CustomerIdentityStatus.PHONE_VERIFIED
                 : CustomerIdentityStatus.PASS_ONLY;
 
-        String branchCode = resolveBranchCode(request.getBranchId(), tenantId);
+        String branchCode = resolveBranchCode(branchId, tenantId);
 
         Customer customer = Customer.builder()
                 .tenantId(tenantId)
+                .branchId(branchId)
                 .name(request.getName().trim())
                 .phone(normalizedPhone)
-                .visitPassId(generateUniqueVisitPassId(tenant, branchCode))
+                .visitPassId(generateUniqueVisitPassId(tenant, branchId, branchCode))
                 .identityStatus(status)
                 .passPublicToken(VisitPassUtils.generatePublicToken())
                 .society(request.getSociety())
@@ -110,24 +113,24 @@ public class CustomerService {
         return toScopedResponse(customer);
     }
 
-    public CustomerResponse findByPhone(String phone) {
-        UUID tenantId = SecurityUtils.requireTenantId();
+    public CustomerResponse findByPhone(String phone, UUID branchId) {
+        UUID scopedBranchId = requireBranchScope(branchId);
         String normalized = normalizePhoneOrNull(phone);
         if (normalized == null) {
             throw new BadRequestException("error.customer.phoneInvalid");
         }
-        Customer customer = customerRepository.findByTenantIdAndPhone(tenantId, normalized)
+        Customer customer = customerRepository.findByBranchIdAndPhone(scopedBranchId, normalized)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
         return toResponse(customer);
     }
 
-    public CustomerResponse findByVisitPass(String visitPassId) {
-        UUID tenantId = SecurityUtils.requireTenantId();
+    public CustomerResponse findByVisitPass(String visitPassId, UUID branchId) {
+        UUID scopedBranchId = requireBranchScope(branchId);
         String normalized = VisitPassUtils.normalizeVisitPassId(visitPassId);
         if (normalized == null) {
             throw new BadRequestException("error.customer.visitPassInvalid");
         }
-        Customer customer = customerRepository.findByTenantIdAndVisitPassId(tenantId, normalized)
+        Customer customer = customerRepository.findByBranchIdAndVisitPassId(scopedBranchId, normalized)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
         return toResponse(customer);
     }
@@ -152,9 +155,12 @@ public class CustomerService {
         return buildRegistrationCard(customer, tenant, null);
     }
 
-    public List<CustomerResponse> search(String query) {
-        UUID tenantId = SecurityUtils.requireTenantId();
-        return customerRepository.search(tenantId, query).stream()
+    public List<CustomerResponse> search(String query, UUID branchId) {
+        UUID scopedBranchId = requireBranchScope(branchId);
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        return customerRepository.searchByBranch(scopedBranchId, query.trim()).stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
@@ -174,19 +180,23 @@ public class CustomerService {
 
     public PageResponse<CustomerResponse> listPaged(CustomerListFilter filter) {
         UUID tenantId = SecurityUtils.requireTenantId();
+        UUID managerBranch = managerBranchScope();
+        if (managerBranch != null) {
+            filter.setBranchId(managerBranch);
+        }
         int page = PageUtils.normalizePage(filter.getPage());
         int size = PageUtils.normalizeSize(filter.getSize());
         Specification<Customer> spec = CustomerSpecifications.fromFilter(tenantId, filter);
         Page<Customer> result = customerRepository.findAll(
                 spec,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "lastVisitAt", "createdAt")));
-        UUID branchId = managerBranchScope();
+        final UUID branchForStats = managerBranch != null ? managerBranch : filter.getBranchId();
         List<Customer> customers = result.getContent();
-        Map<UUID, CustomerBranchStatsRow> statsByCustomer = branchId != null
-                ? loadBranchStats(customers.stream().map(Customer::getId).toList(), branchId)
+        Map<UUID, CustomerBranchStatsRow> statsByCustomer = branchForStats != null
+                ? loadBranchStats(customers.stream().map(Customer::getId).toList(), branchForStats)
                 : Map.of();
         List<CustomerResponse> content = customers.stream()
-                .map(c -> branchId == null
+                .map(c -> branchForStats == null
                         ? toResponse(c)
                         : applyBranchStats(toResponse(c), c.getId(), statsByCustomer.get(c.getId())))
                 .sorted(customerListSort())
@@ -196,7 +206,7 @@ public class CustomerService {
                         .filter(c -> c.getLastVisitAt() != null)
                         .map(CustomerResponse::getId)
                         .toList(),
-                branchId);
+                branchForStats);
         if (!lastVisitBranchNames.isEmpty()) {
             content = content.stream()
                     .map(c -> {
@@ -230,7 +240,55 @@ public class CustomerService {
         if (!customer.getTenantId().equals(tenantId)) {
             throw new ResourceNotFoundException("Customer not found");
         }
+        UUID managerBranch = managerBranchScope();
+        if (managerBranch != null && !managerBranch.equals(customer.getBranchId())) {
+            throw new ResourceNotFoundException("Customer not found");
+        }
         return customer;
+    }
+
+    /** Managers are pinned to JWT branch; brand admins must pass branch on lookup APIs. */
+    private UUID requireBranchScope(UUID requestedBranchId) {
+        if (SecurityUtils.isManagerRole()) {
+            UUID managerBranch = SecurityUtils.currentUser().getBranchId();
+            if (managerBranch == null) {
+                throw new ForbiddenException("Branch context required");
+            }
+            SecurityUtils.assertBranchAccess(managerBranch);
+            if (requestedBranchId != null && !requestedBranchId.equals(managerBranch)) {
+                throw new ForbiddenException("Branch access denied");
+            }
+            return managerBranch;
+        }
+        SecurityUtils.assertBrandAdminOrAbove();
+        if (requestedBranchId == null) {
+            throw new BadRequestException("error.customer.branchRequired");
+        }
+        assertBranchInTenant(requestedBranchId);
+        SecurityUtils.assertBranchAccess(requestedBranchId);
+        return requestedBranchId;
+    }
+
+    private UUID requireBranchIdForWrite(UUID branchId) {
+        if (branchId == null) {
+            throw new BadRequestException("error.customer.branchRequired");
+        }
+        assertBranchInTenant(branchId);
+        SecurityUtils.assertBranchAccess(branchId);
+        if (SecurityUtils.isManagerRole()) {
+            UUID managerBranch = SecurityUtils.currentUser().getBranchId();
+            if (managerBranch == null || !managerBranch.equals(branchId)) {
+                throw new ForbiddenException("Branch access denied");
+            }
+        }
+        return branchId;
+    }
+
+    private void assertBranchInTenant(UUID branchId) {
+        UUID tenantId = SecurityUtils.requireTenantId();
+        branchRepository.findById(branchId)
+                .filter(b -> b.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
     }
 
     private boolean resolvePhoneRequired(UUID branchId, UUID tenantId) {
@@ -258,10 +316,10 @@ public class CustomerService {
         return VisitPassUtils.normalizeBranchCode(branch.getCode());
     }
 
-    private String generateUniqueVisitPassId(Tenant tenant, String branchCode) {
+    private String generateUniqueVisitPassId(Tenant tenant, UUID branchId, String branchCode) {
         for (int i = 0; i < 25; i++) {
             String candidate = VisitPassUtils.generateVisitPassId(tenant, branchCode);
-            if (customerRepository.findByTenantIdAndVisitPassId(tenant.getId(), candidate).isEmpty()) {
+            if (customerRepository.findByBranchIdAndVisitPassId(branchId, candidate).isEmpty()) {
                 return candidate;
             }
         }
@@ -378,6 +436,7 @@ public class CustomerService {
     private CustomerResponse toResponse(Customer c) {
         return CustomerResponse.builder()
                 .id(c.getId())
+                .branchId(c.getBranchId())
                 .name(c.getName())
                 .phone(c.getPhone())
                 .visitPassId(c.getVisitPassId())
