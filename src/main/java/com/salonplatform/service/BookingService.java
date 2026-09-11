@@ -450,11 +450,24 @@ public class BookingService {
                         .build())
                 .collect(Collectors.toList());
 
-        BillPreviewResponse billPreview = invoice != null
-                ? billPreviewFromInvoice(invoice)
-                : lines.isEmpty()
-                        ? null
-                        : billPreviewForList(booking, lines);
+        BillPreviewResponse billPreview = lines.isEmpty()
+                ? null
+                : billPreviewForList(booking, lines);
+        if (invoice != null && billPreview != null) {
+            BillPreviewResponse fromInvoice = billPreviewFromInvoice(invoice);
+            billPreview.setGrandTotal(fromInvoice.getGrandTotal());
+            billPreview.setSubtotal(fromInvoice.getSubtotal());
+            billPreview.setDiscountAmount(fromInvoice.getDiscountAmount());
+            billPreview.setMembershipDiscountAmount(fromInvoice.getMembershipDiscountAmount());
+            billPreview.setPromoDiscountAmount(fromInvoice.getPromoDiscountAmount());
+            billPreview.setTaxableAmount(fromInvoice.getTaxableAmount());
+            billPreview.setCgstAmount(fromInvoice.getCgstAmount());
+            billPreview.setSgstAmount(fromInvoice.getSgstAmount());
+            billPreview.setMembershipLabel(fromInvoice.getMembershipLabel());
+            billPreview.setPromoLabel(fromInvoice.getPromoLabel());
+            billPreview.setMembershipFeeAmount(fromInvoice.getMembershipFeeAmount());
+            billPreview.setMembershipFeeLabel(fromInvoice.getMembershipFeeLabel());
+        }
 
         return BookingResponse.builder()
                 .id(booking.getId())

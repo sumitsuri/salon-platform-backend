@@ -4,6 +4,8 @@ import com.salonplatform.domain.entity.*;
 import com.salonplatform.domain.enums.PaymentMode;
 import com.salonplatform.domain.repository.*;
 import com.salonplatform.dto.analytics.*;
+import com.salonplatform.dto.billing.BillLinePreview;
+import com.salonplatform.dto.billing.BillPreviewResponse;
 import com.salonplatform.exception.ForbiddenException;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
@@ -32,6 +34,9 @@ public class AnalyticsService {
     private final PaymentSplitRepository paymentSplitRepository;
     private final RecommendationService recommendationService;
     private final WeekdaySalesService weekdaySalesService;
+    private final BookingRepository bookingRepository;
+    private final GstCalculationService gstCalculationService;
+    private final PromoResolutionService promoResolutionService;
 
     public DashboardResponse getDashboard(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
@@ -74,17 +79,29 @@ public class AnalyticsService {
         Map<String, ServiceAccumulator> byService = new HashMap<>();
         for (Invoice invoice : invoices) {
             List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
+            BillPreviewResponse bill = billPreviewForInvoice(invoice, lines);
+            Map<UUID, BillLinePreview> previewByLineId = bill != null && bill.getLines() != null
+                    ? bill.getLines().stream()
+                            .filter(l -> l.getLineItemId() != null)
+                            .collect(Collectors.toMap(BillLinePreview::getLineItemId, l -> l, (a, b) -> a))
+                    : Map.of();
             for (BookingLineItem line : lines) {
                 if (line.getServiceName() == null) continue;
+                int qty = line.getQuantity() != null ? line.getQuantity() : 1;
+                BigDecimal listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
+                BillLinePreview preview = previewByLineId.get(line.getId());
+                BigDecimal finalAmount = preview != null && preview.getLineTotal() != null
+                        ? preview.getLineTotal()
+                        : listAmount;
                 byService.compute(line.getServiceName(), (k, acc) -> {
                     ServiceAccumulator current = acc == null ? new ServiceAccumulator() : acc;
-                    return current.add(line.getUnitPrice());
+                    return current.add(listAmount, finalAmount);
                 });
             }
         }
 
         BigDecimal serviceRevenue = byService.values().stream()
-                .map(ServiceAccumulator::revenue)
+                .map(ServiceAccumulator::finalRevenue)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         long totalCount = byService.values().stream().mapToLong(ServiceAccumulator::count).sum();
 
@@ -92,7 +109,7 @@ public class AnalyticsService {
                 .map(e -> {
                     ServiceAccumulator acc = e.getValue();
                     double revPct = serviceRevenue.compareTo(BigDecimal.ZERO) > 0
-                            ? acc.revenue().multiply(BigDecimal.valueOf(100))
+                            ? acc.finalRevenue().multiply(BigDecimal.valueOf(100))
                             .divide(serviceRevenue, 2, RoundingMode.HALF_UP).doubleValue()
                             : 0;
                     double countPct = totalCount > 0
@@ -100,7 +117,8 @@ public class AnalyticsService {
                             : 0;
                     return ServiceContributionItem.builder()
                             .serviceName(e.getKey())
-                            .revenue(acc.revenue())
+                            .listRevenue(acc.listRevenue())
+                            .revenue(acc.finalRevenue())
                             .count(acc.count())
                             .revenueSharePct(revPct)
                             .countSharePct(countPct)
@@ -158,14 +176,35 @@ public class AnalyticsService {
         return invoices;
     }
 
-    private record ServiceAccumulator(BigDecimal revenue, long count) {
+    private record ServiceAccumulator(BigDecimal listRevenue, BigDecimal finalRevenue, long count) {
         ServiceAccumulator() {
-            this(BigDecimal.ZERO, 0);
+            this(BigDecimal.ZERO, BigDecimal.ZERO, 0);
         }
 
-        ServiceAccumulator add(BigDecimal amount) {
-            return new ServiceAccumulator(revenue.add(amount), count + 1);
+        ServiceAccumulator add(BigDecimal listAmount, BigDecimal finalAmount) {
+            return new ServiceAccumulator(
+                    listRevenue.add(listAmount),
+                    finalRevenue.add(finalAmount),
+                    count + 1);
         }
+    }
+
+    private BillPreviewResponse billPreviewForInvoice(Invoice invoice, List<BookingLineItem> lines) {
+        if (lines.isEmpty()) {
+            return null;
+        }
+        Booking booking = bookingRepository.findById(invoice.getBookingId()).orElse(null);
+        if (booking == null) {
+            return null;
+        }
+        GstCalculationService.PromoContext promo = promoResolutionService.resolveForBooking(
+                booking.getTenantId(),
+                booking.getBranchId(),
+                booking.getCustomerId(),
+                booking.getCouponId(),
+                booking.getOfferId(),
+                booking.getPendingMembershipPlanId());
+        return gstCalculationService.calculate(booking, lines, promo);
     }
 
     private List<UUID> resolveBranchIds(UserPrincipal user, List<UUID> branchIds) {
