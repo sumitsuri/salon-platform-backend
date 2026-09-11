@@ -13,6 +13,7 @@ import com.salonplatform.dto.expenditure.UpdateExpenditureRequest;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,8 +33,14 @@ public class ExpenditureService {
     private final StaffRepository staffRepository;
 
     public List<ExpenditureResponse> list(UUID branchId, LocalDate fromMonth, LocalDate toMonth) {
-        SecurityUtils.assertBrandAdminOrAbove();
+        UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
+        if (SecurityUtils.isManagerRole()) {
+            UUID managerBranchId = requireManagerBranchId(user);
+            branchId = managerBranchId;
+        } else {
+            SecurityUtils.assertBrandAdminOrAbove();
+        }
 
         List<BranchExpenditure> items;
         if (fromMonth != null && toMonth != null) {
@@ -61,9 +68,18 @@ public class ExpenditureService {
 
     @Transactional
     public ExpenditureResponse create(CreateExpenditureRequest request) {
-        SecurityUtils.assertBrandAdminOrAbove();
+        UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
+        if (SecurityUtils.isManagerRole()) {
+            UUID managerBranchId = requireManagerBranchId(user);
+            if (!managerBranchId.equals(request.getBranchId())) {
+                throw new BadRequestException("Managers can only record expenditure for their branch");
+            }
+        } else {
+            SecurityUtils.assertBrandAdminOrAbove();
+        }
         requireBranch(tenantId, request.getBranchId());
+        SecurityUtils.assertBranchAccess(request.getBranchId());
 
         LocalDate month = normalizeMonth(request.getExpenseMonth());
         if (request.getAmount().compareTo(BigDecimal.ZERO) < 0) {
@@ -169,6 +185,13 @@ public class ExpenditureService {
             throw new ResourceNotFoundException("Expenditure not found");
         }
         return expenditure;
+    }
+
+    private UUID requireManagerBranchId(UserPrincipal user) {
+        if (user.getBranchId() == null) {
+            throw new BadRequestException("Branch context required");
+        }
+        return user.getBranchId();
     }
 
     private Branch requireBranch(UUID tenantId, UUID branchId) {
