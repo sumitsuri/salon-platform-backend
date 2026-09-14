@@ -27,6 +27,8 @@ public class BillPreviewResponse {
     /** Membership card fee included on this bill (exempt from GST). */
     private java.math.BigDecimal membershipFeeAmount;
     private String membershipFeeLabel;
+    private java.math.BigDecimal packageFeeAmount;
+    private String packageFeeLabel;
     /** Manager FLAT/PERCENT discount when no coupon/offer is applied. */
     private BigDecimal manualDiscountAmount;
     private String manualDiscountLabel;

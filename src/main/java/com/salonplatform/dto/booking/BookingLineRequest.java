@@ -19,4 +19,7 @@ public class BookingLineRequest {
     private String lineDiscountNote;
     /** Optional override for variable-priced services (must be >= branch list price). */
     private BigDecimal unitPrice;
+
+    /** Redeem from customer package subscription (price forced to zero). */
+    private UUID packageSubscriptionId;
 }

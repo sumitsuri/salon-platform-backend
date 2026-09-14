@@ -67,6 +67,19 @@ public class AnalyticsController {
         return ApiResponse.ok(analyticsService.getServiceContribution(startDate, endDate, branchIds, serviceName, page, size));
     }
 
+    @GetMapping("/staff-sales")
+    public ApiResponse<StaffSalesPerformanceResponse> staffSales(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) List<java.util.UUID> branchIds) {
+        if (date != null && startDate == null && endDate == null) {
+            startDate = date;
+            endDate = date;
+        }
+        return ApiResponse.ok(analyticsService.getStaffSalesPerformance(startDate, endDate, branchIds));
+    }
+
     @GetMapping("/attendance")
     public ApiResponse<AttendanceDashboardResponse> attendanceDashboard(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,

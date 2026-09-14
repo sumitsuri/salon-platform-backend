@@ -9,6 +9,7 @@ import com.salonplatform.dto.booking.BookingListFilter;
 import com.salonplatform.dto.booking.BookingResponse;
 import com.salonplatform.dto.booking.CreateBookingRequest;
 import com.salonplatform.dto.booking.SetPendingMembershipPlanRequest;
+import com.salonplatform.dto.booking.SetPendingPackagePlanRequest;
 import com.salonplatform.dto.booking.UpdateBookingLinesRequest;
 import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.payment.RecordPaymentRequest;
@@ -110,6 +111,12 @@ public class BookingController {
     public ApiResponse<BookingResponse> setPendingMembership(
             @PathVariable UUID id, @RequestBody SetPendingMembershipPlanRequest request) {
         return ApiResponse.ok(bookingService.setPendingMembershipPlan(id, request));
+    }
+
+    @PostMapping("/{id}/pending-package")
+    public ApiResponse<BookingResponse> setPendingPackage(
+            @PathVariable UUID id, @RequestBody SetPendingPackagePlanRequest request) {
+        return ApiResponse.ok(bookingService.setPendingPackagePlan(id, request));
     }
 
     @PostMapping("/{id}/payments")

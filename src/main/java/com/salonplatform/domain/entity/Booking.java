@@ -63,6 +63,12 @@ public class Booking {
     /** Membership plan to sell with this visit (fee on bill; discount preview before payment). */
     private UUID pendingMembershipPlanId;
 
+    /** Service package plan to sell with this visit (bundle fee on bill). */
+    private UUID pendingPackagePlanId;
+
+    /** Floor staff credited with the package sale (walk-in). */
+    private UUID pendingPackageSoldByStaffId;
+
     @Column(precision = 14, scale = 2)
     private BigDecimal membershipDiscountAmount;
 

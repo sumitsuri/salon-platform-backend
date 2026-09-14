@@ -6,6 +6,7 @@ import com.salonplatform.domain.entity.Coupon;
 import com.salonplatform.domain.entity.MembershipPlan;
 import com.salonplatform.domain.entity.MembershipSubscription;
 import com.salonplatform.domain.entity.Offer;
+import com.salonplatform.domain.entity.ServicePackagePlan;
 import com.salonplatform.domain.entity.SalonService;
 import com.salonplatform.domain.enums.DiscountType;
 import com.salonplatform.domain.enums.ServiceScopeType;
@@ -210,6 +211,28 @@ public class GstCalculationService {
             }
         }
 
+        BigDecimal packageFeeAmount = BigDecimal.ZERO;
+        String packageFeeLabel = null;
+        if (promo.getPendingServicePackagePlan() != null) {
+            ServicePackagePlan pendingPackage = promo.getPendingServicePackagePlan();
+            packageFeeAmount = pendingPackage.getPackagePrice() != null
+                    ? pendingPackage.getPackagePrice() : BigDecimal.ZERO;
+            if (packageFeeAmount.compareTo(BigDecimal.ZERO) > 0) {
+                packageFeeLabel = "Package" + LABEL_SEP + pendingPackage.getName();
+                linePreviews.add(BillLinePreview.builder()
+                        .serviceName(packageFeeLabel)
+                        .unitPrice(packageFeeAmount)
+                        .quantity(1)
+                        .lineDiscount(BigDecimal.ZERO)
+                        .taxableAmount(BigDecimal.ZERO)
+                        .cgstAmount(BigDecimal.ZERO)
+                        .sgstAmount(BigDecimal.ZERO)
+                        .lineTotal(packageFeeAmount)
+                        .build());
+                grandTotal = grandTotal.add(packageFeeAmount);
+            }
+        }
+
         return BillPreviewResponse.builder()
                 .lines(linePreviews)
                 .subtotal(subtotal.add(totalMembershipDiscount).add(totalPromoDiscount))
@@ -231,6 +254,8 @@ public class GstCalculationService {
                 .promoLabel(promoLabel)
                 .membershipFeeAmount(membershipFeeAmount)
                 .membershipFeeLabel(membershipFeeLabel)
+                .packageFeeAmount(packageFeeAmount)
+                .packageFeeLabel(packageFeeLabel)
                 .build();
     }
 
@@ -266,6 +291,8 @@ public class GstCalculationService {
         private MembershipPlan membershipPlan;
         /** Plan queued for sale on this visit (discount preview + fee line). */
         private MembershipPlan pendingMembershipPlan;
+        /** Package plan queued for sale on this visit (bundle fee line). */
+        private ServicePackagePlan pendingServicePackagePlan;
         private Coupon coupon;
         private Offer offer;
 

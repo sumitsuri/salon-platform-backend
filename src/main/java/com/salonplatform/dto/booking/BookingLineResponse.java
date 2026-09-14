@@ -23,4 +23,5 @@ public class BookingLineResponse {
     private BigDecimal lineDiscountValue;
     private Integer estimatedDurationMinutes;
     private Integer actualDurationMinutes;
+    private UUID packageSubscriptionId;
 }

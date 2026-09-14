@@ -14,7 +14,10 @@ public class StaffTargetPerformanceItem {
     private UUID branchId;
     private String branchName;
     private BigDecimal monthlySalesTarget;
+    /** Final (post-discount) service sales in the period. */
     private BigDecimal actualSales;
+    /** List-price total before discounts (same period). */
+    private BigDecimal listSales;
     /** Total services performed by this staff in the period (sum of line item quantities). */
     private long salesCount;
     private BigDecimal avgTicketSize;

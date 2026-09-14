@@ -33,6 +33,7 @@ public class StaffPerformanceService {
     private final BranchRepository branchRepository;
     private final InvoiceRepository invoiceRepository;
     private final BookingLineItemRepository lineItemRepository;
+    private final InvoiceSalesAggregationService invoiceSalesAggregationService;
 
     public StaffTargetPerformanceResponse getTargetPerformance(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
@@ -55,7 +56,8 @@ public class StaffPerformanceService {
             invoices = invoices.stream().filter(i -> branchSet.contains(i.getBranchId())).collect(Collectors.toList());
         }
 
-        Map<UUID, StaffSalesAggregate> salesByStaff = aggregateSales(invoices);
+        Map<UUID, InvoiceSalesAggregationService.StaffLineAggregate> salesByStaff =
+                invoiceSalesAggregationService.aggregateByStaff(invoices);
 
         long daysInPeriod = ChronoUnit.DAYS.between(start, end) + 1;
         LocalDate today = LocalDate.now(ZONE);
@@ -68,13 +70,13 @@ public class StaffPerformanceService {
         int below = 0;
 
         for (Staff staff : staffList) {
+            InvoiceSalesAggregationService.StaffLineAggregate agg =
+                    salesByStaff.getOrDefault(staff.getId(), emptyStaffAggregate());
             BigDecimal target = staff.getMonthlySalesTarget() != null ? staff.getMonthlySalesTarget() : BigDecimal.ZERO;
-            StaffSalesAggregate agg = salesByStaff.getOrDefault(staff.getId(), StaffSalesAggregate.empty());
-            BigDecimal actual = agg.revenue();
+            BigDecimal actual = agg.finalRevenue();
             long salesCount = agg.serviceCount();
-            BigDecimal avgTicketSize = salesCount > 0
-                    ? actual.divide(BigDecimal.valueOf(salesCount), 2, RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
+            BigDecimal listSales = agg.listRevenue();
+            BigDecimal avgTicketSize = agg.avgFinalTicket();
             String branchName = branchRepository.findById(staff.getBranchId()).map(Branch::getName).orElse("—");
 
             BigDecimal achievementPercent = BigDecimal.ZERO;
@@ -110,6 +112,7 @@ public class StaffPerformanceService {
                     .branchName(branchName)
                     .monthlySalesTarget(target)
                     .actualSales(actual)
+                    .listSales(listSales)
                     .salesCount(salesCount)
                     .avgTicketSize(avgTicketSize)
                     .achievementPercent(achievementPercent)
@@ -229,40 +232,9 @@ public class StaffPerformanceService {
                 .build();
     }
 
-    private Map<UUID, StaffSalesAggregate> aggregateSales(List<Invoice> invoices) {
-        Map<UUID, StaffSalesAggregate> sales = new HashMap<>();
-        for (Invoice inv : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
-            for (BookingLineItem line : lines) {
-                int qty = line.getQuantity() != null ? line.getQuantity() : 1;
-                sales.computeIfAbsent(line.getStaffId(), k -> new StaffSalesAggregate())
-                        .add(line.getUnitPrice(), qty);
-            }
-        }
-        return sales;
-    }
-
-    private static final class StaffSalesAggregate {
-        private BigDecimal revenue = BigDecimal.ZERO;
-        private long serviceCount;
-
-        static StaffSalesAggregate empty() {
-            return new StaffSalesAggregate();
-        }
-
-        void add(BigDecimal unitPrice, int quantity) {
-            int q = Math.max(1, quantity);
-            revenue = revenue.add(unitPrice.multiply(BigDecimal.valueOf(q)));
-            serviceCount += q;
-        }
-
-        BigDecimal revenue() {
-            return revenue;
-        }
-
-        long serviceCount() {
-            return serviceCount;
-        }
+    private static InvoiceSalesAggregationService.StaffLineAggregate emptyStaffAggregate() {
+        return new InvoiceSalesAggregationService.StaffLineAggregate(
+                BigDecimal.ZERO, BigDecimal.ZERO, 0);
     }
 
     private Map<UUID, Map<LocalDate, BigDecimal>> aggregateDailySalesByStaff(List<Invoice> invoices) {

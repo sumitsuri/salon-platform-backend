@@ -4,10 +4,12 @@ import com.salonplatform.domain.entity.Coupon;
 import com.salonplatform.domain.entity.MembershipPlan;
 import com.salonplatform.domain.entity.MembershipSubscription;
 import com.salonplatform.domain.entity.Offer;
+import com.salonplatform.domain.entity.ServicePackagePlan;
 import com.salonplatform.domain.enums.PromoStatus;
 import com.salonplatform.domain.repository.CouponRepository;
 import com.salonplatform.domain.repository.MembershipPlanRepository;
 import com.salonplatform.domain.repository.OfferRepository;
+import com.salonplatform.domain.repository.ServicePackagePlanRepository;
 import com.salonplatform.dto.promo.ApplicablePromoResponse;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
@@ -29,6 +31,7 @@ public class PromoResolutionService {
     private final OfferRepository offerRepository;
     private final MembershipService membershipService;
     private final MembershipPlanRepository membershipPlanRepository;
+    private final ServicePackagePlanRepository servicePackagePlanRepository;
 
     public GstCalculationService.PromoContext resolveForBooking(
             UUID tenantId,
@@ -36,7 +39,7 @@ public class PromoResolutionService {
             UUID customerId,
             UUID couponId,
             UUID offerId) {
-        return resolveForBooking(tenantId, branchId, customerId, couponId, offerId, null);
+        return resolveForBooking(tenantId, branchId, customerId, couponId, offerId, null, null);
     }
 
     public GstCalculationService.PromoContext resolveForBooking(
@@ -46,6 +49,17 @@ public class PromoResolutionService {
             UUID couponId,
             UUID offerId,
             UUID pendingMembershipPlanId) {
+        return resolveForBooking(tenantId, branchId, customerId, couponId, offerId, pendingMembershipPlanId, null);
+    }
+
+    public GstCalculationService.PromoContext resolveForBooking(
+            UUID tenantId,
+            UUID branchId,
+            UUID customerId,
+            UUID couponId,
+            UUID offerId,
+            UUID pendingMembershipPlanId,
+            UUID pendingPackagePlanId) {
         if (couponId != null && offerId != null) {
             throw new BadRequestException("Select either a coupon or an offer, not both");
         }
@@ -67,6 +81,17 @@ public class PromoResolutionService {
                     pendingPlan = null;
                 } else {
                     plan = pendingPlan;
+                }
+            }
+        }
+
+        ServicePackagePlan pendingPackagePlan = null;
+        if (pendingPackagePlanId != null) {
+            pendingPackagePlan = servicePackagePlanRepository.findById(pendingPackagePlanId).orElse(null);
+            if (pendingPackagePlan != null) {
+                if (pendingPackagePlan.getStatus() != PromoStatus.ACTIVE
+                        || !PromoScopeUtils.branchAllowed(pendingPackagePlan.getBranchIds(), branchId)) {
+                    pendingPackagePlan = null;
                 }
             }
         }
@@ -96,6 +121,7 @@ public class PromoResolutionService {
                 .membershipSubscription(membership)
                 .membershipPlan(plan)
                 .pendingMembershipPlan(pendingPlan)
+                .pendingServicePackagePlan(pendingPackagePlan)
                 .coupon(coupon)
                 .offer(offer)
                 .build();

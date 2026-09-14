@@ -37,6 +37,7 @@ public class AnalyticsService {
     private final BookingRepository bookingRepository;
     private final GstCalculationService gstCalculationService;
     private final PromoResolutionService promoResolutionService;
+    private final InvoiceSalesAggregationService invoiceSalesAggregationService;
 
     public DashboardResponse getDashboard(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
@@ -76,38 +77,17 @@ public class AnalyticsService {
                 .map(Invoice::getGrandTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        Map<String, ServiceAccumulator> byService = new HashMap<>();
-        for (Invoice invoice : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
-            BillPreviewResponse bill = billPreviewForInvoice(invoice, lines);
-            Map<UUID, BillLinePreview> previewByLineId = bill != null && bill.getLines() != null
-                    ? bill.getLines().stream()
-                            .filter(l -> l.getLineItemId() != null)
-                            .collect(Collectors.toMap(BillLinePreview::getLineItemId, l -> l, (a, b) -> a))
-                    : Map.of();
-            for (BookingLineItem line : lines) {
-                if (line.getServiceName() == null) continue;
-                int qty = line.getQuantity() != null ? line.getQuantity() : 1;
-                BigDecimal listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
-                BillLinePreview preview = previewByLineId.get(line.getId());
-                BigDecimal finalAmount = preview != null && preview.getLineTotal() != null
-                        ? preview.getLineTotal()
-                        : listAmount;
-                byService.compute(line.getServiceName(), (k, acc) -> {
-                    ServiceAccumulator current = acc == null ? new ServiceAccumulator() : acc;
-                    return current.add(listAmount, finalAmount);
-                });
-            }
-        }
+        Map<String, InvoiceSalesAggregationService.ServiceLineAggregate> byService =
+                invoiceSalesAggregationService.aggregateByServiceName(invoices);
 
         BigDecimal serviceRevenue = byService.values().stream()
-                .map(ServiceAccumulator::finalRevenue)
+                .map(InvoiceSalesAggregationService.ServiceLineAggregate::finalRevenue)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        long totalCount = byService.values().stream().mapToLong(ServiceAccumulator::count).sum();
+        long totalCount = byService.values().stream().mapToLong(InvoiceSalesAggregationService.ServiceLineAggregate::count).sum();
 
         List<ServiceContributionItem> services = byService.entrySet().stream()
                 .map(e -> {
-                    ServiceAccumulator acc = e.getValue();
+                    InvoiceSalesAggregationService.ServiceLineAggregate acc = e.getValue();
                     double revPct = serviceRevenue.compareTo(BigDecimal.ZERO) > 0
                             ? acc.finalRevenue().multiply(BigDecimal.valueOf(100))
                             .divide(serviceRevenue, 2, RoundingMode.HALF_UP).doubleValue()
@@ -148,6 +128,40 @@ public class AnalyticsService {
                 .build();
     }
 
+    public StaffSalesPerformanceResponse getStaffSalesPerformance(
+            LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
+        UserPrincipal user = SecurityUtils.currentUser();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
+        List<Invoice> invoices = fetchInvoices(tenantId, startDate, endDate, resolvedBranchIds);
+        Map<UUID, InvoiceSalesAggregationService.StaffLineAggregate> salesByStaff =
+                invoiceSalesAggregationService.aggregateByStaff(invoices);
+
+        List<StaffSalesPerformanceResponse.StaffSalesRow> staff = salesByStaff.entrySet().stream()
+                .map(e -> {
+                    UUID staffId = e.getKey();
+                    InvoiceSalesAggregationService.StaffLineAggregate agg = e.getValue();
+                    Staff staffEntity = staffRepository.findById(staffId).orElse(null);
+                    String branchName = staffEntity != null
+                            ? branchRepository.findById(staffEntity.getBranchId()).map(Branch::getName).orElse("—")
+                            : "—";
+                    return StaffSalesPerformanceResponse.StaffSalesRow.builder()
+                            .staffId(staffId)
+                            .staffName(staffEntity != null ? staffEntity.getName() : "Unknown")
+                            .branchId(staffEntity != null ? staffEntity.getBranchId() : null)
+                            .branchName(branchName)
+                            .salesCount(agg.serviceCount())
+                            .listRevenue(agg.listRevenue())
+                            .finalRevenue(agg.finalRevenue())
+                            .avgFinalTicket(agg.avgFinalTicket())
+                            .build();
+                })
+                .sorted(Comparator.comparing(StaffSalesPerformanceResponse.StaffSalesRow::getFinalRevenue).reversed())
+                .collect(Collectors.toList());
+
+        return StaffSalesPerformanceResponse.builder().staff(staff).build();
+    }
+
     private List<Invoice> fetchInvoices(UUID tenantId, LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         ZoneId zone = ZoneId.of("Asia/Kolkata");
         final Instant rangeStart;
@@ -174,37 +188,6 @@ public class AnalyticsService {
                     .collect(Collectors.toList());
         }
         return invoices;
-    }
-
-    private record ServiceAccumulator(BigDecimal listRevenue, BigDecimal finalRevenue, long count) {
-        ServiceAccumulator() {
-            this(BigDecimal.ZERO, BigDecimal.ZERO, 0);
-        }
-
-        ServiceAccumulator add(BigDecimal listAmount, BigDecimal finalAmount) {
-            return new ServiceAccumulator(
-                    listRevenue.add(listAmount),
-                    finalRevenue.add(finalAmount),
-                    count + 1);
-        }
-    }
-
-    private BillPreviewResponse billPreviewForInvoice(Invoice invoice, List<BookingLineItem> lines) {
-        if (lines.isEmpty()) {
-            return null;
-        }
-        Booking booking = bookingRepository.findById(invoice.getBookingId()).orElse(null);
-        if (booking == null) {
-            return null;
-        }
-        GstCalculationService.PromoContext promo = promoResolutionService.resolveForBooking(
-                booking.getTenantId(),
-                booking.getBranchId(),
-                booking.getCustomerId(),
-                booking.getCouponId(),
-                booking.getOfferId(),
-                booking.getPendingMembershipPlanId());
-        return gstCalculationService.calculate(booking, lines, promo);
     }
 
     private List<UUID> resolveBranchIds(UserPrincipal user, List<UUID> branchIds) {

@@ -67,6 +67,14 @@ public class Invoice {
 
     private String membershipFeeLabel;
 
+    @Column(precision = 14, scale = 2)
+    @Builder.Default
+    private BigDecimal packageFeeAmount = BigDecimal.ZERO;
+
+    private String packageFeeLabel;
+
+    private UUID customerPackageSubscriptionId;
+
     private String promoLabel;
 
     @Column(nullable = false, precision = 14, scale = 2)

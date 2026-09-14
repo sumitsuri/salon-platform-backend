@@ -62,4 +62,8 @@ public class BookingLineItem {
 
     /** Measured minutes for this line (allocated from visit duration on payment). */
     private Integer actualDurationMinutes;
+
+    /** When set, this line redeems from an active customer package (unit price should be zero). */
+    @Column(name = "package_subscription_id")
+    private UUID packageSubscriptionId;
 }

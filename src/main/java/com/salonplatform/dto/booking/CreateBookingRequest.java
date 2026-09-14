@@ -1,11 +1,11 @@
 package com.salonplatform.dto.booking;
 
 import com.salonplatform.domain.enums.DiscountType;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,8 +16,8 @@ public class CreateBookingRequest {
     @NotNull
     private UUID customerId;
     private String notes;
-    @NotEmpty
-    private List<BookingLineRequest> lines;
+    /** May be empty when selling a membership or package on this visit (validated in service). */
+    private List<BookingLineRequest> lines = new ArrayList<>();
     private DiscountType billDiscountType;
     private BigDecimal billDiscountValue;
     private String billDiscountNote;
@@ -30,4 +30,6 @@ public class CreateBookingRequest {
     private Boolean keepOpen;
     /** Optional membership plan to bill and activate on payment. */
     private UUID pendingMembershipPlanId;
+    private UUID pendingPackagePlanId;
+    private UUID pendingPackageSoldByStaffId;
 }
