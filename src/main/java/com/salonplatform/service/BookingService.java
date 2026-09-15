@@ -31,8 +31,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,7 +92,7 @@ public class BookingService {
             throw new BadRequestException("error.booking.servicesRequired");
         }
         if (!lineRequests.isEmpty()) {
-            assertNoDuplicateServices(lineRequests);
+            lineRequests = normalizeBookingLineRequests(lineRequests);
         }
         if (request.getCouponId() != null && request.getOfferId() != null) {
             throw new BadRequestException("Select either a coupon or an offer, not both");
@@ -154,14 +156,14 @@ public class BookingService {
         if (request.getLines() == null || request.getLines().isEmpty()) {
             throw new BadRequestException("error.booking.servicesRequired");
         }
-        assertNoDuplicateServices(request.getLines());
+        List<BookingLineRequest> lines = normalizeBookingLineRequests(request.getLines());
 
         lineItemRepository.deleteByBookingId(bookingId);
         Instant start = booking.getServiceStartedAt() != null ? booking.getServiceStartedAt() : Instant.now();
         if (booking.getServiceStartedAt() == null) {
             booking.setServiceStartedAt(start);
         }
-        for (BookingLineRequest lineReq : request.getLines()) {
+        for (BookingLineRequest lineReq : lines) {
             saveLine(bookingId, lineReq, start);
         }
         refreshEstimatedEnd(booking);
@@ -229,17 +231,63 @@ public class BookingService {
         return booking;
     }
 
-    private void assertNoDuplicateServices(List<BookingLineRequest> lines) {
-        Set<UUID> seen = new HashSet<>();
+    /**
+     * Merges duplicate line keys (same service, staff, and package redemption) by summing quantity.
+     * Allows multiple units of the same service on one visit.
+     */
+    private List<BookingLineRequest> normalizeBookingLineRequests(List<BookingLineRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return List.of();
+        }
+        Map<String, BookingLineRequest> merged = new LinkedHashMap<>();
         for (BookingLineRequest line : lines) {
             UUID branchServiceId = line.getBranchServiceId();
             if (branchServiceId == null) {
                 continue;
             }
-            if (!seen.add(branchServiceId)) {
-                throw new BadRequestException("error.booking.duplicateService");
+            UUID staffId = line.getStaffId();
+            if (staffId == null) {
+                throw new BadRequestException("error.booking.staffRequired");
+            }
+            UUID packageSubscriptionId = line.getPackageSubscriptionId();
+            String key = branchServiceId + "|" + staffId + "|"
+                    + (packageSubscriptionId != null ? packageSubscriptionId : "");
+            int qty = line.getQuantity() != null && line.getQuantity() > 0 ? line.getQuantity() : 1;
+            if (qty > 99) {
+                throw new BadRequestException("error.booking.quantityTooHigh");
+            }
+            BookingLineRequest existing = merged.get(key);
+            if (existing == null) {
+                BookingLineRequest copy = new BookingLineRequest();
+                copy.setBranchServiceId(branchServiceId);
+                copy.setStaffId(staffId);
+                copy.setPackageSubscriptionId(packageSubscriptionId);
+                copy.setQuantity(qty);
+                copy.setUnitPrice(line.getUnitPrice());
+                copy.setLineDiscountType(line.getLineDiscountType());
+                copy.setLineDiscountValue(line.getLineDiscountValue());
+                copy.setLineDiscountNote(line.getLineDiscountNote());
+                merged.put(key, copy);
+            } else {
+                int combined = (existing.getQuantity() != null ? existing.getQuantity() : 1) + qty;
+                if (combined > 99) {
+                    throw new BadRequestException("error.booking.quantityTooHigh");
+                }
+                existing.setQuantity(combined);
+                if (line.getUnitPrice() != null
+                        && existing.getUnitPrice() != null
+                        && line.getUnitPrice().compareTo(existing.getUnitPrice()) != 0) {
+                    throw new BadRequestException("error.booking.conflictingUnitPrice");
+                }
+                if (line.getUnitPrice() != null && existing.getUnitPrice() == null) {
+                    existing.setUnitPrice(line.getUnitPrice());
+                }
             }
         }
+        if (merged.isEmpty()) {
+            throw new BadRequestException("error.booking.servicesRequired");
+        }
+        return new ArrayList<>(merged.values());
     }
 
     private void saveLine(UUID bookingId, BookingLineRequest lineReq, Instant startedAt) {

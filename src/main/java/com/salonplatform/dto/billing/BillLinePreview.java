@@ -12,6 +12,7 @@ import java.util.UUID;
 public class BillLinePreview {
     private UUID lineItemId;
     private String serviceName;
+    private UUID staffId;
     private BigDecimal unitPrice;
     private Integer quantity;
     private BigDecimal lineDiscount;

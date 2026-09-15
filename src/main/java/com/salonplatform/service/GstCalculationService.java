@@ -134,6 +134,7 @@ public class GstCalculationService {
             linePreviews.add(BillLinePreview.builder()
                     .lineItemId(line.getId())
                     .serviceName(line.getServiceName())
+                    .staffId(line.getStaffId())
                     .unitPrice(line.getUnitPrice())
                     .quantity(line.getQuantity())
                     .lineDiscount(combinedLineDiscount)
