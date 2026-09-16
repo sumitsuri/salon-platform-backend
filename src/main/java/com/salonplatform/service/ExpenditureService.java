@@ -58,6 +58,10 @@ public class ExpenditureService {
             items = items.stream().filter(e -> e.getBranchId().equals(bid)).collect(Collectors.toList());
         }
 
+        if (SecurityUtils.isManagerRole()) {
+            items = items.stream().filter(BranchExpenditure::isManagerRecorded).collect(Collectors.toList());
+        }
+
         return items.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
@@ -70,11 +74,16 @@ public class ExpenditureService {
     public ExpenditureResponse create(CreateExpenditureRequest request) {
         UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
+        boolean managerRecorded = false;
         if (SecurityUtils.isManagerRole()) {
             UUID managerBranchId = requireManagerBranchId(user);
             if (!managerBranchId.equals(request.getBranchId())) {
                 throw new BadRequestException("Managers can only record expenditure for their branch");
             }
+            if (!request.getCategory().isManagerRecordable()) {
+                throw new BadRequestException("Managers can only record daily branch expenses");
+            }
+            managerRecorded = true;
         } else {
             SecurityUtils.assertBrandAdminOrAbove();
         }
@@ -94,6 +103,7 @@ public class ExpenditureService {
                 .amount(request.getAmount())
                 .description(request.getDescription())
                 .active(true)
+                .managerRecorded(managerRecorded)
                 .build());
         return toResponse(expenditure);
     }

@@ -33,6 +33,10 @@ public class ExpenditureSchemaPatch implements ApplicationRunner {
                         updated_at TIMESTAMP
                     )
                     """);
+            jdbcTemplate.execute("""
+                    ALTER TABLE branch_expenditures
+                    ADD COLUMN IF NOT EXISTS manager_recorded BOOLEAN NOT NULL DEFAULT FALSE
+                    """);
             log.info("Expenditure schema patch applied");
         } catch (Exception e) {
             log.warn("Expenditure schema patch skipped or partial: {}", e.getMessage());

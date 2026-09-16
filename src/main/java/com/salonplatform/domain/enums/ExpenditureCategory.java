@@ -5,5 +5,10 @@ public enum ExpenditureCategory {
     RENT,
     PRODUCT_COST,
     EMPLOYEE_ACCOMMODATION_RENT,
-    MISCELLANEOUS
+    MISCELLANEOUS;
+
+    /** Branch managers may log only operational daily costs; fixed overhead is admin-only. */
+    public boolean isManagerRecordable() {
+        return this == MISCELLANEOUS;
+    }
 }

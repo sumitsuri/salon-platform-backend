@@ -46,6 +46,10 @@ public class BranchExpenditure {
     @Builder.Default
     private boolean active = true;
 
+    /** True when recorded via manager app (branch daily expense); admin payroll/rent lines stay false. */
+    @Builder.Default
+    private boolean managerRecorded = false;
+
     @CreationTimestamp
     private Instant createdAt;
 
