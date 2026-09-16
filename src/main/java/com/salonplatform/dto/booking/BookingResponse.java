@@ -31,6 +31,7 @@ public class BookingResponse {
     private UUID pendingMembershipPlanId;
     private UUID pendingPackagePlanId;
     private UUID pendingPackageSoldByStaffId;
+    private UUID pendingMembershipSoldByStaffId;
     private String notes;
     private BillPreviewResponse billPreview;
     private Instant createdAt;

@@ -12,6 +12,8 @@ import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.CustomerRepository;
 import com.salonplatform.domain.repository.MembershipPlanRepository;
 import com.salonplatform.domain.repository.MembershipSubscriptionRepository;
+import com.salonplatform.domain.repository.StaffRepository;
+import com.salonplatform.domain.entity.Staff;
 import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.membership.CreateMembershipPlanRequest;
 import com.salonplatform.dto.membership.MembershipListFilter;
@@ -49,6 +51,7 @@ public class MembershipService {
     private final MembershipSubscriptionRepository subscriptionRepository;
     private final CustomerRepository customerRepository;
     private final BranchRepository branchRepository;
+    private final StaffRepository staffRepository;
     private final AuditService auditService;
 
     @Transactional
@@ -103,6 +106,7 @@ public class MembershipService {
     public MembershipSubscriptionResponse sell(SellMembershipRequest request) {
         UUID tenantId = SecurityUtils.requireTenantId();
         SecurityUtils.assertBranchAccess(request.getBranchId());
+        assertMembershipSoldByStaff(tenantId, request.getBranchId(), request.getSoldByStaffId());
 
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
@@ -143,6 +147,7 @@ public class MembershipService {
                 .paymentMode(request.getPaymentMode())
                 .paymentReference(request.getPaymentReference())
                 .soldByUserId(SecurityUtils.currentUser().getId())
+                .soldByStaffId(request.getSoldByStaffId())
                 .build();
 
         MembershipSubscription saved = subscriptionRepository.save(sub);
@@ -315,5 +320,16 @@ public class MembershipService {
                 .paymentReference(sub.getPaymentReference())
                 .createdAt(sub.getCreatedAt())
                 .build();
+    }
+
+    private void assertMembershipSoldByStaff(UUID tenantId, UUID branchId, UUID staffId) {
+        if (staffId == null) {
+            throw new BadRequestException("Assign staff for the membership sale");
+        }
+        Staff staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+        if (!staff.getTenantId().equals(tenantId) || !staff.getBranchId().equals(branchId) || !staff.isActive()) {
+            throw new BadRequestException("Invalid staff for membership sale");
+        }
     }
 }

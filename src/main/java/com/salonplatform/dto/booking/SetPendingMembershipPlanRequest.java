@@ -8,4 +8,6 @@ import java.util.UUID;
 public class SetPendingMembershipPlanRequest {
     /** Null clears a pending membership add-on for this visit. */
     private UUID planId;
+    /** Staff credited when membership is sold on payment. */
+    private UUID soldByStaffId;
 }

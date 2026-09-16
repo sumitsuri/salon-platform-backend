@@ -25,4 +25,6 @@ public interface MembershipSubscriptionRepository extends JpaRepository<Membersh
 
     List<MembershipSubscription> findByTenantIdAndStatusAndEndsOnBefore(
             UUID tenantId, MembershipStatus status, LocalDate before);
+
+    List<MembershipSubscription> findByTenantIdAndSoldByStaffIdIsNotNull(UUID tenantId);
 }

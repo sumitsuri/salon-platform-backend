@@ -7,6 +7,7 @@ import com.salonplatform.service.AttendanceAnalyticsService;
 import com.salonplatform.service.BenchmarkService;
 import com.salonplatform.service.LocalSpotlightService;
 import com.salonplatform.service.PlAnalyticsService;
+import com.salonplatform.service.StaffPromoSalesAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +25,7 @@ public class AnalyticsController {
     private final PlAnalyticsService plAnalyticsService;
     private final BenchmarkService benchmarkService;
     private final LocalSpotlightService localSpotlightService;
+    private final StaffPromoSalesAnalyticsService staffPromoSalesAnalyticsService;
 
     @GetMapping("/dashboard")
     public ApiResponse<DashboardResponse> dashboard(
@@ -65,6 +67,13 @@ public class AnalyticsController {
             endDate = date;
         }
         return ApiResponse.ok(analyticsService.getServiceContribution(startDate, endDate, branchIds, serviceName, page, size));
+    }
+
+    @GetMapping("/staff-promo-sales")
+    public ApiResponse<StaffPromoSalesResponse> staffPromoSales(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) List<java.util.UUID> branchIds) {
+        return ApiResponse.ok(staffPromoSalesAnalyticsService.getStaffPromoSales(branchIds, date));
     }
 
     @GetMapping("/staff-sales")

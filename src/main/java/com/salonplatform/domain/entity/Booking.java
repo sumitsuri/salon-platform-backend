@@ -69,6 +69,9 @@ public class Booking {
     /** Floor staff credited with the package sale (walk-in). */
     private UUID pendingPackageSoldByStaffId;
 
+    /** Floor staff credited with the membership sale (walk-in). */
+    private UUID pendingMembershipSoldByStaffId;
+
     @Column(precision = 14, scale = 2)
     private BigDecimal membershipDiscountAmount;
 

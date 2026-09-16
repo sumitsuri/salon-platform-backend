@@ -64,6 +64,9 @@ public class MembershipSubscription {
 
     private UUID soldByUserId;
 
+    /** Branch staff credited for this membership sale (incentive tracking). */
+    private UUID soldByStaffId;
+
     @CreationTimestamp
     private Instant createdAt;
 

@@ -20,4 +20,7 @@ public class SellMembershipRequest {
     private String paymentReference;
     /** Optional override; defaults to plan fee. */
     private BigDecimal amount;
+    /** Branch staff who earns the membership sale incentive. */
+    @NotNull
+    private UUID soldByStaffId;
 }

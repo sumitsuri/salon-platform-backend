@@ -572,6 +572,7 @@ public class BookingService {
                 .pendingMembershipPlanId(booking.getPendingMembershipPlanId())
                 .pendingPackagePlanId(booking.getPendingPackagePlanId())
                 .pendingPackageSoldByStaffId(booking.getPendingPackageSoldByStaffId())
+                .pendingMembershipSoldByStaffId(booking.getPendingMembershipSoldByStaffId())
                 .notes(booking.getNotes())
                 .billPreview(billPreview)
                 .createdAt(booking.getCreatedAt())
@@ -696,6 +697,8 @@ public class BookingService {
         String packageFeeLabel = null;
         if (pendingPlanId != null
                 && membershipService.findActive(booking.getTenantId(), booking.getCustomerId()).isEmpty()) {
+            assertPackageSoldByStaff(
+                    booking.getTenantId(), booking.getBranchId(), booking.getPendingMembershipSoldByStaffId());
             var plan = membershipService.loadPlan(pendingPlanId);
             membershipFeeCollected = plan.getFeeAmount() != null ? plan.getFeeAmount() : BigDecimal.ZERO;
             if (membershipFeeCollected.compareTo(BigDecimal.ZERO) > 0) {
@@ -708,8 +711,10 @@ public class BookingService {
             sellReq.setPaymentMode(request.getMode());
             sellReq.setPaymentReference(request.getReference());
             sellReq.setAmount(membershipFeeCollected);
+            sellReq.setSoldByStaffId(booking.getPendingMembershipSoldByStaffId());
             membershipService.sell(sellReq);
             booking.setPendingMembershipPlanId(null);
+            booking.setPendingMembershipSoldByStaffId(null);
             bookingRepository.save(booking);
         }
         if (pendingPackagePlanId != null) {
@@ -989,6 +994,7 @@ public class BookingService {
                 .pendingMembershipPlanId(booking.getPendingMembershipPlanId())
                 .pendingPackagePlanId(booking.getPendingPackagePlanId())
                 .pendingPackageSoldByStaffId(booking.getPendingPackageSoldByStaffId())
+                .pendingMembershipSoldByStaffId(booking.getPendingMembershipSoldByStaffId())
                 .notes(booking.getNotes())
                 .billPreview(billPreview)
                 .createdAt(booking.getCreatedAt())
@@ -1049,7 +1055,11 @@ public class BookingService {
         assertPendingPackageAllowed(
                 booking.getTenantId(), booking.getBranchId(), booking.getCustomerId(), planId, booking.getPendingPackagePlanId());
         assertPendingMembershipAllowed(booking.getTenantId(), booking.getBranchId(), booking.getCustomerId(), planId);
+        if (planId != null) {
+            assertPackageSoldByStaff(booking.getTenantId(), booking.getBranchId(), request.getSoldByStaffId());
+        }
         booking.setPendingMembershipPlanId(planId);
+        booking.setPendingMembershipSoldByStaffId(planId != null ? request.getSoldByStaffId() : null);
         persistPromoAmounts(booking, promoContextFor(booking));
         bookingRepository.save(booking);
         Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
