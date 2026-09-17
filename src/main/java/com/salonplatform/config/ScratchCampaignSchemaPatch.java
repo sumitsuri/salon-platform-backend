@@ -78,18 +78,62 @@ public class ScratchCampaignSchemaPatch implements ApplicationRunner {
                     "CREATE INDEX IF NOT EXISTS idx_scratch_cards_redemption ON scratch_cards(tenant_id, redemption_code)");
             jdbcTemplate.execute(
                     "CREATE INDEX IF NOT EXISTS idx_scratch_cards_booking ON scratch_cards(tenant_id, booking_id)");
-            try {
-                jdbcTemplate.execute("""
-                        CREATE UNIQUE INDEX IF NOT EXISTS idx_scratch_cards_one_per_booking
-                        ON scratch_cards (booking_id) WHERE booking_id IS NOT NULL
-                        """);
-            } catch (Exception uniqueEx) {
-                log.warn(
-                        "One scratch card per booking index not applied (duplicate booking_id rows may exist): {}",
-                        uniqueEx.getMessage());
-            }
+            dedupeScratchCardsPerBooking();
+            jdbcTemplate.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_scratch_cards_one_per_booking
+                    ON scratch_cards (booking_id) WHERE booking_id IS NOT NULL
+                    """);
+            log.info("Scratch card one-per-booking unique index ensured");
         } catch (Exception e) {
             log.warn("Scratch campaign schema patch skipped: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Legacy dev data may contain multiple cards for one bill. Keep the most advanced card per booking;
+     * detach extras so the partial unique index can be applied (one card per bill at issue time).
+     */
+    private void dedupeScratchCardsPerBooking() {
+        Integer duplicateBookings = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*) FROM (
+                          SELECT booking_id FROM scratch_cards
+                          WHERE booking_id IS NOT NULL
+                          GROUP BY booking_id HAVING COUNT(*) > 1
+                        ) dup
+                        """,
+                Integer.class);
+        if (duplicateBookings == null || duplicateBookings == 0) {
+            return;
+        }
+        int detached = jdbcTemplate.update(
+                """
+                        WITH ranked AS (
+                          SELECT id,
+                            ROW_NUMBER() OVER (
+                              PARTITION BY booking_id
+                              ORDER BY
+                                CASE status
+                                  WHEN 'REDEEMED' THEN 0
+                                  WHEN 'UNLOCKED' THEN 1
+                                  WHEN 'SCRATCHED' THEN 2
+                                  WHEN 'ISSUED' THEN 3
+                                  ELSE 4
+                                END,
+                                COALESCE(redeemed_at, scratched_at, created_at) DESC NULLS LAST,
+                                created_at DESC
+                            ) AS rn
+                          FROM scratch_cards
+                          WHERE booking_id IS NOT NULL
+                        )
+                        UPDATE scratch_cards sc
+                        SET booking_id = NULL
+                        FROM ranked r
+                        WHERE sc.id = r.id AND r.rn > 1
+                        """);
+        log.info(
+                "Detached booking_id from {} duplicate scratch card(s) across {} booking(s) before unique index",
+                detached,
+                duplicateBookings);
     }
 }
