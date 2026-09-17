@@ -56,9 +56,9 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 
 | Area | Routes | Capabilities |
 |------|--------|--------------|
-| **Home** | `/manager` | Today at a Glance KPIs (revenue, walk-ins, discounts, avg ticket), date selector, monthly revenue target bar, compact Walk-in / Membership / Package CTAs, team performance teasers below |
+| **Home** | `/manager` | **Earn-now block first** (Walk-in / Membership / Package promos), then **Today at a Glance**: date selector, **compact monthly target chip** (red &lt;90%, amber 90–99%, green ≥100% of goal; MTD pace + daily avg vs target pace), 2×2 KPI grid, link to Insights |
 | **Floor / schedule** | `/manager/schedule` | Floor schedule view |
-| **Walk-in** | `/manager/walk-in` | New walk-in, open visits, billing: multi-qty lines, per-unit stylists, services/packages, membership pending lines, discounts, payments |
+| **Walk-in** | `/manager/walk-in` | New walk-in, open visits, billing: multi-qty lines, per-unit stylists, services/packages, collapsed membership + **visit scratch card** (when branch enabled), stacked manual + promo/scratch discounts, **full-screen payment success** (amount paid, review QR, Done → home) |
 | **Memberships** | `/manager/memberships` | Sell membership (`?sell=1`), **`soldByStaffId` required** |
 | **Packages** | `/manager/packages` | Sell service packages on floor; staff seller for package incentive |
 | **Customers** | `/manager/customers` | Branch-scoped guest CRM |
@@ -72,7 +72,9 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 
 **Manager home — business rules (important):**
 
+- **Layout order:** `ManagerHomeFloorActions` (Don’t Let Earnings Walk Away + three promos) **above** `ManagerHomeGlanceSection`; section titles share `manager-home-glance-title` styling.
 - **Glance date range:** Default **today**, compare to **previous day**. Selector allows **today**, **this month**, **last month**, or **custom** dates only within **last calendar month → today**.
+- **Branch monthly target (manager-visible):** `GET /api/v1/branches/performance/targets` scoped to manager’s branch (same pattern as dashboard). MTD sales through selected date vs **monthlySalesTarget**; API returns **expectedSalesSoFar**, **dailyAverageActual**, **dailyAverageExpected**, **catchUpDailyAverage**, **onTrack**. UI: `ManagerHomeTargetChip` → Insights.
 - **Staff promo incentives (constants in `manager-home-sell-incentives.ts`):** Membership **₹50 flat** to credited staff; package **3%** of sale, **cap ₹500**.
 - **Expenditure:** Backend sets `managerRecorded=true` only for manager-created **MISCELLANEOUS** lines. List API for managers filters to those rows. Rent, salary, product-cost sync, etc. are **admin-only** (`admin/finance`).
 
@@ -89,8 +91,8 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 | **Overview** | `/admin` | KPI strip, branch performance, employee check-in/sales, targets, P&L/inventory teasers, scope date + branch filters |
 | **Intelligence** | `/admin/market-pulse`, `/admin/local-spotlight`, `/admin/insights`, `/admin/guest-voice` | Market and guest intelligence |
 | **Operations** | `/admin/bookings`, `/admin/customers`, `/admin/services`, `/admin/inventory`, `/admin/employees` | Full brand operations |
-| **Growth** | `/admin/leads`, `/admin/campaigns`, `/admin/whatsapp-templates`, `/admin/promotions` | Leads, campaigns, promos |
-| **Business** | `/admin/finance`, `/admin/branches` | **All expenditure categories**, payroll sync, P&L, branch targets, org users |
+| **Growth** | `/admin/leads`, `/admin/campaigns`, `/admin/whatsapp-templates`, `/admin/promotions`, `/admin/scratch-cards` | Leads, campaigns, promos, **visit scratch campaigns** (prizes, active window) |
+| **Business** | `/admin/finance`, `/admin/branches` | **All expenditure categories**, payroll sync, P&L, branch targets, org users; per branch: **monthly sales target**, **Enable scratch-card rewards at walk-in** (`scratchCardEnabled`, default **off**) |
 
 **Expenditure (admin):** Full ledger — rent, employee salary, product cost, accommodation, miscellaneous; payroll sync endpoint; used in finance P&L.
 
@@ -117,6 +119,7 @@ Backend: `/api/v1/platform/*` for tenants, users, cross-tenant operations.
 | `/book/...` | Online booking per tenant/branch slug |
 | `/pass` | Customer pass / visit pass flows |
 | `/review` | Post-visit review |
+| `/scratch` | Guest scratch-card reveal (token in query); public API |
 
 These share the static export; not part of manager/admin shells.
 
@@ -130,15 +133,16 @@ Spring Boot 3.5, Java 21, PostgreSQL, Redis. Key modules (see `backend/README.md
 - Bookings, billing, GST invoices (PDF)
 - Memberships, packages, promotions
 - Analytics: dashboard, staff sales, **staff promo sales**, service contribution, attendance, recommendations
-- Branch target performance
+- Branch target performance (`BranchPerformanceService`; **managers** may read targets for their branch only)
+- **Scratch footfall:** `/api/v1/scratch-cards/*` (issue, redeem, by-booking), `/api/v1/scratch-campaigns/*` (admin), public scratch endpoints; **one card per bill** (`booking_id` uniqueness)
 - Expenditures (with manager vs admin semantics)
 - Inventory
 - Platform tenant administration
 - Sales module (leads) for platform
 
-**Schema evolution:** Many `*SchemaPatch` `ApplicationRunner` classes apply idempotent SQL (e.g. `ExpenditureSchemaPatch`, `MembershipSoldByStaffSchemaPatch`).
+**Schema evolution:** Many `*SchemaPatch` `ApplicationRunner` classes apply idempotent SQL (e.g. `ExpenditureSchemaPatch`, `MembershipSoldByStaffSchemaPatch`, `ScratchCampaignSchemaPatch`, `branches.scratch_card_enabled` default false).
 
-**Do not deploy without review:** Local WIP **scratch card** entities/controllers (untracked in backend); frontend scratch routes were moved out of build paths.
+**Walk-in billing:** Manual manager discount may **stack** with scratch/coupon promo (`BookingService` / `GstCalculationService`).
 
 ---
 
@@ -170,14 +174,15 @@ Patterns consistently used in this codebase — **follow these for new work**.
 ### 5.3 Backend
 
 - **Layers:** controller → service → repository; DTOs in `dto/`; enums in `domain/enums/`.
-- **Authorization:** `SecurityUtils.assertBrandAdminOrAbove()`, `isManagerRole()`, `assertBranchAccess(branchId)` — enforce server-side, not only UI.
+- **Authorization:** `SecurityUtils.assertBrandAdminOrAbove()`, `isManagerRole()`, `assertBranchAccess(branchId)` — enforce server-side, not only UI. Branch target performance uses manager branch scoping (same idea as `AnalyticsService.resolveBranchIds`).
 - **Manager expenditure:** restrict category on create; filter list by `managerRecorded`.
 - **Analytics:** `GET /api/v1/analytics/dashboard`, `.../staff-promo-sales`, etc. — date range via `startDate` / `endDate`.
+- **Scratch gating:** `Branch.scratchCardEnabled` — when false, **no new card issue** and empty active-campaign list for managers; redeem allowed for a card already tied to the current bill.
 - **Local profile:** `mvn spring-boot:run -Dspring-boot.run.profiles=local` (requires Docker Postgres/Redis from `docker compose up -d` at monorepo root).
 
-### 5.4 Feature flags / WIP
+### 5.4 Feature flags / ops
 
-- **Scratch cards:** backend + frontend WIP — **exclude from commits** until product-ready.
+- **Scratch cards:** Shipped; **disabled by default per branch** until **Admin → Branches → Enable scratch-card rewards at walk-in**. Admin configures campaigns under **Scratch cards**.
 - **Ad-hoc SQL/CSV in `backend/scripts/`** — operational audits, not part of app deploy.
 
 ---
@@ -190,6 +195,8 @@ Patterns consistently used in this codebase — **follow these for new work**.
 - **Thumb-friendly** — min tap targets (~44px / `min-h-11`), bottom navigation, FAB for walk-in where appropriate.
 - **Information density without clutter** — compact promo cards: icon | title + subtitle + feature tags | kicker + action pill; avoid tall glass cards that push content below the fold.
 - **Clear money story** — show incentive amounts (₹50 membership, up to ₹500 package) on CTAs; staff must be **credited** on sell flows.
+- **Target motivation** — traffic-light target chip with subtle motion (pulse / nudge / glow); respect `prefers-reduced-motion`.
+- **Payment closure** — after pay, full-screen success (no walk-in chrome behind); one primary **Done** back to manager home.
 - **Separation of concerns** — managers log **daily branch expenses**; CEOs see **full P&L expenditure** in admin finance.
 - **Defaults that match floor rhythm** — home KPIs default to **today vs yesterday**; optional month ranges via constrained date picker.
 
@@ -232,7 +239,7 @@ npm run build -- --webpack
 
 Ensure:
 
-- No scratch/WIP routes breaking TypeScript.
+- Production build includes intended routes (e.g. `/scratch`, `/manager/walk-in`).
 - `.env.local` is **not** relied on in CI (production build uses env in GitHub Actions).
 - Staged files match intent (no accidental scripts or secrets).
 
@@ -301,12 +308,14 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 
 ### 7.4 Post-deploy smoke (manager + admin)
 
-1. Manager home — 4 KPIs, date selector, target bar, three promo CTAs.  
-2. Walk-in — qty, stylists, membership/package seller pickers.  
-3. Sell membership — requires staff seller; API accepts `soldByStaffId`.  
-4. Manager expenditure — only manager-logged daily lines.  
-5. Admin finance — full expenditure including rent/salary.  
-6. Hard refresh or incognito if CloudFront cache lingers (~1–2 minutes after invalidation).
+1. Manager home — **three earn promos on top**, then glance: date selector, **target chip** (shows MTD vs branch target when set), 4 KPIs.  
+2. Walk-in — pay flow → **full-screen payment complete** (amount, review QR, Done).  
+3. Walk-in scratch — **hidden** until branch scratch enabled in admin; then billing modal, claim-on-bill (no auto-redeem on reveal).  
+4. Sell membership — requires staff seller; API accepts `soldByStaffId`.  
+5. Manager expenditure — only manager-logged daily lines.  
+6. Admin → branch edit — **scratch toggle**; Admin → **Scratch cards** campaigns.  
+7. Admin finance — full expenditure including rent/salary.  
+8. Hard refresh or incognito if CloudFront cache lingers (~1–2 minutes after invalidation).
 
 ### 7.5 When backend vs frontend must ship together
 
@@ -325,7 +334,12 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 | Date ranges (admin) | `frontend/src/lib/date-range.ts` |
 | Manager home date rules | `frontend/src/lib/manager-home-date-range.ts` |
 | Manager incentives | `frontend/src/lib/manager-home-sell-incentives.ts` |
-| Manager home UI | `frontend/src/components/manager/ManagerHomeGlanceSection.tsx`, `ManagerHomeFloorActions.tsx` |
+| Manager home UI | `frontend/src/components/manager/ManagerHomeGlanceSection.tsx`, `ManagerHomeFloorActions.tsx`, `ManagerHomeTargetChip.tsx` |
+| Walk-in payment success | `frontend/src/app/manager/walk-in/WalkInPaymentCompleteModal.tsx` |
+| Walk-in scratch billing | `frontend/src/app/manager/walk-in/WalkInScratchPanel.tsx`, `BillingScratchModal.tsx`, `frontend/src/components/scratch/ScratchCardFlow.tsx` |
+| Branch target API | `backend/.../BranchPerformanceService.java`, `BranchController` `/performance/targets` |
+| Scratch footfall API | `backend/.../ScratchFootfallService.java`, `ScratchCardController`, `ScratchCampaignController` |
+| Branch scratch flag | `backend/.../Branch.java` `scratchCardEnabled`, `BranchSchemaPatch` |
 | Expenditure service | `backend/.../ExpenditureService.java` |
 | Staff promo analytics | `backend/.../StaffPromoSalesAnalyticsService.java` |
 | Deploy workflows | `frontend/.github/workflows/deploy.yml`, `backend/.github/workflows/deploy.yml` |
