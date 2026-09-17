@@ -16,4 +16,15 @@ public class BranchTargetPerformanceItem {
     private BigDecimal achievementPercent;
     private boolean meetingTarget;
     private boolean onTrack;
+    /** Prorated target through the as-of date in the month */
+    private BigDecimal expectedSalesSoFar;
+    /** actualSales − expectedSalesSoFar (positive = ahead of pace) */
+    private BigDecimal gapVsExpected;
+    private BigDecimal dailyAverageActual;
+    /** Monthly target ÷ days in month */
+    private BigDecimal dailyAverageExpected;
+    private int daysElapsed;
+    private int daysInMonth;
+    /** Avg daily sales needed from as-of date through month end to hit target */
+    private BigDecimal catchUpDailyAverage;
 }

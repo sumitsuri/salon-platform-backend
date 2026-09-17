@@ -21,6 +21,8 @@ public class UpdateBranchRequest {
     private BranchBusinessType businessType;
     /** Default true — phone required for customer registration at this branch. */
     private Boolean phoneNumberRequired;
+    /** Visit scratch cards at walk-in (default false). */
+    private Boolean scratchCardEnabled;
     /** INHERIT, ENABLED, or DISABLED — branch GST policy override. */
     private String gstPolicy;
     private Boolean onlineBookingEnabled;

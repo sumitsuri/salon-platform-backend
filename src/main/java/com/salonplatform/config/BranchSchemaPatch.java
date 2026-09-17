@@ -20,6 +20,8 @@ public class BranchSchemaPatch implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         try {
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS monthly_sales_target NUMERIC(19, 2)");
+            jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS scratch_card_enabled BOOLEAN");
+            jdbcTemplate.update("UPDATE branches SET scratch_card_enabled = false WHERE scratch_card_enabled IS NULL");
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS google_review_url VARCHAR(512)");
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS business_type VARCHAR(32)");
             jdbcTemplate.update(

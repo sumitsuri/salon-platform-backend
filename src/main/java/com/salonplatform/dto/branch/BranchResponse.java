@@ -29,6 +29,7 @@ public class BranchResponse {
     private BranchStatus status;
     private BranchBusinessType businessType;
     private Boolean phoneNumberRequired;
+    private Boolean scratchCardEnabled;
     /** Branch override: null = inherit brand. */
     private Boolean gstEnabled;
     /** Resolved policy for billing (brand default + branch override). */

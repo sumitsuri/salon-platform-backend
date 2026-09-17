@@ -151,11 +151,11 @@ public class GstCalculationService {
             totalPromoDiscount = totalPromoDiscount.add(promoDiscount);
         }
 
-        // Legacy bill-level discount (manual) applied after tax if no instrument promo used as bill discount.
+        // Manager bill-level discount stacks after coupon/offer promo (applied on post-tax total).
         BigDecimal preBillDiscountTotal = subtotal.add(totalCgst).add(totalSgst);
         BigDecimal legacyBillDiscount = BigDecimal.ZERO;
-        if (booking.getCouponId() == null && booking.getOfferId() == null
-                && (totalPromoDiscount.compareTo(BigDecimal.ZERO) == 0)) {
+        if (booking.getBillDiscountType() != null && booking.getBillDiscountValue() != null
+                && booking.getBillDiscountValue().compareTo(BigDecimal.ZERO) > 0) {
             legacyBillDiscount = calculateDiscount(
                     preBillDiscountTotal, booking.getBillDiscountType(), booking.getBillDiscountValue());
         }

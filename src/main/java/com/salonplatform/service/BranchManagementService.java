@@ -54,6 +54,7 @@ public class BranchManagementService {
                 .businessType(request.getBusinessType() != null ? request.getBusinessType() : BranchBusinessType.SALON)
                 .phoneNumberRequired(request.getPhoneNumberRequired() != null
                         ? request.getPhoneNumberRequired() : true)
+                .scratchCardEnabled(Boolean.TRUE.equals(request.getScratchCardEnabled()))
                 .build());
         return toResponse(branch);
     }
@@ -100,6 +101,9 @@ public class BranchManagementService {
         }
         if (request.getPhoneNumberRequired() != null) {
             branch.setPhoneNumberRequired(request.getPhoneNumberRequired());
+        }
+        if (request.getScratchCardEnabled() != null) {
+            branch.setScratchCardEnabled(request.getScratchCardEnabled());
         }
         applyGstPolicy(branch, request.getGstPolicy());
         if (request.getOnlineBookingEnabled() != null) {
@@ -229,6 +233,7 @@ public class BranchManagementService {
                 .status(b.getStatus())
                 .businessType(b.getBusinessType())
                 .phoneNumberRequired(b.getPhoneNumberRequired())
+                .scratchCardEnabled(Boolean.TRUE.equals(b.getScratchCardEnabled()))
                 .gstEnabled(b.getGstEnabled())
                 .gstEffective(gstPolicyService.isGstEnabled(b.getTenantId(), b.getId()))
                 .googleReviewUrl(b.getGoogleReviewUrl())

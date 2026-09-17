@@ -9,7 +9,9 @@ import com.salonplatform.dto.branch.BranchTargetPerformanceResponse;
 import com.salonplatform.dto.branch.BranchTargetTrend;
 import com.salonplatform.dto.branch.BranchTargetTrendsResponse;
 import com.salonplatform.dto.staff.StaffTargetTrendPoint;
+import com.salonplatform.exception.ForbiddenException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -34,8 +36,9 @@ public class BranchPerformanceService {
 
     public BranchTargetPerformanceResponse getTargetPerformance(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
-        SecurityUtils.assertBrandAdminOrAbove();
+        UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
+        final List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
 
         LocalDate start = startDate != null ? startDate : LocalDate.now(ZONE).withDayOfMonth(1);
         LocalDate end = endDate != null ? endDate : LocalDate.now(ZONE);
@@ -43,17 +46,20 @@ public class BranchPerformanceService {
         Instant rangeEnd = end.plusDays(1).atStartOfDay(ZONE).toInstant();
 
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
-                .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
+                .filter(b -> resolvedBranchIds == null || resolvedBranchIds.isEmpty() || resolvedBranchIds.contains(b.getId()))
                 .collect(Collectors.toList());
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
         Map<UUID, BigDecimal> salesByBranch = aggregateBranchSales(invoices);
 
         long daysInPeriod = ChronoUnit.DAYS.between(start, end) + 1;
-        LocalDate today = LocalDate.now(ZONE);
-        boolean isCurrentMonth = start.getYear() == today.getYear() && start.getMonth() == today.getMonth()
-                && end.equals(today);
-        long daysElapsed = isCurrentMonth ? today.getDayOfMonth() : daysInPeriod;
+        int daysInMonth = end.lengthOfMonth();
+        long daysElapsed = daysInPeriod;
+        if (start.getYear() == end.getYear()
+                && start.getMonth() == end.getMonth()
+                && start.getDayOfMonth() == 1) {
+            daysElapsed = end.getDayOfMonth();
+        }
 
         List<BranchTargetPerformanceItem> items = new ArrayList<>();
         int meeting = 0;
@@ -70,13 +76,30 @@ public class BranchPerformanceService {
                         .divide(target, 1, RoundingMode.HALF_UP);
             }
 
-            boolean meetingTarget = target.compareTo(BigDecimal.ZERO) > 0 && actual.compareTo(target) >= 0;
-            boolean onTrack = meetingTarget;
-            if (!meetingTarget && target.compareTo(BigDecimal.ZERO) > 0 && daysElapsed > 0) {
-                BigDecimal expectedSoFar = target.multiply(BigDecimal.valueOf(daysElapsed))
-                        .divide(BigDecimal.valueOf(daysInPeriod), 2, RoundingMode.HALF_UP);
-                onTrack = actual.compareTo(expectedSoFar) >= 0;
+            BigDecimal expectedSoFar = BigDecimal.ZERO;
+            BigDecimal dailyAvgExpected = BigDecimal.ZERO;
+            BigDecimal dailyAvgActual = BigDecimal.ZERO;
+            BigDecimal gapVsExpected = BigDecimal.ZERO;
+            BigDecimal catchUpDaily = BigDecimal.ZERO;
+
+            if (target.compareTo(BigDecimal.ZERO) > 0) {
+                expectedSoFar = target.multiply(BigDecimal.valueOf(daysElapsed))
+                        .divide(BigDecimal.valueOf(daysInMonth), 2, RoundingMode.HALF_UP);
+                dailyAvgExpected = target.divide(BigDecimal.valueOf(daysInMonth), 2, RoundingMode.HALF_UP);
+                if (daysElapsed > 0) {
+                    dailyAvgActual = actual.divide(BigDecimal.valueOf(daysElapsed), 2, RoundingMode.HALF_UP);
+                }
+                gapVsExpected = actual.subtract(expectedSoFar);
+                long remainingDays = Math.max(0L, (long) daysInMonth - daysElapsed);
+                if (remainingDays > 0 && actual.compareTo(target) < 0) {
+                    catchUpDaily = target.subtract(actual)
+                            .divide(BigDecimal.valueOf(remainingDays), 2, RoundingMode.HALF_UP);
+                }
             }
+
+            boolean meetingTarget = target.compareTo(BigDecimal.ZERO) > 0 && actual.compareTo(target) >= 0;
+            boolean onTrack = meetingTarget
+                    || (target.compareTo(BigDecimal.ZERO) > 0 && actual.compareTo(expectedSoFar) >= 0);
 
             if (target.compareTo(BigDecimal.ZERO) > 0) {
                 if (meetingTarget) meeting++;
@@ -91,6 +114,13 @@ public class BranchPerformanceService {
                     .achievementPercent(achievementPercent)
                     .meetingTarget(meetingTarget)
                     .onTrack(onTrack)
+                    .expectedSalesSoFar(expectedSoFar)
+                    .gapVsExpected(gapVsExpected)
+                    .dailyAverageActual(dailyAvgActual)
+                    .dailyAverageExpected(dailyAvgExpected)
+                    .daysElapsed((int) daysElapsed)
+                    .daysInMonth(daysInMonth)
+                    .catchUpDailyAverage(catchUpDaily)
                     .build());
         }
 
@@ -109,8 +139,9 @@ public class BranchPerformanceService {
 
     public BranchTargetTrendsResponse getTargetTrends(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
-        SecurityUtils.assertBrandAdminOrAbove();
+        UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
+        final List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
 
         LocalDate start = startDate != null ? startDate : LocalDate.now(ZONE).withDayOfMonth(1);
         LocalDate end = endDate != null ? endDate : LocalDate.now(ZONE);
@@ -120,12 +151,12 @@ public class BranchPerformanceService {
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> b.getMonthlySalesTarget() != null
                         && b.getMonthlySalesTarget().compareTo(BigDecimal.ZERO) > 0)
-                .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
+                .filter(b -> resolvedBranchIds == null || resolvedBranchIds.isEmpty() || resolvedBranchIds.contains(b.getId()))
                 .collect(Collectors.toList());
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
-        if (branchIds != null && !branchIds.isEmpty()) {
-            Set<UUID> branchSet = new HashSet<>(branchIds);
+        if (resolvedBranchIds != null && !resolvedBranchIds.isEmpty()) {
+            Set<UUID> branchSet = new HashSet<>(resolvedBranchIds);
             invoices = invoices.stream().filter(i -> branchSet.contains(i.getBranchId())).collect(Collectors.toList());
         }
 
@@ -184,6 +215,18 @@ public class BranchPerformanceService {
                 .periodLabel(periodLabel)
                 .branches(trends)
                 .build();
+    }
+
+    private List<UUID> resolveBranchIds(UserPrincipal user, List<UUID> branchIds) {
+        if (SecurityUtils.isManagerRole()) {
+            if (user.getBranchId() == null) {
+                throw new ForbiddenException("Branch context required");
+            }
+            SecurityUtils.assertBranchAccess(user.getBranchId());
+            return List.of(user.getBranchId());
+        }
+        SecurityUtils.assertBrandAdminOrAbove();
+        return branchIds;
     }
 
     private Map<UUID, BigDecimal> aggregateBranchSales(List<Invoice> invoices) {

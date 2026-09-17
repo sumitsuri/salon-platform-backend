@@ -24,4 +24,6 @@ public class CreateBranchRequest {
     private BranchBusinessType businessType = BranchBusinessType.SALON;
     /** Default true — phone required for walk-in registration. */
     private Boolean phoneNumberRequired = true;
+    /** Visit scratch cards (default false). */
+    private Boolean scratchCardEnabled = false;
 }

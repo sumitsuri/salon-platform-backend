@@ -378,12 +378,6 @@ public class BookingService {
         booking.setOfferId(promo.getOffer() != null ? promo.getOffer().getId() : null);
         booking.setMembershipSubscriptionId(promo.getMembershipSubscription() != null
                 ? promo.getMembershipSubscription().getId() : null);
-        // Coupon/offer XOR manager bill discount.
-        if (booking.getCouponId() != null || booking.getOfferId() != null) {
-            booking.setBillDiscountType(null);
-            booking.setBillDiscountValue(null);
-            booking.setBillDiscountNote(null);
-        }
         persistPromoAmounts(booking, promo);
         bookingRepository.save(booking);
 
@@ -413,9 +407,6 @@ public class BookingService {
             booking.setBillDiscountType(request.getBillDiscountType());
             booking.setBillDiscountValue(request.getBillDiscountValue().setScale(2, RoundingMode.HALF_UP));
             booking.setBillDiscountNote(request.getBillDiscountNote());
-            // Manager discount XOR coupon/offer.
-            booking.setCouponId(null);
-            booking.setOfferId(null);
         }
 
         GstCalculationService.PromoContext promo = promoContextFor(booking);

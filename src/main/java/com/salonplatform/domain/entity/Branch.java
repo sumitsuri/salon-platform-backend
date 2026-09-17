@@ -71,6 +71,10 @@ public class Branch {
     @Builder.Default
     private Boolean phoneNumberRequired = true;
 
+    /** Visit scratch-card rewards at walk-in billing (off by default per branch). */
+    @Builder.Default
+    private Boolean scratchCardEnabled = false;
+
     /**
      * Branch GST override: null = inherit brand {@link com.salonplatform.domain.entity.Tenant#gstEnabled}.
      */
