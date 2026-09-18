@@ -65,4 +65,6 @@ public interface CustomerPackageSubscriptionRepository extends JpaRepository<Cus
             @Param("today") LocalDate today);
 
     List<CustomerPackageSubscription> findByTenantIdAndSoldByStaffIdIsNotNull(UUID tenantId);
+
+    List<CustomerPackageSubscription> findByPurchaseInvoiceId(UUID purchaseInvoiceId);
 }

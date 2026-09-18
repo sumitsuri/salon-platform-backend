@@ -4,9 +4,11 @@ import com.salonplatform.domain.entity.Invoice;
 import com.salonplatform.domain.repository.InvoiceRepository;
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.invoice.InvoiceDetailResponse;
+import com.salonplatform.dto.invoice.VoidInvoiceRequest;
 import com.salonplatform.util.InvoiceBillUtils;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.service.InvoiceAdminService;
 import com.salonplatform.service.InvoicePdfService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -24,6 +26,7 @@ public class InvoiceController {
 
     private final InvoiceRepository invoiceRepository;
     private final InvoicePdfService invoicePdfService;
+    private final InvoiceAdminService invoiceAdminService;
 
     @GetMapping
     public ApiResponse<List<Invoice>> list() {
@@ -45,6 +48,18 @@ public class InvoiceController {
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
         SecurityUtils.assertBranchAccess(invoice.getBranchId());
         return ApiResponse.ok(toDetail(invoice));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> voidInvoice(
+            @PathVariable UUID id, @RequestBody(required = false) VoidInvoiceRequest request) {
+        invoiceAdminService.voidInvoice(id, request != null ? request.getReason() : null);
+        return ApiResponse.ok("Invoice voided", null);
+    }
+
+    @PostMapping("/{id}/recalculate")
+    public ApiResponse<InvoiceDetailResponse> recalculate(@PathVariable UUID id) {
+        return ApiResponse.ok(invoiceAdminService.recalculateInvoice(id));
     }
 
     @GetMapping("/{id}/pdf")

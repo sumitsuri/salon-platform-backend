@@ -150,6 +150,40 @@ public class BookingService {
         return toResponse(booking, branch, customer);
     }
 
+    /**
+     * Replaces visit lines on a completed booking while admin is correcting an issued bill.
+     * Does not change booking status (remains {@code COMPLETED} until the invoice is voided).
+     */
+    @Transactional
+    public void adminReplaceLinesForInvoiceEdit(UUID bookingId, java.util.List<BookingLineRequest> lineRequests) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        SecurityUtils.assertBranchAccess(booking.getBranchId());
+        if (booking.getStatus() != BookingStatus.COMPLETED) {
+            throw new BadRequestException("error.invoice.onlyCompleted");
+        }
+        if (lineRequests == null) {
+            return;
+        }
+        lineItemRepository.deleteByBookingId(bookingId);
+        if (lineRequests.isEmpty()) {
+            persistPromoAmounts(booking, promoContextFor(booking));
+            bookingRepository.save(booking);
+            return;
+        }
+        List<BookingLineRequest> lines = normalizeBookingLineRequests(lineRequests);
+        Instant start = booking.getServiceStartedAt() != null
+                ? booking.getServiceStartedAt()
+                : (booking.getCreatedAt() != null ? booking.getCreatedAt() : Instant.now());
+        for (BookingLineRequest lineReq : lines) {
+            saveLine(bookingId, lineReq, start);
+        }
+        refreshEstimatedEnd(booking);
+        persistPromoAmounts(booking, promoContextFor(booking));
+        bookingRepository.save(booking);
+    }
+
     @Transactional
     public BookingResponse replaceLines(UUID bookingId, UpdateBookingLinesRequest request) {
         Booking booking = requireEditableBooking(bookingId);

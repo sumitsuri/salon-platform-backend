@@ -12,8 +12,11 @@ import com.salonplatform.dto.booking.SetPendingMembershipPlanRequest;
 import com.salonplatform.dto.booking.SetPendingPackagePlanRequest;
 import com.salonplatform.dto.booking.UpdateBookingLinesRequest;
 import com.salonplatform.dto.common.PageResponse;
+import com.salonplatform.dto.invoice.AdminUpdateBillRequest;
+import com.salonplatform.dto.invoice.InvoiceDetailResponse;
 import com.salonplatform.dto.payment.RecordPaymentRequest;
 import com.salonplatform.service.BookingService;
+import com.salonplatform.service.InvoiceAdminService;
 import com.salonplatform.service.OnlineBookingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +34,7 @@ public class BookingController {
 
     private final BookingService bookingService;
     private final OnlineBookingService onlineBookingService;
+    private final InvoiceAdminService invoiceAdminService;
 
     @PostMapping
     public ApiResponse<BookingResponse> create(@Valid @RequestBody CreateBookingRequest request) {
@@ -134,5 +138,11 @@ public class BookingController {
     public ApiResponse<Void> cancel(@PathVariable UUID id) {
         bookingService.cancel(id);
         return ApiResponse.ok("Booking cancelled", null);
+    }
+
+    @PutMapping("/{id}/admin/bill")
+    public ApiResponse<InvoiceDetailResponse> adminUpdateBill(
+            @PathVariable UUID id, @Valid @RequestBody AdminUpdateBillRequest request) {
+        return ApiResponse.ok(invoiceAdminService.updateBill(id, request));
     }
 }

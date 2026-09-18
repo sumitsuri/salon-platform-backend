@@ -184,6 +184,23 @@ public class PromoResolutionService {
         }
     }
 
+    public void decrementRedemptions(UUID couponId, UUID offerId) {
+        if (couponId != null) {
+            couponRepository.findById(couponId).ifPresent(c -> {
+                int count = c.getRedemptionCount() == null ? 0 : c.getRedemptionCount();
+                c.setRedemptionCount(Math.max(0, count - 1));
+                couponRepository.save(c);
+            });
+        }
+        if (offerId != null) {
+            offerRepository.findById(offerId).ifPresent(o -> {
+                int count = o.getRedemptionCount() == null ? 0 : o.getRedemptionCount();
+                o.setRedemptionCount(Math.max(0, count - 1));
+                offerRepository.save(o);
+            });
+        }
+    }
+
     private void validateInstrument(
             PromoStatus status,
             Instant startsAt,

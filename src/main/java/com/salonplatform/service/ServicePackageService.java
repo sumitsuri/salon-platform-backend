@@ -547,6 +547,98 @@ public class ServicePackageService {
         }
     }
 
+    /**
+     * Restores package entitlements / value credit consumed on a completed bill (admin void or edit).
+     */
+    @Transactional
+    public void reverseRedemptionsAfterPayment(Booking booking, List<BookingLineItem> lines, BillPreviewResponse bill) {
+        Map<UUID, List<BookingLineItem>> bySub = lines.stream()
+                .filter(l -> l.getPackageSubscriptionId() != null)
+                .collect(Collectors.groupingBy(BookingLineItem::getPackageSubscriptionId));
+
+        Map<UUID, BillLinePreview> previewByLineId = new HashMap<>();
+        if (bill != null && bill.getLines() != null) {
+            for (BillLinePreview row : bill.getLines()) {
+                if (row.getLineItemId() != null) {
+                    previewByLineId.put(row.getLineItemId(), row);
+                }
+            }
+        }
+
+        for (Map.Entry<UUID, List<BookingLineItem>> entry : bySub.entrySet()) {
+            UUID subId = entry.getKey();
+            CustomerPackageSubscription sub = subscriptionRepository.findById(subId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Package subscription not found"));
+
+            PackagePlanType planType = effectivePlanType(sub);
+            if (planType == PackagePlanType.VALUE_CREDIT) {
+                BigDecimal toRestore = BigDecimal.ZERO;
+                for (BookingLineItem line : entry.getValue()) {
+                    BillLinePreview preview = line.getId() != null ? previewByLineId.get(line.getId()) : null;
+                    if (preview != null && preview.getLineTotal() != null) {
+                        toRestore = toRestore.add(preview.getLineTotal());
+                    }
+                }
+                toRestore = toRestore.setScale(2, RoundingMode.HALF_UP);
+                if (toRestore.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                BigDecimal total = sub.getCreditTotal() != null ? sub.getCreditTotal() : BigDecimal.ZERO;
+                BigDecimal remaining = sub.getCreditRemaining() != null ? sub.getCreditRemaining() : BigDecimal.ZERO;
+                BigDecimal restored = remaining.add(toRestore).min(total).setScale(2, RoundingMode.HALF_UP);
+                sub.setCreditRemaining(restored);
+                if (sub.getStatus() == PackageSubscriptionStatus.COMPLETED) {
+                    sub.setStatus(PackageSubscriptionStatus.ACTIVE);
+                }
+                subscriptionRepository.save(sub);
+                continue;
+            }
+
+            for (BookingLineItem line : entry.getValue()) {
+                int qty = line.getQuantity() != null ? line.getQuantity() : 1;
+                CustomerPackageEntitlement ent = entitlementRepository
+                        .findBySubscriptionIdAndServiceId(subId, line.getServiceId())
+                        .orElseThrow(() -> new BadRequestException("Invalid package redemption line"));
+                ent.setQuantityRemaining(Math.min(ent.getQuantityTotal(), ent.getQuantityRemaining() + qty));
+                entitlementRepository.save(ent);
+            }
+            if (sub.getStatus() == PackageSubscriptionStatus.COMPLETED) {
+                sub.setStatus(PackageSubscriptionStatus.ACTIVE);
+                subscriptionRepository.save(sub);
+            }
+        }
+    }
+
+    /**
+     * Cancels package subscriptions sold on this invoice when they have not been used elsewhere.
+     */
+    @Transactional
+    public void voidPackagePurchasesForInvoice(UUID invoiceId) {
+        List<CustomerPackageSubscription> subs = subscriptionRepository.findByPurchaseInvoiceId(invoiceId);
+        for (CustomerPackageSubscription sub : subs) {
+            PackagePlanType planType = effectivePlanType(sub);
+            if (planType == PackagePlanType.VALUE_CREDIT) {
+                BigDecimal total = sub.getCreditTotal() != null ? sub.getCreditTotal() : BigDecimal.ZERO;
+                BigDecimal remaining = sub.getCreditRemaining() != null ? sub.getCreditRemaining() : BigDecimal.ZERO;
+                if (remaining.compareTo(total) < 0) {
+                    throw new BadRequestException("error.invoice.packageCreditUsed");
+                }
+            } else {
+                List<CustomerPackageEntitlement> ents =
+                        entitlementRepository.findBySubscriptionIdOrderByServiceNameAsc(sub.getId());
+                boolean fullyUnused = ents.stream().allMatch(e ->
+                        e.getQuantityRemaining() != null
+                                && e.getQuantityTotal() != null
+                                && e.getQuantityRemaining().equals(e.getQuantityTotal()));
+                if (!fullyUnused) {
+                    throw new BadRequestException("error.invoice.packageAlreadyRedeemed");
+                }
+            }
+            sub.setStatus(PackageSubscriptionStatus.CANCELLED);
+            subscriptionRepository.save(sub);
+        }
+    }
+
     private PackagePlanType effectivePlanType(ServicePackagePlan plan) {
         if (plan.getPlanType() == PackagePlanType.VALUE_CREDIT) {
             return PackagePlanType.VALUE_CREDIT;
