@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.PackagePlanType;
 import com.salonplatform.domain.enums.PackageRedemptionMode;
 import com.salonplatform.domain.enums.PackageSubscriptionStatus;
 import jakarta.persistence.*;
@@ -38,6 +39,17 @@ public class CustomerPackageSubscription {
 
     @Column(nullable = false, length = 120)
     private String planName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 24)
+    @Builder.Default
+    private PackagePlanType planType = PackagePlanType.SERVICE_BUNDLE;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal creditTotal;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal creditRemaining;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)

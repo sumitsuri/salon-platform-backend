@@ -267,6 +267,7 @@ public class InvoicePdfService {
             boolean alt = false;
             int idx = 1;
             var membershipFee = InvoiceBillUtils.resolveMembershipFee(invoice);
+            var packageFee = InvoiceBillUtils.resolvePackageFee(invoice);
             for (BookingLineItem line : lines) {
                 Color bg = alt ? ROW_ALT : SURFACE;
                 table.addCell(bodyCell(idx + "  " + nullSafe(line.getServiceName()), smallFont, bg, Element.ALIGN_LEFT));
@@ -281,6 +282,15 @@ public class InvoicePdfService {
                 table.addCell(bodyCell(idx + "  " + feeName, smallFont, bg, Element.ALIGN_LEFT));
                 table.addCell(bodyCell(money(membershipFee.amount()), smallFont, bg, Element.ALIGN_RIGHT));
                 table.addCell(bodyCell(money(membershipFee.amount()), smallFont, bg, Element.ALIGN_RIGHT));
+                alt = !alt;
+                idx++;
+            }
+            if (packageFee.amount().compareTo(BigDecimal.ZERO) > 0) {
+                Color bg = alt ? ROW_ALT : SURFACE;
+                String feeName = packageFee.label() != null ? packageFee.label() : "Service package";
+                table.addCell(bodyCell(idx + "  " + feeName, smallFont, bg, Element.ALIGN_LEFT));
+                table.addCell(bodyCell(money(packageFee.amount()), smallFont, bg, Element.ALIGN_RIGHT));
+                table.addCell(bodyCell(money(packageFee.amount()), smallFont, bg, Element.ALIGN_RIGHT));
             }
             document.add(table);
 
@@ -327,6 +337,10 @@ public class InvoicePdfService {
             if (membershipFee.amount().compareTo(BigDecimal.ZERO) > 0) {
                 String feeLabel = membershipFee.label() != null ? membershipFee.label() : "Member card";
                 addTotalRow(totals, feeLabel, money(membershipFee.amount()), labelFont, moneyBold, SURFACE);
+            }
+            if (packageFee.amount().compareTo(BigDecimal.ZERO) > 0) {
+                String feeLabel = packageFee.label() != null ? packageFee.label() : "Service package";
+                addTotalRow(totals, feeLabel, money(packageFee.amount()), labelFont, moneyBold, SURFACE);
             }
             totalsCard.addElement(totals);
 

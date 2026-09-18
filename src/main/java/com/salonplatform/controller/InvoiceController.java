@@ -64,6 +64,7 @@ public class InvoiceController {
 
     private InvoiceDetailResponse toDetail(Invoice invoice) {
         InvoiceBillUtils.MembershipFeeView fee = InvoiceBillUtils.resolveMembershipFee(invoice);
+        InvoiceBillUtils.PackageFeeView pkg = InvoiceBillUtils.resolvePackageFee(invoice);
         return InvoiceDetailResponse.builder()
                 .id(invoice.getId())
                 .bookingId(invoice.getBookingId())
@@ -76,6 +77,8 @@ public class InvoiceController {
                 .promoLabel(invoice.getPromoLabel())
                 .membershipFeeAmount(fee.amount())
                 .membershipFeeLabel(fee.label())
+                .packageFeeAmount(pkg.amount())
+                .packageFeeLabel(pkg.label())
                 .taxableAmount(invoice.getTaxableAmount())
                 .cgstAmount(invoice.getCgstAmount())
                 .sgstAmount(invoice.getSgstAmount())

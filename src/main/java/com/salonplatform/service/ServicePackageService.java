@@ -9,8 +9,11 @@ import com.salonplatform.domain.entity.CustomerPackageSubscription;
 import com.salonplatform.domain.entity.SalonService;
 import com.salonplatform.domain.entity.ServicePackagePlan;
 import com.salonplatform.domain.entity.ServicePackagePlanItem;
+import com.salonplatform.domain.enums.PackagePlanType;
 import com.salonplatform.domain.enums.PackageRedemptionMode;
 import com.salonplatform.domain.enums.PackageSubscriptionStatus;
+import com.salonplatform.dto.billing.BillLinePreview;
+import com.salonplatform.dto.billing.BillPreviewResponse;
 import com.salonplatform.domain.enums.PromoStatus;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.BranchServiceRepository;
@@ -74,10 +77,30 @@ public class ServicePackageService {
         UUID tenantId = SecurityUtils.requireTenantId();
         validateBranchScope(request.getBranchIds());
 
-        List<ServicePackagePlanItem> items = buildPlanItems(tenantId, request.getItems());
-        BigDecimal listTotal = computeListTotal(tenantId, items);
-        if (request.getPackagePrice().compareTo(listTotal) > 0) {
-            throw new BadRequestException("Package price cannot exceed combined list price");
+        PackagePlanType planType = request.getPlanType() != null
+                ? request.getPlanType() : PackagePlanType.SERVICE_BUNDLE;
+        List<ServicePackagePlanItem> items;
+        BigDecimal listTotal;
+        BigDecimal creditValue = null;
+        PackageRedemptionMode redemptionMode = request.getRedemptionMode() != null
+                ? request.getRedemptionMode() : PackageRedemptionMode.MULTI_VISIT;
+
+        if (planType == PackagePlanType.VALUE_CREDIT) {
+            creditValue = normalizeCreditValue(request.getCreditValue());
+            if (request.getPackagePrice().compareTo(creditValue) > 0) {
+                throw new BadRequestException("Sale price cannot exceed credit value");
+            }
+            if (redemptionMode == PackageRedemptionMode.SINGLE_VISIT) {
+                throw new BadRequestException("Value credit packages must allow multi-visit redemption");
+            }
+            items = List.of();
+            listTotal = creditValue;
+        } else {
+            items = buildPlanItems(tenantId, request.getItems());
+            listTotal = computeListTotal(tenantId, items);
+            if (request.getPackagePrice().compareTo(listTotal) > 0) {
+                throw new BadRequestException("Package price cannot exceed combined list price");
+            }
         }
 
         ServicePackagePlan plan = ServicePackagePlan.builder()
@@ -86,15 +109,18 @@ public class ServicePackageService {
                 .description(request.getDescription())
                 .listPriceTotal(listTotal)
                 .packagePrice(request.getPackagePrice().setScale(2, RoundingMode.HALF_UP))
+                .planType(planType)
+                .creditValue(creditValue)
                 .validityDays(normalizeValidity(request.getValidityDays()))
-                .redemptionMode(request.getRedemptionMode() != null
-                        ? request.getRedemptionMode() : PackageRedemptionMode.MULTI_VISIT)
+                .redemptionMode(redemptionMode)
                 .branchIds(PromoScopeUtils.joinIds(request.getBranchIds()))
                 .status(request.getStatus() != null ? request.getStatus() : PromoStatus.ACTIVE)
                 .createdByUserId(SecurityUtils.currentUser().getId())
                 .build();
         plan = planRepository.save(plan);
-        persistItems(plan.getId(), items);
+        if (!items.isEmpty()) {
+            persistItems(plan.getId(), items);
+        }
         return toPlanResponse(plan, items);
     }
 
@@ -107,24 +133,46 @@ public class ServicePackageService {
         }
         validateBranchScope(request.getBranchIds());
 
-        List<ServicePackagePlanItem> items = buildPlanItems(plan.getTenantId(), request.getItems());
-        BigDecimal listTotal = computeListTotal(plan.getTenantId(), items);
-        if (request.getPackagePrice().compareTo(listTotal) > 0) {
-            throw new BadRequestException("Package price cannot exceed combined list price");
+        PackagePlanType planType = plan.getPlanType() != null ? plan.getPlanType() : PackagePlanType.SERVICE_BUNDLE;
+        List<ServicePackagePlanItem> items;
+        BigDecimal listTotal;
+        BigDecimal creditValue = plan.getCreditValue();
+        PackageRedemptionMode redemptionMode = request.getRedemptionMode() != null
+                ? request.getRedemptionMode() : PackageRedemptionMode.MULTI_VISIT;
+
+        if (planType == PackagePlanType.VALUE_CREDIT) {
+            creditValue = normalizeCreditValue(request.getCreditValue() != null
+                    ? request.getCreditValue() : plan.getCreditValue());
+            if (request.getPackagePrice().compareTo(creditValue) > 0) {
+                throw new BadRequestException("Sale price cannot exceed credit value");
+            }
+            if (redemptionMode == PackageRedemptionMode.SINGLE_VISIT) {
+                throw new BadRequestException("Value credit packages must allow multi-visit redemption");
+            }
+            items = List.of();
+            listTotal = creditValue;
+        } else {
+            items = buildPlanItems(plan.getTenantId(), request.getItems());
+            listTotal = computeListTotal(plan.getTenantId(), items);
+            if (request.getPackagePrice().compareTo(listTotal) > 0) {
+                throw new BadRequestException("Package price cannot exceed combined list price");
+            }
         }
 
         plan.setName(request.getName().trim());
         plan.setDescription(request.getDescription());
         plan.setListPriceTotal(listTotal);
         plan.setPackagePrice(request.getPackagePrice().setScale(2, RoundingMode.HALF_UP));
+        plan.setCreditValue(creditValue);
         plan.setValidityDays(normalizeValidity(request.getValidityDays()));
-        plan.setRedemptionMode(request.getRedemptionMode() != null
-                ? request.getRedemptionMode() : PackageRedemptionMode.MULTI_VISIT);
+        plan.setRedemptionMode(redemptionMode);
         plan.setBranchIds(PromoScopeUtils.joinIds(request.getBranchIds()));
         plan.setStatus(request.getStatus() != null ? request.getStatus() : PromoStatus.ACTIVE);
         planRepository.save(plan);
         planItemRepository.deleteByPlanId(plan.getId());
-        persistItems(plan.getId(), items);
+        if (!items.isEmpty()) {
+            persistItems(plan.getId(), items);
+        }
         return toPlanResponse(plan, items);
     }
 
@@ -162,7 +210,8 @@ public class ServicePackageService {
         SecurityUtils.assertBranchAccess(branchId);
         return planRepository.findByTenantIdAndStatusOrderByPredefinedRankAscNameAsc(tenantId, PromoStatus.ACTIVE).stream()
                 .filter(p -> PromoScopeUtils.branchAllowed(p.getBranchIds(), branchId))
-                .filter(p -> planServicesAvailableAtBranch(p.getId(), branchId))
+                .filter(p -> p.getPlanType() == PackagePlanType.VALUE_CREDIT
+                        || planServicesAvailableAtBranch(p.getId(), branchId))
                 .map(this::toPlanResponse)
                 .collect(Collectors.toList());
     }
@@ -192,7 +241,8 @@ public class ServicePackageService {
         if (!customer.getTenantId().equals(tenantId) || !customer.getBranchId().equals(branchId)) {
             throw new BadRequestException("error.customer.branchMismatch");
         }
-        if (!planServicesAvailableAtBranch(plan.getId(), branchId)) {
+        if (plan.getPlanType() != PackagePlanType.VALUE_CREDIT
+                && !planServicesAvailableAtBranch(plan.getId(), branchId)) {
             throw new BadRequestException(
                     "Package includes services that are not offered at this branch — update the plan or branch catalog");
         }
@@ -221,12 +271,18 @@ public class ServicePackageService {
         LocalDate today = LocalDate.now(IST);
         LocalDate expiresOn = today.plusDays(normalizeValidity(plan.getValidityDays()));
 
+        PackagePlanType planType = effectivePlanType(plan);
+        BigDecimal creditTotal = planType == PackagePlanType.VALUE_CREDIT ? plan.getCreditValue() : null;
+
         CustomerPackageSubscription sub = CustomerPackageSubscription.builder()
                 .tenantId(tenantId)
                 .customerId(customerId)
                 .branchId(branchId)
                 .planId(plan.getId())
                 .planName(plan.getName())
+                .planType(planType)
+                .creditTotal(creditTotal)
+                .creditRemaining(creditTotal)
                 .redemptionMode(plan.getRedemptionMode())
                 .amountPaid(amountPaid != null ? amountPaid : plan.getPackagePrice())
                 .purchaseInvoiceId(invoiceId)
@@ -239,17 +295,19 @@ public class ServicePackageService {
                 .build();
         sub = subscriptionRepository.save(sub);
 
-        List<ServicePackagePlanItem> planItems = planItemRepository.findByPlanIdOrderBySortOrderAsc(plan.getId());
-        Map<UUID, SalonService> services = loadServices(plan.getTenantId(), planItems);
-        for (ServicePackagePlanItem pi : planItems) {
-            SalonService svc = services.get(pi.getServiceId());
-            entitlementRepository.save(CustomerPackageEntitlement.builder()
-                    .subscriptionId(sub.getId())
-                    .serviceId(pi.getServiceId())
-                    .serviceName(svc != null ? svc.getName() : "Service")
-                    .quantityTotal(pi.getQuantity())
-                    .quantityRemaining(pi.getQuantity())
-                    .build());
+        if (planType == PackagePlanType.SERVICE_BUNDLE) {
+            List<ServicePackagePlanItem> planItems = planItemRepository.findByPlanIdOrderBySortOrderAsc(plan.getId());
+            Map<UUID, SalonService> services = loadServices(plan.getTenantId(), planItems);
+            for (ServicePackagePlanItem pi : planItems) {
+                SalonService svc = services.get(pi.getServiceId());
+                entitlementRepository.save(CustomerPackageEntitlement.builder()
+                        .subscriptionId(sub.getId())
+                        .serviceId(pi.getServiceId())
+                        .serviceName(svc != null ? svc.getName() : "Service")
+                        .quantityTotal(pi.getQuantity())
+                        .quantityRemaining(pi.getQuantity())
+                        .build());
+            }
         }
 
         auditService.log("SELL_PACKAGE", "CustomerPackageSubscription", sub.getId(),
@@ -318,10 +376,16 @@ public class ServicePackageService {
     }
 
     /**
-     * Validates redemption line and returns zero unit price for billing.
+     * Validates redemption line and returns the billable unit price (zero for service bundles).
      */
     public BigDecimal resolveRedemptionUnitPrice(
-            UUID tenantId, UUID branchId, UUID customerId, UUID subscriptionId, UUID serviceId, int quantity) {
+            UUID tenantId,
+            UUID branchId,
+            UUID customerId,
+            UUID subscriptionId,
+            UUID serviceId,
+            int quantity,
+            BigDecimal branchListPrice) {
         CustomerPackageSubscription sub = subscriptionRepository.findById(subscriptionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Package subscription not found"));
         if (!sub.getTenantId().equals(tenantId) || !sub.getCustomerId().equals(customerId)) {
@@ -332,6 +396,17 @@ public class ServicePackageService {
         }
         ensureSubscriptionRedeemable(sub);
 
+        PackagePlanType planType = effectivePlanType(sub);
+        if (planType == PackagePlanType.VALUE_CREDIT) {
+            if (sub.getCreditRemaining() == null || sub.getCreditRemaining().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BadRequestException("Package credit is exhausted");
+            }
+            if (branchListPrice == null) {
+                throw new BadRequestException("Branch price required for value package redemption");
+            }
+            return branchListPrice.setScale(2, RoundingMode.HALF_UP);
+        }
+
         CustomerPackageEntitlement ent = entitlementRepository.findBySubscriptionIdAndServiceId(subscriptionId, serviceId)
                 .orElseThrow(() -> new BadRequestException("Service is not included in this package"));
         if (ent.getQuantityRemaining() < quantity) {
@@ -340,17 +415,112 @@ public class ServicePackageService {
         return BigDecimal.ZERO;
     }
 
+    /**
+     * Subtracts value-package cover from amount due and validates remaining credit.
+     */
+    public BillPreviewResponse applyValueCreditToPreview(BillPreviewResponse bill, List<BookingLineItem> lines) {
+        if (bill == null || lines == null || lines.isEmpty()) {
+            return bill;
+        }
+        Map<UUID, BillLinePreview> previewByLineId = new HashMap<>();
+        if (bill.getLines() != null) {
+            for (BillLinePreview row : bill.getLines()) {
+                if (row.getLineItemId() != null) {
+                    previewByLineId.put(row.getLineItemId(), row);
+                }
+            }
+        }
+
+        Map<UUID, BigDecimal> coverBySubscription = new HashMap<>();
+        for (BookingLineItem line : lines) {
+            if (line.getPackageSubscriptionId() == null || line.getId() == null) {
+                continue;
+            }
+            CustomerPackageSubscription sub = subscriptionRepository.findById(line.getPackageSubscriptionId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Package subscription not found"));
+            if (effectivePlanType(sub) != PackagePlanType.VALUE_CREDIT) {
+                continue;
+            }
+            BillLinePreview preview = previewByLineId.get(line.getId());
+            if (preview == null || preview.getLineTotal() == null) {
+                continue;
+            }
+            BigDecimal lineCover = preview.getLineTotal().setScale(2, RoundingMode.HALF_UP);
+            coverBySubscription.merge(sub.getId(), lineCover, BigDecimal::add);
+        }
+
+        BigDecimal totalRequested = BigDecimal.ZERO;
+        BigDecimal totalApplied = BigDecimal.ZERO;
+        for (Map.Entry<UUID, BigDecimal> entry : coverBySubscription.entrySet()) {
+            CustomerPackageSubscription sub = subscriptionRepository.findById(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Package subscription not found"));
+            ensureSubscriptionRedeemable(sub);
+            BigDecimal requested = entry.getValue();
+            totalRequested = totalRequested.add(requested);
+            BigDecimal remaining = sub.getCreditRemaining() != null ? sub.getCreditRemaining() : BigDecimal.ZERO;
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal applied = requested.min(remaining).setScale(2, RoundingMode.HALF_UP);
+            totalApplied = totalApplied.add(applied);
+        }
+
+        if (totalApplied.compareTo(BigDecimal.ZERO) > 0) {
+            bill.setPackageValueCreditAmount(totalApplied);
+            bill.setPackageValueCreditLabel("Value package credit");
+            bill.setGrandTotal(bill.getGrandTotal().subtract(totalApplied).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+        }
+        if (totalRequested.compareTo(totalApplied) > 0) {
+            bill.setPackageValueCreditShortfall(
+                    totalRequested.subtract(totalApplied).setScale(2, RoundingMode.HALF_UP));
+        }
+        return bill;
+    }
+
     @Transactional
-    public void applyRedemptionsAfterPayment(Booking booking, List<BookingLineItem> lines) {
+    public void applyRedemptionsAfterPayment(Booking booking, List<BookingLineItem> lines, BillPreviewResponse bill) {
         Map<UUID, List<BookingLineItem>> bySub = lines.stream()
                 .filter(l -> l.getPackageSubscriptionId() != null)
                 .collect(Collectors.groupingBy(BookingLineItem::getPackageSubscriptionId));
+
+        Map<UUID, BillLinePreview> previewByLineId = new HashMap<>();
+        if (bill != null && bill.getLines() != null) {
+            for (BillLinePreview row : bill.getLines()) {
+                if (row.getLineItemId() != null) {
+                    previewByLineId.put(row.getLineItemId(), row);
+                }
+            }
+        }
 
         for (Map.Entry<UUID, List<BookingLineItem>> entry : bySub.entrySet()) {
             UUID subId = entry.getKey();
             CustomerPackageSubscription sub = subscriptionRepository.findById(subId)
                     .orElseThrow(() -> new ResourceNotFoundException("Package subscription not found"));
             ensureSubscriptionRedeemable(sub);
+
+            PackagePlanType planType = effectivePlanType(sub);
+            if (planType == PackagePlanType.VALUE_CREDIT) {
+                BigDecimal requested = BigDecimal.ZERO;
+                for (BookingLineItem line : entry.getValue()) {
+                    BillLinePreview preview = line.getId() != null ? previewByLineId.get(line.getId()) : null;
+                    if (preview == null || preview.getLineTotal() == null) {
+                        throw new BadRequestException("Unable to apply value package credit for a line");
+                    }
+                    requested = requested.add(preview.getLineTotal());
+                }
+                requested = requested.setScale(2, RoundingMode.HALF_UP);
+                BigDecimal remaining = sub.getCreditRemaining() != null
+                        ? sub.getCreditRemaining()
+                        : (sub.getCreditTotal() != null ? sub.getCreditTotal() : BigDecimal.ZERO);
+                BigDecimal deduct = requested.min(remaining).setScale(2, RoundingMode.HALF_UP);
+                if (deduct.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                sub.setCreditRemaining(remaining.subtract(deduct).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+                subscriptionRepository.save(sub);
+                refreshSubscriptionStatus(sub);
+                continue;
+            }
 
             for (BookingLineItem line : entry.getValue()) {
                 int qty = line.getQuantity() != null ? line.getQuantity() : 1;
@@ -366,8 +536,9 @@ public class ServicePackageService {
 
             refreshSubscriptionStatus(sub);
             if (sub.getRedemptionMode() == PackageRedemptionMode.SINGLE_VISIT) {
-                List<CustomerPackageEntitlement> remaining = entitlementRepository.findBySubscriptionIdOrderByServiceNameAsc(subId);
-                boolean anyLeft = remaining.stream().anyMatch(e -> e.getQuantityRemaining() > 0);
+                List<CustomerPackageEntitlement> remainingEnts =
+                        entitlementRepository.findBySubscriptionIdOrderByServiceNameAsc(subId);
+                boolean anyLeft = remainingEnts.stream().anyMatch(e -> e.getQuantityRemaining() > 0);
                 if (anyLeft) {
                     throw new BadRequestException(
                             "Single-visit package requires all services to be redeemed on this bill");
@@ -376,7 +547,38 @@ public class ServicePackageService {
         }
     }
 
+    private PackagePlanType effectivePlanType(ServicePackagePlan plan) {
+        if (plan.getPlanType() == PackagePlanType.VALUE_CREDIT) {
+            return PackagePlanType.VALUE_CREDIT;
+        }
+        if (plan.getCreditValue() != null && plan.getCreditValue().compareTo(BigDecimal.ZERO) > 0) {
+            return PackagePlanType.VALUE_CREDIT;
+        }
+        return plan.getPlanType() != null ? plan.getPlanType() : PackagePlanType.SERVICE_BUNDLE;
+    }
+
+    private PackagePlanType effectivePlanType(CustomerPackageSubscription sub) {
+        if (sub.getPlanType() == PackagePlanType.VALUE_CREDIT) {
+            return PackagePlanType.VALUE_CREDIT;
+        }
+        if (sub.getCreditRemaining() != null || sub.getCreditTotal() != null) {
+            return PackagePlanType.VALUE_CREDIT;
+        }
+        return planRepository.findById(sub.getPlanId())
+                .map(this::effectivePlanType)
+                .orElse(sub.getPlanType() != null ? sub.getPlanType() : PackagePlanType.SERVICE_BUNDLE);
+    }
+
     private void refreshSubscriptionStatus(CustomerPackageSubscription sub) {
+        PackagePlanType planType = effectivePlanType(sub);
+        if (planType == PackagePlanType.VALUE_CREDIT) {
+            BigDecimal remaining = sub.getCreditRemaining() != null ? sub.getCreditRemaining() : BigDecimal.ZERO;
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                sub.setStatus(PackageSubscriptionStatus.COMPLETED);
+                subscriptionRepository.save(sub);
+            }
+            return;
+        }
         List<CustomerPackageEntitlement> ents = entitlementRepository.findBySubscriptionIdOrderByServiceNameAsc(sub.getId());
         boolean anyLeft = ents.stream().anyMatch(e -> e.getQuantityRemaining() > 0);
         if (!anyLeft) {
@@ -440,6 +642,13 @@ public class ServicePackageService {
         return Math.min(days, 730);
     }
 
+    private BigDecimal normalizeCreditValue(BigDecimal creditValue) {
+        if (creditValue == null || creditValue.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Credit value is required for value packages");
+        }
+        return creditValue.setScale(2, RoundingMode.HALF_UP);
+    }
+
     private List<ServicePackagePlanItem> buildPlanItems(UUID tenantId, List<PackagePlanItemRequest> requests) {
         if (requests == null || requests.isEmpty()) {
             throw new BadRequestException("Package must include at least one service");
@@ -488,6 +697,10 @@ public class ServicePackageService {
     }
 
     private boolean planServicesAvailableAtBranch(UUID planId, UUID branchId) {
+        ServicePackagePlan plan = planRepository.findById(planId).orElse(null);
+        if (plan != null && plan.getPlanType() == PackagePlanType.VALUE_CREDIT) {
+            return true;
+        }
         List<ServicePackagePlanItem> items = planItemRepository.findByPlanIdOrderBySortOrderAsc(planId);
         if (items.isEmpty()) {
             return false;
@@ -532,6 +745,8 @@ public class ServicePackageService {
                 .description(plan.getDescription())
                 .listPriceTotal(plan.getListPriceTotal())
                 .packagePrice(plan.getPackagePrice())
+                .planType(plan.getPlanType() != null ? plan.getPlanType() : PackagePlanType.SERVICE_BUNDLE)
+                .creditValue(plan.getCreditValue())
                 .validityDays(plan.getValidityDays())
                 .redemptionMode(plan.getRedemptionMode())
                 .branchIds(PromoScopeUtils.parseIds(plan.getBranchIds()))
@@ -564,6 +779,9 @@ public class ServicePackageService {
                 .branchName(branch != null ? branch.getName() : null)
                 .planId(sub.getPlanId())
                 .planName(sub.getPlanName())
+                .planType(effectivePlanType(sub))
+                .creditTotal(sub.getCreditTotal())
+                .creditRemaining(sub.getCreditRemaining())
                 .redemptionMode(sub.getRedemptionMode())
                 .amountPaid(sub.getAmountPaid())
                 .purchasedOn(sub.getPurchasedOn())

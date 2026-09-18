@@ -1,5 +1,6 @@
 package com.salonplatform.dto.packageplan;
 
+import com.salonplatform.domain.enums.PackagePlanType;
 import com.salonplatform.domain.enums.PackageRedemptionMode;
 import com.salonplatform.domain.enums.PromoStatus;
 import lombok.Builder;
@@ -18,6 +19,8 @@ public class ServicePackagePlanResponse {
     private String description;
     private BigDecimal listPriceTotal;
     private BigDecimal packagePrice;
+    private PackagePlanType planType;
+    private BigDecimal creditValue;
     private Integer validityDays;
     private PackageRedemptionMode redemptionMode;
     private List<UUID> branchIds;

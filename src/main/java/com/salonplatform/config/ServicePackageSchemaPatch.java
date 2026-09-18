@@ -85,6 +85,16 @@ public class ServicePackageSchemaPatch implements ApplicationRunner {
                     "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS package_fee_label VARCHAR(255)");
             jdbcTemplate.execute(
                     "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_package_subscription_id UUID");
+            jdbcTemplate.execute(
+                    "ALTER TABLE service_package_plans ADD COLUMN IF NOT EXISTS plan_type VARCHAR(24) NOT NULL DEFAULT 'SERVICE_BUNDLE'");
+            jdbcTemplate.execute(
+                    "ALTER TABLE service_package_plans ADD COLUMN IF NOT EXISTS credit_value NUMERIC(12,2)");
+            jdbcTemplate.execute(
+                    "ALTER TABLE customer_package_subscriptions ADD COLUMN IF NOT EXISTS plan_type VARCHAR(24) NOT NULL DEFAULT 'SERVICE_BUNDLE'");
+            jdbcTemplate.execute(
+                    "ALTER TABLE customer_package_subscriptions ADD COLUMN IF NOT EXISTS credit_total NUMERIC(12,2)");
+            jdbcTemplate.execute(
+                    "ALTER TABLE customer_package_subscriptions ADD COLUMN IF NOT EXISTS credit_remaining NUMERIC(12,2)");
             log.info("Service package schema patch applied");
         } catch (Exception e) {
             log.warn("Service package schema patch skipped or partial: {}", e.getMessage());

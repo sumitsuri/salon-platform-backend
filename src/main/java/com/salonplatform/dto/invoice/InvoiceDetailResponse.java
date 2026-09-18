@@ -20,6 +20,8 @@ public class InvoiceDetailResponse {
     private String membershipLabel;
     private BigDecimal membershipFeeAmount;
     private String membershipFeeLabel;
+    private BigDecimal packageFeeAmount;
+    private String packageFeeLabel;
     private String promoLabel;
     private BigDecimal taxableAmount;
     private BigDecimal cgstAmount;

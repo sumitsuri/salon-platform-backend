@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.PackagePlanType;
 import com.salonplatform.domain.enums.PackageRedemptionMode;
 import com.salonplatform.domain.enums.PromoStatus;
 import jakarta.persistence.*;
@@ -42,6 +43,15 @@ public class ServicePackagePlan {
     @Column(nullable = false)
     @Builder.Default
     private Integer validityDays = 90;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 24)
+    @Builder.Default
+    private PackagePlanType planType = PackagePlanType.SERVICE_BUNDLE;
+
+    /** Total redeemable value for {@link PackagePlanType#VALUE_CREDIT} plans. */
+    @Column(precision = 12, scale = 2)
+    private BigDecimal creditValue;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 24)

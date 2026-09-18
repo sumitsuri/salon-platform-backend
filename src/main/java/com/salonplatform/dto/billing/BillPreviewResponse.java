@@ -29,6 +29,11 @@ public class BillPreviewResponse {
     private String membershipFeeLabel;
     private java.math.BigDecimal packageFeeAmount;
     private String packageFeeLabel;
+    /** Amount covered by value-credit package balance (excluded from amount due). */
+    private BigDecimal packageValueCreditAmount;
+    private String packageValueCreditLabel;
+    /** Portion of value-package service totals not covered by remaining credit (customer pays this). */
+    private BigDecimal packageValueCreditShortfall;
     /** Manager FLAT/PERCENT discount when no coupon/offer is applied. */
     private BigDecimal manualDiscountAmount;
     private String manualDiscountLabel;

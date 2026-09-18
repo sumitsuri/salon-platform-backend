@@ -316,7 +316,8 @@ public class BookingService {
                     booking.getCustomerId(),
                     packageSubscriptionId,
                     svc.getId(),
-                    qty);
+                    qty,
+                    bs.getPrice());
         } else if (lineReq.getUnitPrice() != null) {
             if (lineReq.getUnitPrice().compareTo(bs.getPrice()) < 0) {
                 throw new BadRequestException("Unit price cannot be below the list price");
@@ -524,25 +525,19 @@ public class BookingService {
                         .build())
                 .collect(Collectors.toList());
 
-        BillPreviewResponse billPreview = lines.isEmpty()
-                ? null
-                : billPreviewForList(booking, lines);
-        if (invoice != null && billPreview != null) {
-            BillPreviewResponse fromInvoice = billPreviewFromInvoice(invoice);
-            billPreview.setGrandTotal(fromInvoice.getGrandTotal());
-            billPreview.setSubtotal(fromInvoice.getSubtotal());
-            billPreview.setDiscountAmount(fromInvoice.getDiscountAmount());
-            billPreview.setMembershipDiscountAmount(fromInvoice.getMembershipDiscountAmount());
-            billPreview.setPromoDiscountAmount(fromInvoice.getPromoDiscountAmount());
-            billPreview.setTaxableAmount(fromInvoice.getTaxableAmount());
-            billPreview.setCgstAmount(fromInvoice.getCgstAmount());
-            billPreview.setSgstAmount(fromInvoice.getSgstAmount());
-            billPreview.setMembershipLabel(fromInvoice.getMembershipLabel());
-            billPreview.setPromoLabel(fromInvoice.getPromoLabel());
-            billPreview.setMembershipFeeAmount(fromInvoice.getMembershipFeeAmount());
-            billPreview.setMembershipFeeLabel(fromInvoice.getMembershipFeeLabel());
-            billPreview.setPackageFeeAmount(fromInvoice.getPackageFeeAmount());
-            billPreview.setPackageFeeLabel(fromInvoice.getPackageFeeLabel());
+        BillPreviewResponse billPreview;
+        if (invoice != null) {
+            billPreview = billPreviewFromInvoice(invoice);
+            if (!lines.isEmpty()) {
+                BillPreviewResponse fromLines = billPreviewForList(booking, lines);
+                billPreview.setLines(fromLines.getLines());
+            }
+        } else if (!lines.isEmpty()
+                || booking.getPendingMembershipPlanId() != null
+                || booking.getPendingPackagePlanId() != null) {
+            billPreview = billPreviewForList(booking, lines);
+        } else {
+            billPreview = null;
         }
 
         return BookingResponse.builder()
@@ -582,11 +577,13 @@ public class BookingService {
         } catch (BadRequestException | ResourceNotFoundException ex) {
             promo = GstCalculationService.PromoContext.empty();
         }
-        return gstCalculationService.calculate(booking, lines, promo);
+        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
+        return servicePackageService.applyValueCreditToPreview(bill, lines);
     }
 
     private BillPreviewResponse billPreviewFromInvoice(Invoice invoice) {
         InvoiceBillUtils.MembershipFeeView fee = InvoiceBillUtils.resolveMembershipFee(invoice);
+        InvoiceBillUtils.PackageFeeView pkg = InvoiceBillUtils.resolvePackageFee(invoice);
         return BillPreviewResponse.builder()
                 .subtotal(invoice.getSubtotal())
                 .membershipDiscountAmount(invoice.getMembershipDiscountAmount())
@@ -600,8 +597,8 @@ public class BookingService {
                 .promoLabel(invoice.getPromoLabel())
                 .membershipFeeAmount(fee.amount())
                 .membershipFeeLabel(fee.label())
-                .packageFeeAmount(invoice.getPackageFeeAmount())
-                .packageFeeLabel(invoice.getPackageFeeLabel())
+                .packageFeeAmount(pkg.amount())
+                .packageFeeLabel(pkg.label())
                 .build();
     }
 
@@ -651,7 +648,8 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
         SecurityUtils.assertBranchAccess(booking.getBranchId());
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
-        return gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+        return servicePackageService.applyValueCreditToPreview(bill, lines);
     }
 
     @Transactional
@@ -724,6 +722,7 @@ public class BookingService {
 
         GstCalculationService.PromoContext promo = promoContextFor(booking);
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
+        bill = servicePackageService.applyValueCreditToPreview(bill, lines);
 
         BigDecimal cgstAmount = bill.getCgstAmount() != null ? bill.getCgstAmount() : BigDecimal.ZERO;
         BigDecimal sgstAmount = bill.getSgstAmount() != null ? bill.getSgstAmount() : BigDecimal.ZERO;
@@ -817,7 +816,7 @@ public class BookingService {
                     pendingPackageSoldByStaffId);
         }
 
-        servicePackageService.applyRedemptionsAfterPayment(booking, lines);
+        servicePackageService.applyRedemptionsAfterPayment(booking, lines, bill);
 
         try {
             invoicePdfService.persistPdf(invoice);
@@ -960,6 +959,7 @@ public class BookingService {
                 || booking.getPendingMembershipPlanId() != null
                 || booking.getPendingPackagePlanId() != null) {
             billPreview = gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+            billPreview = servicePackageService.applyValueCreditToPreview(billPreview, lines);
         } else {
             billPreview = null;
         }
