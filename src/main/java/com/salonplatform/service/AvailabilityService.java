@@ -55,13 +55,13 @@ public class AvailabilityService {
         }
 
         if (isToday) {
-            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, BookingStatus.IN_PROGRESS)) {
+            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatusAndDeletedAtIsNull(tenantId, branchId, BookingStatus.IN_PROGRESS)) {
                 if (seen.add(open.getId())) dayBookings.add(open);
             }
-            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, BookingStatus.READY_FOR_BILLING)) {
+            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatusAndDeletedAtIsNull(tenantId, branchId, BookingStatus.READY_FOR_BILLING)) {
                 if (seen.add(open.getId())) dayBookings.add(open);
             }
-            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, BookingStatus.CONFIRMED)) {
+            for (Booking open : bookingRepository.findByTenantIdAndBranchIdAndStatusAndDeletedAtIsNull(tenantId, branchId, BookingStatus.CONFIRMED)) {
                 if (seen.add(open.getId())) dayBookings.add(open);
             }
         }

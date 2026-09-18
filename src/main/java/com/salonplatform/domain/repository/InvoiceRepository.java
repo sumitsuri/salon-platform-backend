@@ -13,16 +13,22 @@ import java.util.UUID;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, UUID> {
     Optional<Invoice> findByBookingId(UUID bookingId);
-    List<Invoice> findByBookingIdIn(Collection<UUID> bookingIds);
-    List<Invoice> findByTenantIdOrderByIssuedAtDesc(UUID tenantId);
 
-    @Query("SELECT i FROM Invoice i WHERE i.tenantId = :tenantId AND i.issuedAt >= :start AND i.issuedAt < :end")
+    Optional<Invoice> findByBookingIdAndDeletedAtIsNull(UUID bookingId);
+
+    List<Invoice> findByBookingIdIn(Collection<UUID> bookingIds);
+
+    @Query("SELECT i FROM Invoice i WHERE i.tenantId = :tenantId AND i.deletedAt IS NULL ORDER BY i.issuedAt DESC")
+    List<Invoice> findActiveByTenantIdOrderByIssuedAtDesc(@Param("tenantId") UUID tenantId);
+
+    @Query("SELECT i FROM Invoice i WHERE i.tenantId = :tenantId AND i.deletedAt IS NULL " +
+           "AND i.issuedAt >= :start AND i.issuedAt < :end")
     List<Invoice> findByTenantAndDateRange(@Param("tenantId") UUID tenantId,
                                            @Param("start") Instant start,
                                            @Param("end") Instant end);
 
     @Query("SELECT i FROM Invoice i WHERE i.tenantId = :tenantId AND i.branchId = :branchId " +
-           "AND i.issuedAt >= :start AND i.issuedAt < :end")
+           "AND i.deletedAt IS NULL AND i.issuedAt >= :start AND i.issuedAt < :end")
     List<Invoice> findByBranchAndDateRange(@Param("tenantId") UUID tenantId,
                                            @Param("branchId") UUID branchId,
                                            @Param("start") Instant start,

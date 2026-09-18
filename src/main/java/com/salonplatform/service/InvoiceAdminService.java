@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -58,7 +59,7 @@ public class InvoiceAdminService {
         if (booking.getStatus() != BookingStatus.COMPLETED) {
             throw new BadRequestException("error.invoice.onlyCompleted");
         }
-        Invoice invoice = invoiceRepository.findByBookingId(bookingId)
+        Invoice invoice = invoiceRepository.findByBookingIdAndDeletedAtIsNull(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
 
         List<BookingLineItem> existingLines = lineItemRepository.findByBookingId(bookingId);
@@ -136,8 +137,15 @@ public class InvoiceAdminService {
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
         SecurityUtils.assertBranchAccess(invoice.getBranchId());
 
+        if (invoice.getDeletedAt() != null) {
+            throw new BadRequestException("error.invoice.alreadyVoided");
+        }
+
         Booking booking = bookingRepository.findById(invoice.getBookingId())
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        if (booking.getDeletedAt() != null) {
+            throw new BadRequestException("error.invoice.alreadyVoided");
+        }
         if (booking.getStatus() != BookingStatus.COMPLETED) {
             throw new BadRequestException("error.invoice.onlyCompleted");
         }
@@ -145,7 +153,7 @@ public class InvoiceAdminService {
         assertVoidAllowed(booking, invoice);
 
         List<BookingLineItem> lines = lineItemRepository.findByBookingId(booking.getId());
-        BillPreviewResponse bill = billPreviewFor(booking, lines);
+        BillPreviewResponse bill = billPreviewForVoid(booking, lines);
         servicePackageService.reverseRedemptionsAfterPayment(booking, lines, bill);
         servicePackageService.voidPackagePurchasesForInvoice(invoice.getId());
 
@@ -158,7 +166,11 @@ public class InvoiceAdminService {
             paymentRepository.delete(payment);
         }
 
-        invoiceRepository.delete(invoice);
+        Instant voidedAt = Instant.now();
+        String voidNote = reason != null && !reason.isBlank() ? reason.trim() : "Invoice voided by admin";
+        invoice.setDeletedAt(voidedAt);
+        invoice.setVoidReason(voidNote);
+        invoiceRepository.save(invoice);
 
         Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
         if (customer.getVisitCount() != null && customer.getVisitCount() > 0) {
@@ -170,16 +182,11 @@ public class InvoiceAdminService {
 
         promoResolutionService.decrementRedemptions(booking.getCouponId(), booking.getOfferId());
 
-        booking.setStatus(BookingStatus.READY_FOR_BILLING);
-        booking.setCompletedAt(null);
-        booking.setActualDurationMinutes(null);
+        booking.setDeletedAt(voidedAt);
+        booking.setVoidReason(voidNote);
         bookingRepository.save(booking);
 
-        auditService.log(
-                "ADMIN_VOID_BILL",
-                "Booking",
-                booking.getId(),
-                reason != null && !reason.isBlank() ? reason : "Invoice voided by admin");
+        auditService.log("ADMIN_VOID_BILL", "Booking", booking.getId(), voidNote);
     }
 
     private void assertVoidAllowed(Booking booking, Invoice invoice) {
@@ -247,6 +254,12 @@ public class InvoiceAdminService {
     private BillPreviewResponse billPreviewFor(Booking booking, List<BookingLineItem> lines) {
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promoContextFor(booking));
         return servicePackageService.applyValueCreditToPreview(bill, lines);
+    }
+
+    /** Void/reversal — restore credits from line totals even if subscription is no longer ACTIVE. */
+    private BillPreviewResponse billPreviewForVoid(Booking booking, List<BookingLineItem> lines) {
+        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promoContextFor(booking));
+        return servicePackageService.applyValueCreditToPreview(bill, lines, false);
     }
 
     private GstCalculationService.PromoContext promoContextFor(Booking booking) {

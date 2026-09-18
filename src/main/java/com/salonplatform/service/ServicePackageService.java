@@ -419,6 +419,15 @@ public class ServicePackageService {
      * Subtracts value-package cover from amount due and validates remaining credit.
      */
     public BillPreviewResponse applyValueCreditToPreview(BillPreviewResponse bill, List<BookingLineItem> lines) {
+        return applyValueCreditToPreview(bill, lines, true);
+    }
+
+    /**
+     * @param enforceActiveSubscription when false (e.g. booking list/history), inactive packages are skipped
+     *                                  instead of failing the whole response.
+     */
+    public BillPreviewResponse applyValueCreditToPreview(
+            BillPreviewResponse bill, List<BookingLineItem> lines, boolean enforceActiveSubscription) {
         if (bill == null || lines == null || lines.isEmpty()) {
             return bill;
         }
@@ -454,7 +463,11 @@ public class ServicePackageService {
         for (Map.Entry<UUID, BigDecimal> entry : coverBySubscription.entrySet()) {
             CustomerPackageSubscription sub = subscriptionRepository.findById(entry.getKey())
                     .orElseThrow(() -> new ResourceNotFoundException("Package subscription not found"));
-            ensureSubscriptionRedeemable(sub);
+            if (enforceActiveSubscription) {
+                ensureSubscriptionRedeemable(sub);
+            } else if (!isSubscriptionRedeemable(sub)) {
+                continue;
+            }
             BigDecimal requested = entry.getValue();
             totalRequested = totalRequested.add(requested);
             BigDecimal remaining = sub.getCreditRemaining() != null ? sub.getCreditRemaining() : BigDecimal.ZERO;
@@ -680,15 +693,26 @@ public class ServicePackageService {
     }
 
     private void ensureSubscriptionRedeemable(CustomerPackageSubscription sub) {
-        LocalDate today = LocalDate.now(IST);
-        if (sub.getStatus() != PackageSubscriptionStatus.ACTIVE) {
+        if (!isSubscriptionRedeemable(sub)) {
+            LocalDate today = LocalDate.now(IST);
+            if (sub.getStatus() != PackageSubscriptionStatus.ACTIVE) {
+                throw new BadRequestException("Package is not active");
+            }
+            if (sub.getExpiresOn().isBefore(today)) {
+                sub.setStatus(PackageSubscriptionStatus.EXPIRED);
+                subscriptionRepository.save(sub);
+                throw new BadRequestException("Package has expired");
+            }
             throw new BadRequestException("Package is not active");
         }
-        if (sub.getExpiresOn().isBefore(today)) {
-            sub.setStatus(PackageSubscriptionStatus.EXPIRED);
-            subscriptionRepository.save(sub);
-            throw new BadRequestException("Package has expired");
+    }
+
+    private boolean isSubscriptionRedeemable(CustomerPackageSubscription sub) {
+        LocalDate today = LocalDate.now(IST);
+        if (sub.getStatus() != PackageSubscriptionStatus.ACTIVE) {
+            return false;
         }
+        return !sub.getExpiresOn().isBefore(today);
     }
 
     private void expireStale(UUID tenantId, LocalDate today) {

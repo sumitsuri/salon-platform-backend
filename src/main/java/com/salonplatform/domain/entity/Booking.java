@@ -109,4 +109,9 @@ public class Booking {
     private Instant updatedAt;
 
     private Instant completedAt;
+
+    /** Admin void — hidden from operational lists; row retained for audit. */
+    private Instant deletedAt;
+
+    private String voidReason;
 }

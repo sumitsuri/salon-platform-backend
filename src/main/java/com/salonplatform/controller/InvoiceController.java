@@ -31,12 +31,12 @@ public class InvoiceController {
     @GetMapping
     public ApiResponse<List<Invoice>> list() {
         UUID tenantId = SecurityUtils.requireTenantId();
-        return ApiResponse.ok(invoiceRepository.findByTenantIdOrderByIssuedAtDesc(tenantId));
+        return ApiResponse.ok(invoiceRepository.findActiveByTenantIdOrderByIssuedAtDesc(tenantId));
     }
 
     @GetMapping("/booking/{bookingId}")
     public ApiResponse<InvoiceDetailResponse> byBooking(@PathVariable UUID bookingId) {
-        Invoice invoice = invoiceRepository.findByBookingId(bookingId)
+        Invoice invoice = invoiceRepository.findByBookingIdAndDeletedAtIsNull(bookingId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
         SecurityUtils.assertBranchAccess(invoice.getBranchId());
         return ApiResponse.ok(toDetail(invoice));
@@ -46,6 +46,9 @@ public class InvoiceController {
     public ApiResponse<InvoiceDetailResponse> get(@PathVariable UUID id) {
         Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+        if (invoice.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Invoice not found");
+        }
         SecurityUtils.assertBranchAccess(invoice.getBranchId());
         return ApiResponse.ok(toDetail(invoice));
     }
@@ -66,6 +69,9 @@ public class InvoiceController {
     public ResponseEntity<byte[]> pdf(@PathVariable UUID id) {
         Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+        if (invoice.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Invoice not found");
+        }
         SecurityUtils.assertBranchAccess(invoice.getBranchId());
         byte[] pdf = invoicePdfService.generatePdf(id);
         String filename = "invoice-" + (invoice.getInvoiceNumber() != null

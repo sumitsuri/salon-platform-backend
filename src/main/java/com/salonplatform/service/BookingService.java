@@ -456,6 +456,9 @@ public class BookingService {
     public BookingResponse getById(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        if (booking.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Booking not found");
+        }
         SecurityUtils.assertBranchAccess(booking.getBranchId());
         Branch branch = branchRepository.findById(booking.getBranchId()).orElseThrow();
         Customer customer = customerRepository.findById(booking.getCustomerId()).orElseThrow();
@@ -520,6 +523,7 @@ public class BookingService {
                         .collect(Collectors.toMap(Staff::getId, Staff::getName));
 
         Map<UUID, Invoice> invoiceByBooking = invoiceRepository.findByBookingIdIn(bookingIds).stream()
+                .filter(inv -> inv.getDeletedAt() == null)
                 .collect(Collectors.toMap(Invoice::getBookingId, inv -> inv, (a, b) -> a));
 
         return bookings.stream()
@@ -563,8 +567,7 @@ public class BookingService {
         if (invoice != null) {
             billPreview = billPreviewFromInvoice(invoice);
             if (!lines.isEmpty()) {
-                BillPreviewResponse fromLines = billPreviewForList(booking, lines);
-                billPreview.setLines(fromLines.getLines());
+                billPreview.setLines(billPreviewForList(booking, lines).getLines());
             }
         } else if (!lines.isEmpty()
                 || booking.getPendingMembershipPlanId() != null
@@ -604,6 +607,7 @@ public class BookingService {
                 .build();
     }
 
+    /** List/table preview — never fail the page when a linked package subscription is exhausted. */
     private BillPreviewResponse billPreviewForList(Booking booking, List<BookingLineItem> lines) {
         GstCalculationService.PromoContext promo;
         try {
@@ -612,7 +616,7 @@ public class BookingService {
             promo = GstCalculationService.PromoContext.empty();
         }
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
-        return servicePackageService.applyValueCreditToPreview(bill, lines);
+        return servicePackageService.applyValueCreditToPreview(bill, lines, false);
     }
 
     private BillPreviewResponse billPreviewFromInvoice(Invoice invoice) {
@@ -654,8 +658,8 @@ public class BookingService {
         UUID tenantId = SecurityUtils.requireTenantId();
         SecurityUtils.assertBranchAccess(branchId);
         List<Booking> bookings = status != null
-                ? bookingRepository.findByTenantIdAndBranchIdAndStatus(tenantId, branchId, status)
-                : bookingRepository.findByTenantIdAndBranchIdOrderByCreatedAtDesc(tenantId, branchId);
+                ? bookingRepository.findByTenantIdAndBranchIdAndStatusAndDeletedAtIsNull(tenantId, branchId, status)
+                : bookingRepository.findByTenantIdAndBranchIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId, branchId);
         return bookings.stream().map(b -> {
             Branch branch = branchRepository.findById(b.getBranchId()).orElse(null);
             Customer customer = customerRepository.findById(b.getCustomerId()).orElse(null);
@@ -666,7 +670,7 @@ public class BookingService {
     public List<BookingResponse> listAll(BookingStatus status) {
         UUID tenantId = SecurityUtils.requireTenantId();
         SecurityUtils.assertBrandAdminOrAbove();
-        List<Booking> bookings = bookingRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+        List<Booking> bookings = bookingRepository.findByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId);
         if (status != null) {
             bookings = bookings.stream().filter(b -> b.getStatus() == status).collect(Collectors.toList());
         }
@@ -705,7 +709,7 @@ public class BookingService {
             throw new BadRequestException("error.booking.alreadyCompleted");
         }
 
-        invoiceRepository.findByBookingId(bookingId).ifPresent(i -> {
+        invoiceRepository.findByBookingIdAndDeletedAtIsNull(bookingId).ifPresent(i -> {
             throw new BadRequestException("error.booking.invoiceExists");
         });
 
@@ -985,7 +989,7 @@ public class BookingService {
                     .build();
         }).collect(Collectors.toList());
 
-        Invoice invoice = invoiceRepository.findByBookingId(booking.getId()).orElse(null);
+        Invoice invoice = invoiceRepository.findByBookingIdAndDeletedAtIsNull(booking.getId()).orElse(null);
         BillPreviewResponse billPreview;
         if (invoice != null) {
             billPreview = billPreviewFromInvoice(invoice);
@@ -999,7 +1003,7 @@ public class BookingService {
         }
 
         UUID invoiceId = invoice != null ? invoice.getId()
-                : invoiceRepository.findByBookingId(booking.getId()).map(Invoice::getId).orElse(null);
+                : invoiceRepository.findByBookingIdAndDeletedAtIsNull(booking.getId()).map(Invoice::getId).orElse(null);
 
         return BookingResponse.builder()
                 .id(booking.getId())

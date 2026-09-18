@@ -108,4 +108,9 @@ public class Invoice {
 
     @CreationTimestamp
     private Instant issuedAt;
+
+    /** Admin void — excluded from bills, PDFs, and revenue rollups. */
+    private Instant deletedAt;
+
+    private String voidReason;
 }

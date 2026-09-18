@@ -180,7 +180,7 @@ public class AnalyticsService {
                 ? new HashSet<>(branchIds) : null;
 
         List<Invoice> invoices = rangeStart == null
-                ? invoiceRepository.findByTenantIdOrderByIssuedAtDesc(tenantId)
+                ? invoiceRepository.findActiveByTenantIdOrderByIssuedAtDesc(tenantId)
                 : invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
         if (branchFilter != null) {
             invoices = invoices.stream()

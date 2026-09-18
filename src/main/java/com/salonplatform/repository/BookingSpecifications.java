@@ -25,6 +25,7 @@ public final class BookingSpecifications {
         if (tenantId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("tenantId"), tenantId));
         }
+        spec = spec.and((root, query, cb) -> cb.isNull(root.get("deletedAt")));
 
         if (filter.getBranchId() != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("branchId"), filter.getBranchId()));
@@ -118,6 +119,7 @@ public final class BookingSpecifications {
             sq.select(cb.literal(1L));
             sq.where(cb.and(
                     cb.equal(invoice.get("bookingId"), root.get("id")),
+                    cb.isNull(invoice.get("deletedAt")),
                     cb.greaterThanOrEqualTo(invoice.get("grandTotal"), min)
             ));
             return cb.exists(sq);
@@ -131,6 +133,7 @@ public final class BookingSpecifications {
             sq.select(cb.literal(1L));
             sq.where(cb.and(
                     cb.equal(invoice.get("bookingId"), root.get("id")),
+                    cb.isNull(invoice.get("deletedAt")),
                     cb.lessThanOrEqualTo(invoice.get("grandTotal"), max)
             ));
             return cb.exists(sq);

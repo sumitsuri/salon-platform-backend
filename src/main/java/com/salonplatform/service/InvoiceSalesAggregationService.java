@@ -29,6 +29,8 @@ public class InvoiceSalesAggregationService {
     private final BookingRepository bookingRepository;
     private final GstCalculationService gstCalculationService;
     private final PromoResolutionService promoResolutionService;
+    private final ServicePackageService servicePackageService;
+    private final PackageStaffSaleImputationService packageStaffSaleImputationService;
 
     public Map<UUID, StaffLineAggregate> aggregateByStaff(List<Invoice> invoices) {
         Map<UUID, BookingLineAggregate> byStaff = new HashMap<>();
@@ -44,11 +46,20 @@ public class InvoiceSalesAggregationService {
                     continue;
                 }
                 int qty = line.getQuantity() != null ? line.getQuantity() : 1;
-                BigDecimal listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
                 BillLinePreview preview = previewByLineId.get(line.getId());
-                BigDecimal finalAmount = preview != null && preview.getLineTotal() != null
-                        ? preview.getLineTotal()
-                        : listAmount;
+                BigDecimal listAmount;
+                BigDecimal finalAmount;
+                PackageStaffSaleImputationService.ImputedLineAmounts imputed =
+                        packageStaffSaleImputationService.imputeForStaffSale(line, preview);
+                if (imputed != null) {
+                    listAmount = imputed.listAmount();
+                    finalAmount = imputed.finalAmount();
+                } else {
+                    listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
+                    finalAmount = preview != null && preview.getLineTotal() != null
+                            ? preview.getLineTotal()
+                            : listAmount;
+                }
                 byStaff.compute(line.getStaffId(), (k, acc) -> {
                     BookingLineAggregate current = acc == null ? new BookingLineAggregate() : acc;
                     return current.add(listAmount, finalAmount, qty);
@@ -74,11 +85,20 @@ public class InvoiceSalesAggregationService {
                     continue;
                 }
                 int qty = line.getQuantity() != null ? line.getQuantity() : 1;
-                BigDecimal listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
                 BillLinePreview preview = previewByLineId.get(line.getId());
-                BigDecimal finalAmount = preview != null && preview.getLineTotal() != null
-                        ? preview.getLineTotal()
-                        : listAmount;
+                BigDecimal listAmount;
+                BigDecimal finalAmount;
+                PackageStaffSaleImputationService.ImputedLineAmounts imputed =
+                        packageStaffSaleImputationService.imputeForStaffSale(line, preview);
+                if (imputed != null) {
+                    listAmount = imputed.listAmount();
+                    finalAmount = imputed.finalAmount();
+                } else {
+                    listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
+                    finalAmount = preview != null && preview.getLineTotal() != null
+                            ? preview.getLineTotal()
+                            : listAmount;
+                }
                 byService.compute(line.getServiceName(), (k, acc) -> {
                     ServiceLineAggregate current = acc == null ? new ServiceLineAggregate() : acc;
                     return current.add(listAmount, finalAmount, qty);
@@ -108,8 +128,10 @@ public class InvoiceSalesAggregationService {
                 booking.getCustomerId(),
                 booking.getCouponId(),
                 booking.getOfferId(),
-                booking.getPendingMembershipPlanId());
-        return gstCalculationService.calculate(booking, lines, promo);
+                booking.getPendingMembershipPlanId(),
+                booking.getPendingPackagePlanId());
+        BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
+        return servicePackageService.applyValueCreditToPreview(bill, lines);
     }
 
     public static final class StaffLineAggregate {

@@ -315,7 +315,7 @@ public class DemoBookingSeeder implements CommandLineRunner {
 
     private Map<String, Long> initializeInvoiceSequences(UUID tenantId, List<Branch> branches) {
         Map<String, Long> seqByBranchFy = new HashMap<>();
-        List<Invoice> existingInvoices = invoiceRepository.findByTenantIdOrderByIssuedAtDesc(tenantId);
+        List<Invoice> existingInvoices = invoiceRepository.findActiveByTenantIdOrderByIssuedAtDesc(tenantId);
 
         for (Branch branch : branches) {
             for (InvoiceSequence seq : invoiceSequenceRepository.findByBranchId(branch.getId())) {

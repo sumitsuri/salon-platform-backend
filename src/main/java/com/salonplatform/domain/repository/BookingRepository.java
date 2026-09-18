@@ -13,17 +13,17 @@ import java.util.List;
 import java.util.UUID;
 
 public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpecificationExecutor<Booking> {
-    List<Booking> findByTenantIdAndBranchIdOrderByCreatedAtDesc(UUID tenantId, UUID branchId);
-    List<Booking> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+    List<Booking> findByTenantIdAndBranchIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID tenantId, UUID branchId);
+    List<Booking> findByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID tenantId);
 
     @Query("SELECT b FROM Booking b WHERE b.tenantId = :tenantId AND b.branchId = :branchId " +
-           "AND b.createdAt >= :start AND b.createdAt < :end ORDER BY b.createdAt DESC")
+           "AND b.deletedAt IS NULL AND b.createdAt >= :start AND b.createdAt < :end ORDER BY b.createdAt DESC")
     List<Booking> findByBranchAndDateRange(@Param("tenantId") UUID tenantId,
                                            @Param("branchId") UUID branchId,
                                            @Param("start") Instant start,
                                            @Param("end") Instant end);
 
-    List<Booking> findByTenantIdAndBranchIdAndStatus(UUID tenantId, UUID branchId, BookingStatus status);
+    List<Booking> findByTenantIdAndBranchIdAndStatusAndDeletedAtIsNull(UUID tenantId, UUID branchId, BookingStatus status);
 
     @Query("""
             SELECT b FROM Booking b
@@ -45,7 +45,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
             LEFT JOIN Invoice i ON i.bookingId = b.id
             WHERE b.customerId IN :customerIds
               AND b.branchId = :branchId
+              AND b.deletedAt IS NULL
               AND b.status = com.salonplatform.domain.enums.BookingStatus.COMPLETED
+              AND (i.deletedAt IS NULL OR i.id IS NULL)
             GROUP BY b.customerId
             """)
     List<CustomerBranchStatsRow> aggregateBranchStatsForCustomers(
