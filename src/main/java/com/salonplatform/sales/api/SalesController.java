@@ -8,9 +8,14 @@ import com.salonplatform.sales.domain.enums.LeadSource;
 import com.salonplatform.sales.domain.enums.LeadStage;
 import com.salonplatform.sales.domain.enums.LeadType;
 import com.salonplatform.sales.dto.*;
+import com.salonplatform.sales.dto.ClaimDiscoverSalonRequest;
+import com.salonplatform.sales.dto.ScheduleFollowUpRequest;
 import jakarta.validation.Valid;
+import com.salonplatform.google.GooglePlacesPhotoService;
+import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -27,6 +32,9 @@ public class SalesController {
     private final SalesRepService repService;
     private final SalesIncentiveService incentiveService;
     private final SalesAnalyticsService analyticsService;
+    private final SalesLeadDiscoveryService leadDiscoveryService;
+    private final SalesMapSyncService mapSyncService;
+    private final GooglePlacesPhotoService googlePlacesPhotoService;
 
     @GetMapping("/leads")
     public ApiResponse<PageResponse<SalesLeadResponse>> listLeads(
@@ -106,6 +114,59 @@ public class SalesController {
     @GetMapping("/localities")
     public ApiResponse<List<SalesLocalityResponse>> localities() {
         return ApiResponse.ok(leadService.listLocalities());
+    }
+
+    @PostMapping("/leads/discover/preview")
+    public ApiResponse<DiscoverSalonsResponse> previewDiscoverSalons(
+            @Valid @RequestBody DiscoverSalonsRequest request) {
+        return ApiResponse.ok(leadDiscoveryService.preview(request));
+    }
+
+    @PostMapping("/leads/discover/sync")
+    public ApiResponse<MapSyncJobResponse> startMapSync(@Valid @RequestBody StartMapSyncRequest request) {
+        return ApiResponse.ok(mapSyncService.startSync(request));
+    }
+
+    @GetMapping("/leads/discover/sync/active")
+    public ApiResponse<MapSyncJobResponse> activeMapSync() {
+        return ApiResponse.ok(mapSyncService.getActiveJob());
+    }
+
+    @GetMapping("/leads/discover/sync/{jobId}")
+    public ApiResponse<MapSyncJobResponse> getMapSync(@PathVariable UUID jobId) {
+        return ApiResponse.ok(mapSyncService.getJob(jobId));
+    }
+
+    @PostMapping("/leads/discover/import")
+    public ApiResponse<DiscoverSalonsResponse> importDiscoverSalons(
+            @Valid @RequestBody DiscoverSalonsRequest request) {
+        return ApiResponse.ok(leadDiscoveryService.importSalons(request));
+    }
+
+    @PostMapping("/leads/discover/claim")
+    public ApiResponse<SalesLeadResponse> claimDiscoverSalon(
+            @Valid @RequestBody ClaimDiscoverSalonRequest request) {
+        return ApiResponse.ok(leadDiscoveryService.claimDiscoverSalon(request));
+    }
+
+    @PostMapping("/leads/{id}/claim")
+    public ApiResponse<SalesLeadResponse> claimLead(@PathVariable UUID id) {
+        return ApiResponse.ok(leadDiscoveryService.claimLead(id));
+    }
+
+    @PostMapping("/leads/{id}/follow-up")
+    public ApiResponse<SalesActivityResponse> scheduleFollowUp(
+            @PathVariable UUID id,
+            @Valid @RequestBody ScheduleFollowUpRequest request) {
+        return ApiResponse.ok(leadService.scheduleFollowUp(id, request));
+    }
+
+    @GetMapping("/places/photo")
+    public ResponseEntity<byte[]> discoverPlacePhoto(
+            @RequestParam String ref,
+            @RequestParam(defaultValue = "120") int maxHeight) {
+        SecurityUtils.assertSalesAccess();
+        return googlePlacesPhotoService.fetchPhoto(ref, maxHeight);
     }
 
     @GetMapping("/use-cases")

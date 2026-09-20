@@ -57,6 +57,22 @@ public class SalesLead {
 
     private String address;
 
+    /** Google Places id — dedupe map-discovered salon leads. */
+    @Column(length = 128)
+    private String googlePlaceId;
+
+    private Double mapLatitude;
+    private Double mapLongitude;
+    private Double mapRating;
+    private Integer mapReviewCount;
+    @Column(length = 512)
+    private String mapPhotoRef;
+    @Column(length = 128)
+    private String mapCategory;
+    @Column(length = 512)
+    private String mapGoogleMapsUrl;
+    private Instant lastMapSyncAt;
+
     @Builder.Default
     private String city = "Bangalore";
 
@@ -71,6 +87,11 @@ public class SalesLead {
 
     /** UUID reference to users.id — no FK for microservice extraction */
     private UUID assignedRepId;
+
+    /** Exclusive map-pool claim — prevents other reps from claiming until expiry. */
+    private UUID claimedByRepId;
+
+    private Instant claimExpiresAt;
 
     /** UUID reference to tenants.id after conversion */
     private UUID convertedTenantId;

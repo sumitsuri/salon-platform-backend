@@ -26,7 +26,27 @@ public class GooglePlacesProperties {
     /** Default nearby search radius in metres. */
     private int defaultRadiusMeters = 2000;
 
+    /** When true, Places search calls go through production (for IP-restricted prod keys). */
+    private boolean internalProxyEnabled = false;
+
+    /** e.g. https://api.antrahq.com */
+    private String internalProxyBaseUrl = "";
+
+    /** Shared secret for {@code /api/v1/internal/places/*} (server validates; local client sends). */
+    private String internalProxySecret = "";
+
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
+    }
+
+    public boolean useInternalProxy() {
+        return internalProxyEnabled && isInternalProxyConfigured();
+    }
+
+    public boolean isInternalProxyConfigured() {
+        return internalProxyBaseUrl != null
+                && !internalProxyBaseUrl.isBlank()
+                && internalProxySecret != null
+                && !internalProxySecret.isBlank();
     }
 }

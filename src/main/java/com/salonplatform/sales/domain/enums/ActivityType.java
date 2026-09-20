@@ -7,5 +7,6 @@ public enum ActivityType {
     WHATSAPP,
     NOTE,
     PITCH,
-    DEMO
+    DEMO,
+    FOLLOW_UP
 }

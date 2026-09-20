@@ -25,6 +25,10 @@ public class SalesLocality {
 
     private String zone;
 
+    private Double latitude;
+
+    private Double longitude;
+
     @Builder.Default
     private boolean active = true;
 

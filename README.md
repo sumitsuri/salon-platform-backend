@@ -61,8 +61,11 @@ See `src/main/resources/application.yml`. Key variables:
 | Variable | Default |
 |----------|---------|
 | `JWT_SECRET` | (set in production) |
+| `GOOGLE_PLACES_API_KEY` / `GOOGLE_PLACES_API_KEY_LOCAL` | Run `bash scripts/sync-local-google-places-key.sh`. Prod key is IP-restricted — see [docs/GOOGLE_PLACES_LOCAL.md](docs/GOOGLE_PLACES_LOCAL.md) |
 | PostgreSQL | localhost:5432/salon_platform |
 | Redis | localhost:6379 |
+
+Local dev loads `backend/.env.local` automatically when you use `bash scripts/dev-server.sh start`, or export vars before `mvn spring-boot:run`.
 
 ## Related Repo
 

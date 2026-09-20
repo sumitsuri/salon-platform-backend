@@ -11,4 +11,8 @@ public class SalesLocalityResponse {
     private UUID id;
     private String name;
     private String zone;
+    private Double latitude;
+    private Double longitude;
+    /** True when area can be used for map discovery. */
+    private boolean mappable;
 }

@@ -143,5 +143,65 @@ public class SalesSchemaPatch implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Sales leads pricing columns patch failed: {}", e.getMessage());
         }
+        try {
+            jdbcTemplate.execute("ALTER TABLE sales_localities ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE sales_localities ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS google_place_id VARCHAR(128)");
+            jdbcTemplate.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS sales_leads_google_place_id_uq
+                    ON sales_leads (google_place_id)
+                    WHERE google_place_id IS NOT NULL
+                    """);
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS claimed_by_rep_id UUID");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_latitude DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_longitude DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_rating DOUBLE PRECISION");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_review_count INTEGER");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_photo_ref VARCHAR(512)");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_category VARCHAR(128)");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS map_google_maps_url VARCHAR(512)");
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS last_map_sync_at TIMESTAMP");
+            jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS sales_map_sync_jobs (
+                        id UUID PRIMARY KEY,
+                        status VARCHAR(32) NOT NULL,
+                        locality_id UUID,
+                        locality_name VARCHAR(255),
+                        radius_km INT NOT NULL,
+                        total_areas INT DEFAULT 0,
+                        completed_areas INT DEFAULT 0,
+                        current_area_name VARCHAR(255),
+                        leads_inserted INT DEFAULT 0,
+                        leads_skipped_duplicate INT DEFAULT 0,
+                        area_errors INT DEFAULT 0,
+                        error_message TEXT,
+                        triggered_by_user_id UUID,
+                        started_at TIMESTAMP,
+                        finished_at TIMESTAMP,
+                        created_at TIMESTAMP,
+                        updated_at TIMESTAMP
+                    )
+                    """);
+        } catch (Exception e) {
+            log.warn("Sales discovery schema patch failed: {}", e.getMessage());
+        }
+        try {
+            jdbcTemplate.execute("ALTER TABLE sales_leads DROP CONSTRAINT IF EXISTS sales_leads_source_check");
+            jdbcTemplate.execute("""
+                    ALTER TABLE sales_leads ADD CONSTRAINT sales_leads_source_check CHECK (
+                        source IN (
+                            'FIELD',
+                            'MARKETING_WEB',
+                            'REFERRAL',
+                            'INBOUND_CALL',
+                            'MAP_DISCOVERY',
+                            'OTHER'
+                        )
+                    )
+                    """);
+        } catch (Exception e) {
+            log.warn("Sales leads source constraint patch failed: {}", e.getMessage());
+        }
     }
 }

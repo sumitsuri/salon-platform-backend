@@ -31,6 +31,9 @@ public class SalesLeadResponse {
     private String notes;
     private UUID assignedRepId;
     private String assignedRepName;
+    private UUID claimedByRepId;
+    private String claimedByRepName;
+    private Instant claimExpiresAt;
     private UUID convertedTenantId;
     private BigDecimal projectedMrr;
     private String planTier;

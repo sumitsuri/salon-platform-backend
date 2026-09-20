@@ -257,7 +257,22 @@ public class SalesLeadService {
                 .build();
 
         SalesActivity saved = activityRepository.save(activity);
+        if (request.getActivityType() == ActivityType.FOLLOW_UP) {
+            leadRepository.findById(leadId).ifPresent(lead -> {
+                lead.setNextFollowUpAt(saved.getActivityAt());
+                leadRepository.save(lead);
+            });
+        }
         return toActivityResponse(saved);
+    }
+
+    @Transactional
+    public SalesActivityResponse scheduleFollowUp(UUID leadId, ScheduleFollowUpRequest request) {
+        CreateSalesActivityRequest activity = new CreateSalesActivityRequest();
+        activity.setActivityType(ActivityType.FOLLOW_UP);
+        activity.setNotes(request.getNotes());
+        activity.setActivityAt(request.getFollowUpAt());
+        return addActivity(leadId, activity);
     }
 
     @Transactional(readOnly = true)
@@ -282,7 +297,14 @@ public class SalesLeadService {
     public List<SalesLocalityResponse> listLocalities() {
         SecurityUtils.assertSalesAccess();
         return localityRepository.findByActiveTrueOrderByZoneAscNameAsc().stream()
-                .map(l -> SalesLocalityResponse.builder().id(l.getId()).name(l.getName()).zone(l.getZone()).build())
+                .map(l -> SalesLocalityResponse.builder()
+                        .id(l.getId())
+                        .name(l.getName())
+                        .zone(l.getZone())
+                        .latitude(l.getLatitude())
+                        .longitude(l.getLongitude())
+                        .mappable(l.getLatitude() != null && l.getLongitude() != null)
+                        .build())
                 .toList();
     }
 
@@ -299,9 +321,15 @@ public class SalesLeadService {
     private SalesLead requireLeadWithAccess(UUID id) {
         SalesLead lead = leadRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Lead not found"));
-        if (SecurityUtils.isSalesExecutive()
-                && !SecurityUtils.currentUserId().equals(lead.getAssignedRepId())) {
-            throw new ForbiddenException("Access denied for this lead");
+        if (SecurityUtils.isSalesExecutive()) {
+            UUID me = SecurityUtils.currentUserId();
+            boolean assigned = me.equals(lead.getAssignedRepId());
+            boolean claimed = me.equals(lead.getClaimedByRepId())
+                    && lead.getClaimExpiresAt() != null
+                    && lead.getClaimExpiresAt().isAfter(java.time.Instant.now());
+            if (!assigned && !claimed) {
+                throw new ForbiddenException("Access denied for this lead");
+            }
         }
         return lead;
     }
@@ -331,6 +359,9 @@ public class SalesLeadService {
         String repName = lead.getAssignedRepId() != null
                 ? userRepository.findById(lead.getAssignedRepId()).map(User::getName).orElse(null)
                 : null;
+        String claimName = lead.getClaimedByRepId() != null
+                ? userRepository.findById(lead.getClaimedByRepId()).map(User::getName).orElse(null)
+                : null;
         return SalesLeadResponse.builder()
                 .id(lead.getId())
                 .businessName(lead.getBusinessName())
@@ -349,6 +380,9 @@ public class SalesLeadService {
                 .notes(lead.getNotes())
                 .assignedRepId(lead.getAssignedRepId())
                 .assignedRepName(repName)
+                .claimedByRepId(lead.getClaimedByRepId())
+                .claimedByRepName(claimName)
+                .claimExpiresAt(lead.getClaimExpiresAt())
                 .convertedTenantId(lead.getConvertedTenantId())
                 .projectedMrr(lead.getProjectedMrr())
                 .planTier(lead.getPlanTier())

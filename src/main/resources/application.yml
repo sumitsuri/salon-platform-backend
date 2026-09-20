@@ -169,9 +169,20 @@ app:
     google-auto-publish-enabled: true
     google-auto-publish-min-rating: 4
 
+  sales:
+    map-ingestion:
+      enabled: ${SALES_MAP_INGESTION_ENABLED:true}
+      cron: ${SALES_MAP_INGESTION_CRON:0 0 0/6 * * *}
+      radius-km: ${SALES_MAP_INGESTION_RADIUS_KM:5}
+      claim-duration-days: ${SALES_LEAD_CLAIM_DAYS:30}
+      bootstrap-on-startup: ${SALES_MAP_BOOTSTRAP_ON_STARTUP:true}
+
   google:
     places:
-      api-key: ${GOOGLE_PLACES_API_KEY:}
+      api-key: ${GOOGLE_PLACES_API_KEY_LOCAL:${GOOGLE_PLACES_API_KEY:}}
+      internal-proxy-enabled: ${APP_GOOGLE_PLACES_INTERNAL_PROXY_ENABLED:false}
+      internal-proxy-base-url: ${APP_GOOGLE_PLACES_INTERNAL_PROXY_BASE_URL:}
+      internal-proxy-secret: ${PLACES_INTERNAL_PROXY_SECRET:}
       pilot-branch-code: VAR
       pilot-tenant-slug: demo-brand
       sync-cache-hours: 24

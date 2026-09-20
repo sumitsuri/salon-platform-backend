@@ -64,9 +64,18 @@ app:
     public-frontend-base-url: ${PUBLIC_FRONTEND_BASE_URL:https://app.antrahq.com}
     google-auto-publish-enabled: true
     google-auto-publish-min-rating: 4
+  sales:
+    map-ingestion:
+      enabled: true
+      # Same GOOGLE_PLACES_API_KEY as Local Spotlight (EC2 runtime.env); avoid full sync on every deploy.
+      bootstrap-on-startup: false
   google:
     places:
+      # SSM /salon-platform-prod/google/places_api_key — shared with Local Spotlight sync.
       api-key: ${GOOGLE_PLACES_API_KEY:}
+      internal-proxy-enabled: false
+      internal-proxy-base-url: ${API_PUBLIC_URL:https://api.antrahq.com}
+      internal-proxy-secret: ${PLACES_INTERNAL_PROXY_SECRET:}
       pilot-branch-code: VAR
       pilot-tenant-slug: demo-brand
       sync-cache-hours: 24

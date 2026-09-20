@@ -5,5 +5,7 @@ public enum LeadSource {
     MARKETING_WEB,
     REFERRAL,
     INBOUND_CALL,
+    /** Pulled from Google Maps near a Bangalore area. */
+    MAP_DISCOVERY,
     OTHER
 }

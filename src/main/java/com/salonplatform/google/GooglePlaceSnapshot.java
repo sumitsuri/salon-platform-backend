@@ -18,6 +18,11 @@ public class GooglePlaceSnapshot {
     private String websiteUri;
     private String phone;
     private boolean hasOpeningHours;
+    /** First photo resource name for Places Photo API, e.g. places/…/photos/…. */
+    private String photoName;
+    private Boolean openNow;
+    /** Short hours line for listing UI, e.g. weekday description or open/closed hint. */
+    private String hoursSummary;
     private String primaryType;
     /** Count of public reviews with rating below 4 stars in Google's returned review sample. */
     private Integer lowRatingReviewCount;
