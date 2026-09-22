@@ -2,19 +2,29 @@ package com.salonplatform.service;
 
 import com.salonplatform.domain.entity.Booking;
 import com.salonplatform.domain.entity.BookingLineItem;
+import com.salonplatform.domain.entity.CustomerPackageSubscription;
 import com.salonplatform.domain.entity.Invoice;
+import com.salonplatform.domain.entity.MembershipSubscription;
 import com.salonplatform.domain.repository.BookingLineItemRepository;
 import com.salonplatform.domain.repository.BookingRepository;
+import com.salonplatform.domain.repository.CustomerPackageSubscriptionRepository;
+import com.salonplatform.domain.repository.MembershipSubscriptionRepository;
 import com.salonplatform.dto.billing.BillLinePreview;
 import com.salonplatform.dto.billing.BillPreviewResponse;
+import com.salonplatform.exception.BadRequestException;
+import com.salonplatform.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -25,14 +35,27 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class InvoiceSalesAggregationService {
 
+    private static final Logger log = LoggerFactory.getLogger(InvoiceSalesAggregationService.class);
+
     private final BookingLineItemRepository lineItemRepository;
     private final BookingRepository bookingRepository;
     private final GstCalculationService gstCalculationService;
     private final PromoResolutionService promoResolutionService;
     private final ServicePackageService servicePackageService;
     private final PackageStaffSaleImputationService packageStaffSaleImputationService;
+    private final MembershipSubscriptionRepository membershipSubscriptionRepository;
+    private final CustomerPackageSubscriptionRepository packageSubscriptionRepository;
 
-    public Map<UUID, StaffLineAggregate> aggregateByStaff(List<Invoice> invoices) {
+    /**
+     * Staff sales for a date range — booking line items (services, plus redemptions imputed by
+     * {@link PackageStaffSaleImputationService}) PLUS membership and package sale amounts, credited
+     * to whoever sold them. Membership and package purchases never create booking line items (a
+     * membership sold standalone has no booking at all, and a package sold during checkout is only
+     * recorded as a fee on the invoice), so without this second pass those sale amounts silently
+     * vanish from every staff total.
+     */
+    public Map<UUID, StaffLineAggregate> aggregateByStaff(
+            List<Invoice> invoices, UUID tenantId, Instant rangeStart, Instant rangeEnd, Set<UUID> branchFilter) {
         Map<UUID, BookingLineAggregate> byStaff = new HashMap<>();
         for (Invoice invoice : invoices) {
             List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
@@ -66,9 +89,56 @@ public class InvoiceSalesAggregationService {
                 });
             }
         }
+        addPromoSales(byStaff, tenantId, rangeStart, rangeEnd, branchFilter);
         Map<UUID, StaffLineAggregate> result = new HashMap<>();
         byStaff.forEach((staffId, acc) -> result.put(staffId, acc.toStaffAggregate()));
         return result;
+    }
+
+    private void addPromoSales(
+            Map<UUID, BookingLineAggregate> byStaff,
+            UUID tenantId,
+            Instant rangeStart,
+            Instant rangeEnd,
+            Set<UUID> branchFilter) {
+        for (MembershipSubscription sub : membershipSubscriptionRepository
+                .findByTenantIdAndSoldByStaffIdIsNotNull(tenantId)) {
+            addPromoSale(byStaff, sub.getSoldByStaffId(), sub.getBranchId(), sub.getAmountPaid(),
+                    sub.getCreatedAt(), rangeStart, rangeEnd, branchFilter);
+        }
+        for (CustomerPackageSubscription sub : packageSubscriptionRepository
+                .findByTenantIdAndSoldByStaffIdIsNotNull(tenantId)) {
+            addPromoSale(byStaff, sub.getSoldByStaffId(), sub.getBranchId(), sub.getAmountPaid(),
+                    sub.getCreatedAt(), rangeStart, rangeEnd, branchFilter);
+        }
+    }
+
+    private static void addPromoSale(
+            Map<UUID, BookingLineAggregate> byStaff,
+            UUID staffId,
+            UUID branchId,
+            BigDecimal amountPaid,
+            Instant soldAt,
+            Instant rangeStart,
+            Instant rangeEnd,
+            Set<UUID> branchFilter) {
+        if (staffId == null) {
+            return;
+        }
+        if (branchFilter != null && !branchFilter.contains(branchId)) {
+            return;
+        }
+        if (rangeStart != null && (soldAt == null || soldAt.isBefore(rangeStart))) {
+            return;
+        }
+        if (rangeEnd != null && (soldAt == null || !soldAt.isBefore(rangeEnd))) {
+            return;
+        }
+        BigDecimal amount = amountPaid != null ? amountPaid : BigDecimal.ZERO;
+        byStaff.compute(staffId, (k, acc) -> {
+            BookingLineAggregate current = acc == null ? new BookingLineAggregate() : acc;
+            return current.add(amount, amount, 1);
+        });
     }
 
     public Map<String, ServiceLineAggregate> aggregateByServiceName(List<Invoice> invoices) {
@@ -117,19 +187,33 @@ public class InvoiceSalesAggregationService {
                 .collect(Collectors.toMap(BillLinePreview::getLineItemId, l -> l, (a, b) -> a));
     }
 
+    /**
+     * Rebuilds a per-line bill breakdown for an already-paid invoice, purely to attribute revenue
+     * by staff/service. The coupon or offer applied here was valid when the sale was made — that
+     * it may since have expired or been deactivated must not stop reporting on the past sale, so
+     * promo resolution failures fall back to no-promo instead of throwing (mirrors
+     * BookingService#billPreviewForList's handling of the same non-live-checkout case).
+     */
     private BillPreviewResponse billPreviewForInvoice(Invoice invoice, List<BookingLineItem> lines) {
         Booking booking = bookingRepository.findById(invoice.getBookingId()).orElse(null);
         if (booking == null) {
             return null;
         }
-        GstCalculationService.PromoContext promo = promoResolutionService.resolveForBooking(
-                booking.getTenantId(),
-                booking.getBranchId(),
-                booking.getCustomerId(),
-                booking.getCouponId(),
-                booking.getOfferId(),
-                booking.getPendingMembershipPlanId(),
-                booking.getPendingPackagePlanId());
+        GstCalculationService.PromoContext promo;
+        try {
+            promo = promoResolutionService.resolveForBooking(
+                    booking.getTenantId(),
+                    booking.getBranchId(),
+                    booking.getCustomerId(),
+                    booking.getCouponId(),
+                    booking.getOfferId(),
+                    booking.getPendingMembershipPlanId(),
+                    booking.getPendingPackagePlanId());
+        } catch (BadRequestException | ResourceNotFoundException ex) {
+            log.warn("Skipping promo re-resolution for historical invoice {} (booking {}): {}",
+                    invoice.getId(), booking.getId(), ex.getMessage());
+            promo = GstCalculationService.PromoContext.empty();
+        }
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
         return servicePackageService.applyValueCreditToPreview(bill, lines);
     }

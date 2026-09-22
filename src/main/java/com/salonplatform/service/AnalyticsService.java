@@ -134,8 +134,11 @@ public class AnalyticsService {
         UUID tenantId = SecurityUtils.requireTenantId();
         List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
         List<Invoice> invoices = fetchInvoices(tenantId, startDate, endDate, resolvedBranchIds);
+        Instant[] range = resolveInstantRange(startDate, endDate);
+        Set<UUID> branchFilter = resolvedBranchIds != null && !resolvedBranchIds.isEmpty()
+                ? new HashSet<>(resolvedBranchIds) : null;
         Map<UUID, InvoiceSalesAggregationService.StaffLineAggregate> salesByStaff =
-                invoiceSalesAggregationService.aggregateByStaff(invoices);
+                invoiceSalesAggregationService.aggregateByStaff(invoices, tenantId, range[0], range[1], branchFilter);
 
         List<StaffSalesPerformanceResponse.StaffSalesRow> staff = salesByStaff.entrySet().stream()
                 .map(e -> {
@@ -162,19 +165,21 @@ public class AnalyticsService {
         return StaffSalesPerformanceResponse.builder().staff(staff).build();
     }
 
-    private List<Invoice> fetchInvoices(UUID tenantId, LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
+    /** {@code [rangeStart, rangeEnd)} — both null when no date filter was requested. */
+    private Instant[] resolveInstantRange(LocalDate startDate, LocalDate endDate) {
         ZoneId zone = ZoneId.of("Asia/Kolkata");
-        final Instant rangeStart;
-        final Instant rangeEnd;
-        if (startDate != null || endDate != null) {
-            LocalDate start = startDate != null ? startDate : endDate;
-            LocalDate end = endDate != null ? endDate : startDate;
-            rangeStart = start.atStartOfDay(zone).toInstant();
-            rangeEnd = end.plusDays(1).atStartOfDay(zone).toInstant();
-        } else {
-            rangeStart = null;
-            rangeEnd = null;
+        if (startDate == null && endDate == null) {
+            return new Instant[] {null, null};
         }
+        LocalDate start = startDate != null ? startDate : endDate;
+        LocalDate end = endDate != null ? endDate : startDate;
+        return new Instant[] {start.atStartOfDay(zone).toInstant(), end.plusDays(1).atStartOfDay(zone).toInstant()};
+    }
+
+    private List<Invoice> fetchInvoices(UUID tenantId, LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
+        Instant[] range = resolveInstantRange(startDate, endDate);
+        Instant rangeStart = range[0];
+        Instant rangeEnd = range[1];
 
         Set<UUID> branchFilter = branchIds != null && !branchIds.isEmpty()
                 ? new HashSet<>(branchIds) : null;
