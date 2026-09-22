@@ -177,6 +177,12 @@ public class SalesLeadService {
         if (request.getExpectedBranches() != null) {
             lead.setExpectedBranches(request.getExpectedBranches());
         }
+        if (request.getPlanTier() != null) {
+            lead.setPlanTier(request.getPlanTier());
+        }
+        if (request.getQuotedSkuSelection() != null) {
+            lead.setQuotedSkuSelection(request.getQuotedSkuSelection());
+        }
         boolean pricingTouched = request.getQuotedAmount() != null
                 || request.getBillingPeriod() != null
                 || request.getDiscountPercent() != null
@@ -386,6 +392,7 @@ public class SalesLeadService {
                 .convertedTenantId(lead.getConvertedTenantId())
                 .projectedMrr(lead.getProjectedMrr())
                 .planTier(lead.getPlanTier())
+                .quotedSkuSelection(lead.getQuotedSkuSelection())
                 .quotedAmount(lead.getQuotedAmount())
                 .billingPeriod(lead.getBillingPeriod())
                 .discountPercent(lead.getDiscountPercent())

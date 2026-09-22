@@ -23,6 +23,11 @@ public class UpdateSalesLeadRequest {
 
     private Integer expectedBranches;
 
+    private String planTier;
+
+    /** JSON snapshot of the SKU picker state — see SkuLineItemSelector on the frontend. */
+    private String quotedSkuSelection;
+
     private BigDecimal quotedAmount;
 
     private BillingPeriod billingPeriod;

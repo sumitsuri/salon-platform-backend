@@ -37,6 +37,7 @@ public class SalesLeadResponse {
     private UUID convertedTenantId;
     private BigDecimal projectedMrr;
     private String planTier;
+    private String quotedSkuSelection;
     private BigDecimal quotedAmount;
     private BillingPeriod billingPeriod;
     private BigDecimal discountPercent;

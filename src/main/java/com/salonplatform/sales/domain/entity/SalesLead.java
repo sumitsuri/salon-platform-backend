@@ -100,6 +100,10 @@ public class SalesLead {
 
     private String planTier;
 
+    /** JSON snapshot of the SKU picker state (base tier, add-ons, branches, seats) behind quotedAmount. */
+    @Column(columnDefinition = "TEXT")
+    private String quotedSkuSelection;
+
     private BigDecimal quotedAmount;
 
     @Enumerated(EnumType.STRING)

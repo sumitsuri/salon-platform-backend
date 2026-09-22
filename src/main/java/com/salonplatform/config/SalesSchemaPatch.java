@@ -203,5 +203,31 @@ public class SalesSchemaPatch implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Sales leads source constraint patch failed: {}", e.getMessage());
         }
+        try {
+            // ActivityType.FOLLOW_UP predates this constraint refresh — scheduleFollowUp() was
+            // failing every insert with a check-constraint violation until this ran.
+            jdbcTemplate.execute("ALTER TABLE sales_activities DROP CONSTRAINT IF EXISTS sales_activities_activity_type_check");
+            jdbcTemplate.execute("""
+                    ALTER TABLE sales_activities ADD CONSTRAINT sales_activities_activity_type_check CHECK (
+                        activity_type IN (
+                            'VISIT',
+                            'CALL',
+                            'EMAIL',
+                            'WHATSAPP',
+                            'NOTE',
+                            'PITCH',
+                            'DEMO',
+                            'FOLLOW_UP'
+                        )
+                    )
+                    """);
+        } catch (Exception e) {
+            log.warn("Sales activity type constraint patch failed: {}", e.getMessage());
+        }
+        try {
+            jdbcTemplate.execute("ALTER TABLE sales_leads ADD COLUMN IF NOT EXISTS quoted_sku_selection TEXT");
+        } catch (Exception e) {
+            log.warn("Sales leads SKU selection column patch failed: {}", e.getMessage());
+        }
     }
 }
