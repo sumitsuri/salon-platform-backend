@@ -56,13 +56,15 @@ public class InvoiceSalesAggregationService {
      */
     public Map<UUID, StaffLineAggregate> aggregateByStaff(
             List<Invoice> invoices, UUID tenantId, Instant rangeStart, Instant rangeEnd, Set<UUID> branchFilter) {
+        Map<UUID, List<BookingLineItem>> linesByBooking = fetchLinesByBooking(invoices);
+        Map<UUID, Booking> bookingsById = fetchBookingsById(invoices);
         Map<UUID, BookingLineAggregate> byStaff = new HashMap<>();
         for (Invoice invoice : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(invoice.getBookingId(), List.of());
             if (lines.isEmpty()) {
                 continue;
             }
-            BillPreviewResponse bill = billPreviewForInvoice(invoice, lines);
+            BillPreviewResponse bill = billPreviewForInvoice(invoice, bookingsById.get(invoice.getBookingId()), lines);
             Map<UUID, BillLinePreview> previewByLineId = previewIndex(bill);
             for (BookingLineItem line : lines) {
                 if (line.getStaffId() == null) {
@@ -142,13 +144,15 @@ public class InvoiceSalesAggregationService {
     }
 
     public Map<String, ServiceLineAggregate> aggregateByServiceName(List<Invoice> invoices) {
+        Map<UUID, List<BookingLineItem>> linesByBooking = fetchLinesByBooking(invoices);
+        Map<UUID, Booking> bookingsById = fetchBookingsById(invoices);
         Map<String, ServiceLineAggregate> byService = new HashMap<>();
         for (Invoice invoice : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(invoice.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(invoice.getBookingId(), List.of());
             if (lines.isEmpty()) {
                 continue;
             }
-            BillPreviewResponse bill = billPreviewForInvoice(invoice, lines);
+            BillPreviewResponse bill = billPreviewForInvoice(invoice, bookingsById.get(invoice.getBookingId()), lines);
             Map<UUID, BillLinePreview> previewByLineId = previewIndex(bill);
             for (BookingLineItem line : lines) {
                 if (line.getServiceName() == null) {
@@ -178,6 +182,20 @@ public class InvoiceSalesAggregationService {
         return byService;
     }
 
+    /** One bulk query for every invoice's line items instead of a findByBookingId() call per invoice. */
+    private Map<UUID, List<BookingLineItem>> fetchLinesByBooking(List<Invoice> invoices) {
+        List<UUID> bookingIds = invoices.stream().map(Invoice::getBookingId).distinct().collect(Collectors.toList());
+        return lineItemRepository.findByBookingIdIn(bookingIds).stream()
+                .collect(Collectors.groupingBy(BookingLineItem::getBookingId));
+    }
+
+    /** One bulk query for every invoice's booking instead of a findById() call per invoice. */
+    private Map<UUID, Booking> fetchBookingsById(List<Invoice> invoices) {
+        List<UUID> bookingIds = invoices.stream().map(Invoice::getBookingId).distinct().collect(Collectors.toList());
+        return bookingRepository.findAllById(bookingIds).stream()
+                .collect(Collectors.toMap(Booking::getId, b -> b));
+    }
+
     private Map<UUID, BillLinePreview> previewIndex(BillPreviewResponse bill) {
         if (bill == null || bill.getLines() == null) {
             return Map.of();
@@ -194,8 +212,7 @@ public class InvoiceSalesAggregationService {
      * promo resolution failures fall back to no-promo instead of throwing (mirrors
      * BookingService#billPreviewForList's handling of the same non-live-checkout case).
      */
-    private BillPreviewResponse billPreviewForInvoice(Invoice invoice, List<BookingLineItem> lines) {
-        Booking booking = bookingRepository.findById(invoice.getBookingId()).orElse(null);
+    private BillPreviewResponse billPreviewForInvoice(Invoice invoice, Booking booking, List<BookingLineItem> lines) {
         if (booking == null) {
             return null;
         }

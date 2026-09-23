@@ -12,6 +12,7 @@ import com.salonplatform.dto.leave.LeaveResponse;
 import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -34,6 +35,7 @@ public class AttendanceAnalyticsService {
     private final AttendanceService attendanceService;
     private final LeaveService leaveService;
 
+    @Transactional(readOnly = true)
     public AttendanceDashboardResponse getDashboard(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UUID tenantId = SecurityUtils.requireTenantId();
         SecurityUtils.assertBrandAdminOrAbove();

@@ -12,6 +12,7 @@ import com.salonplatform.dto.staff.*;
 import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,6 +36,7 @@ public class StaffPerformanceService {
     private final BookingLineItemRepository lineItemRepository;
     private final InvoiceSalesAggregationService invoiceSalesAggregationService;
 
+    @Transactional(readOnly = true)
     public StaffTargetPerformanceResponse getTargetPerformance(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         SecurityUtils.assertBrandAdminOrAbove();
@@ -137,6 +139,7 @@ public class StaffPerformanceService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public StaffTargetTrendsResponse getTargetTrends(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         SecurityUtils.assertBrandAdminOrAbove();
@@ -239,10 +242,14 @@ public class StaffPerformanceService {
     }
 
     private Map<UUID, Map<LocalDate, BigDecimal>> aggregateDailySalesByStaff(List<Invoice> invoices) {
+        List<UUID> bookingIds = invoices.stream().map(Invoice::getBookingId).distinct().collect(Collectors.toList());
+        Map<UUID, List<BookingLineItem>> linesByBooking = lineItemRepository.findByBookingIdIn(bookingIds).stream()
+                .collect(Collectors.groupingBy(BookingLineItem::getBookingId));
+
         Map<UUID, Map<LocalDate, BigDecimal>> result = new HashMap<>();
         for (Invoice inv : invoices) {
             LocalDate day = inv.getIssuedAt().atZone(ZONE).toLocalDate();
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(inv.getBookingId(), List.of());
             for (BookingLineItem line : lines) {
                 result.computeIfAbsent(line.getStaffId(), k -> new HashMap<>())
                         .merge(day, line.getUnitPrice(), BigDecimal::add);

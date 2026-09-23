@@ -11,6 +11,7 @@ import com.salonplatform.dto.analytics.*;
 import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -32,6 +33,7 @@ public class PlAnalyticsService {
     private final InvoiceRepository invoiceRepository;
     private final BranchExpenditureRepository expenditureRepository;
 
+    @Transactional(readOnly = true)
     public PlSummaryResponse getPlSummary(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();

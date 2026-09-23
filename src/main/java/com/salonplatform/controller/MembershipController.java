@@ -8,6 +8,7 @@ import com.salonplatform.dto.membership.MembershipListFilter;
 import com.salonplatform.dto.membership.MembershipPlanResponse;
 import com.salonplatform.dto.membership.MembershipSubscriptionResponse;
 import com.salonplatform.dto.membership.SellMembershipRequest;
+import com.salonplatform.service.BookingService;
 import com.salonplatform.service.MembershipService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ import java.util.UUID;
 public class MembershipController {
 
     private final MembershipService membershipService;
+    private final BookingService bookingService;
 
     @GetMapping("/plans")
     public ApiResponse<List<MembershipPlanResponse>> listPlans() {
@@ -48,7 +50,11 @@ public class MembershipController {
 
     @PostMapping("/subscriptions")
     public ApiResponse<MembershipSubscriptionResponse> sell(@Valid @RequestBody SellMembershipRequest request) {
-        return ApiResponse.ok(membershipService.sell(request));
+        // Routed through a zero-line booking + payment so standalone (no-visit) membership sales
+        // produce a real Invoice and show up in bookings lists / branch revenue, same as a
+        // membership sold alongside a service visit. See BookingService.sellStandaloneMembership.
+        bookingService.sellStandaloneMembership(request);
+        return ApiResponse.ok(membershipService.getActiveForCustomer(request.getCustomerId()));
     }
 
     @GetMapping("/subscriptions/active")

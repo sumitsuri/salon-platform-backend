@@ -7,6 +7,7 @@ import com.salonplatform.dto.inventory.*;
 import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -29,6 +30,7 @@ public class InventoryAnalyticsService {
     private final InventoryMovementRepository movementRepository;
     private final InventoryProductRepository productRepository;
 
+    @Transactional(readOnly = true)
     public InventoryOverviewResponse getOverview(LocalDate month, List<UUID> branchIds) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();

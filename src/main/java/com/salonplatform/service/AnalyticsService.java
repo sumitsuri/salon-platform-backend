@@ -12,6 +12,7 @@ import com.salonplatform.security.UserPrincipal;
 import com.salonplatform.util.PageUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,19 +40,22 @@ public class AnalyticsService {
     private final PromoResolutionService promoResolutionService;
     private final InvoiceSalesAggregationService invoiceSalesAggregationService;
 
+    @Transactional(readOnly = true)
     public DashboardResponse getDashboard(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
         List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
-        return computeDashboard(tenantId, startDate, endDate, resolvedBranchIds);
+        List<Invoice> invoices = fetchInvoices(tenantId, startDate, endDate, resolvedBranchIds);
+        return computeDashboard(tenantId, startDate, endDate, resolvedBranchIds, invoices);
     }
 
+    @Transactional(readOnly = true)
     public RecommendationsResponse getRecommendations(LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
         List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
         List<Invoice> invoices = fetchInvoices(tenantId, startDate, endDate, resolvedBranchIds);
-        DashboardResponse dashboard = computeDashboard(tenantId, startDate, endDate, resolvedBranchIds);
+        DashboardResponse dashboard = computeDashboard(tenantId, startDate, endDate, resolvedBranchIds, invoices);
         RecommendationsResponse response = recommendationService.generate(dashboard, user.getRole());
         List<WeekdaySalesInsight> weekdayInsights = weekdaySalesService.analyze(invoices, startDate, endDate, dashboard);
         return RecommendationsResponse.builder()
@@ -61,6 +65,7 @@ public class AnalyticsService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public ServiceContributionResponse getServiceContribution(
             LocalDate startDate,
             LocalDate endDate,
@@ -128,6 +133,7 @@ public class AnalyticsService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public StaffSalesPerformanceResponse getStaffSalesPerformance(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
@@ -207,7 +213,8 @@ public class AnalyticsService {
         return branchIds;
     }
 
-    private DashboardResponse computeDashboard(UUID tenantId, LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
+    private DashboardResponse computeDashboard(
+            UUID tenantId, LocalDate startDate, LocalDate endDate, List<UUID> branchIds, List<Invoice> invoices) {
         ZoneId zone = ZoneId.of("Asia/Kolkata");
         final Instant rangeStart;
         final Instant rangeEnd;
@@ -221,9 +228,14 @@ public class AnalyticsService {
             rangeEnd = null;
         }
 
-        List<Invoice> invoices = fetchInvoices(tenantId, startDate, endDate, branchIds);
         Set<UUID> branchFilter = branchIds != null && !branchIds.isEmpty()
                 ? new HashSet<>(branchIds) : null;
+
+        // One bulk fetch for every invoice's line items instead of a findByBookingId() call per invoice
+        // per loop below — this is the main cost that used to scale with the selected date range.
+        List<UUID> bookingIds = invoices.stream().map(Invoice::getBookingId).distinct().collect(Collectors.toList());
+        Map<UUID, List<BookingLineItem>> linesByBooking = lineItemRepository.findByBookingIdIn(bookingIds).stream()
+                .collect(Collectors.groupingBy(BookingLineItem::getBookingId));
 
         BigDecimal totalRevenue = invoices.stream().map(Invoice::getGrandTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
         long visits = invoices.size();
@@ -254,14 +266,14 @@ public class AnalyticsService {
                     .visits(v)
                     .avgTicket(avg)
                     .discountAmount(branchDiscounts)
-                    .topStaff(buildBranchStaffStats(branchInvoices, branch.getName()))
-                    .topServices(buildBranchServiceStats(branchInvoices))
+                    .topStaff(buildBranchStaffStats(branchInvoices, branch.getName(), linesByBooking))
+                    .topServices(buildBranchServiceStats(branchInvoices, linesByBooking))
                     .build();
         }).sorted(Comparator.comparing(BranchStats::getRevenue).reversed()).collect(Collectors.toList());
 
         Map<String, ServiceStats> serviceMap = new HashMap<>();
         for (Invoice inv : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(inv.getBookingId(), List.of());
             for (BookingLineItem line : lines) {
                 serviceMap.compute(line.getServiceName(), (k, v) -> {
                     if (v == null) return ServiceStats.builder().serviceName(k).revenue(line.getUnitPrice()).count(1).build();
@@ -277,7 +289,7 @@ public class AnalyticsService {
 
         Map<UUID, StaffStats> staffMap = new HashMap<>();
         for (Invoice inv : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(inv.getBookingId(), List.of());
             for (BookingLineItem line : lines) {
                 staffMap.compute(line.getStaffId(), (k, v) -> {
                     Staff staff = staffRepository.findById(k).orElse(null);
@@ -304,15 +316,25 @@ public class AnalyticsService {
                 .sorted(Comparator.comparing(StaffStats::getRevenue).reversed())
                 .limit(10).collect(Collectors.toList());
 
-        List<Payment> payments = paymentRepository.findAll().stream()
-                .filter(p -> p.getTenantId().equals(tenantId))
-                .filter(p -> rangeStart == null || (!p.getPaidAt().isBefore(rangeStart) && p.getPaidAt().isBefore(rangeEnd)))
+        List<Payment> payments = (rangeStart == null
+                        ? paymentRepository.findByTenantId(tenantId)
+                        : paymentRepository.findByTenantIdAndPaidAtRange(tenantId, rangeStart, rangeEnd))
+                .stream()
                 .filter(p -> branchFilter == null || branchFilter.contains(p.getBranchId()))
                 .collect(Collectors.toList());
 
-        BigDecimal cash = sumByMode(payments, PaymentMode.CASH);
-        BigDecimal upi = sumByMode(payments, PaymentMode.UPI);
-        BigDecimal card = sumByMode(payments, PaymentMode.CARD);
+        List<UUID> splitPaymentIds = payments.stream()
+                .filter(p -> p.getMode() == PaymentMode.SPLIT)
+                .map(Payment::getId)
+                .collect(Collectors.toList());
+        Map<UUID, List<PaymentSplit>> splitsByPayment = splitPaymentIds.isEmpty()
+                ? Map.of()
+                : paymentSplitRepository.findByPaymentIdIn(splitPaymentIds).stream()
+                        .collect(Collectors.groupingBy(PaymentSplit::getPaymentId));
+
+        BigDecimal cash = sumByMode(payments, PaymentMode.CASH, splitsByPayment);
+        BigDecimal upi = sumByMode(payments, PaymentMode.UPI, splitsByPayment);
+        BigDecimal card = sumByMode(payments, PaymentMode.CARD, splitsByPayment);
 
         List<BranchTrend> branchTrends = buildBranchTrends(invoices, branchesToShow, startDate, endDate, zone);
 
@@ -422,7 +444,7 @@ public class AnalyticsService {
                 .divide(BigDecimal.valueOf(first), 1, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal sumByMode(List<Payment> payments, PaymentMode mode) {
+    private BigDecimal sumByMode(List<Payment> payments, PaymentMode mode, Map<UUID, List<PaymentSplit>> splitsByPayment) {
         BigDecimal direct = payments.stream()
                 .filter(p -> p.getMode() == mode)
                 .map(Payment::getAmount)
@@ -430,7 +452,7 @@ public class AnalyticsService {
 
         BigDecimal fromSplits = payments.stream()
                 .filter(p -> p.getMode() == PaymentMode.SPLIT)
-                .flatMap(p -> paymentSplitRepository.findByPaymentId(p.getId()).stream())
+                .flatMap(p -> splitsByPayment.getOrDefault(p.getId(), List.of()).stream())
                 .filter(s -> s.getMode() == mode)
                 .map(PaymentSplit::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -438,10 +460,11 @@ public class AnalyticsService {
         return direct.add(fromSplits);
     }
 
-    private List<StaffStats> buildBranchStaffStats(List<Invoice> invoices, String branchName) {
+    private List<StaffStats> buildBranchStaffStats(
+            List<Invoice> invoices, String branchName, Map<UUID, List<BookingLineItem>> linesByBooking) {
         Map<UUID, StaffStats> staffMap = new HashMap<>();
         for (Invoice inv : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(inv.getBookingId(), List.of());
             for (BookingLineItem line : lines) {
                 staffMap.compute(line.getStaffId(), (k, v) -> {
                     Staff staff = staffRepository.findById(k).orElse(null);
@@ -468,10 +491,11 @@ public class AnalyticsService {
                 .collect(Collectors.toList());
     }
 
-    private List<ServiceStats> buildBranchServiceStats(List<Invoice> invoices) {
+    private List<ServiceStats> buildBranchServiceStats(
+            List<Invoice> invoices, Map<UUID, List<BookingLineItem>> linesByBooking) {
         Map<String, ServiceStats> serviceMap = new HashMap<>();
         for (Invoice inv : invoices) {
-            List<BookingLineItem> lines = lineItemRepository.findByBookingId(inv.getBookingId());
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(inv.getBookingId(), List.of());
             for (BookingLineItem line : lines) {
                 serviceMap.compute(line.getServiceName(), (k, v) -> {
                     if (v == null) {

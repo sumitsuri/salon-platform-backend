@@ -151,6 +151,37 @@ public class BookingService {
     }
 
     /**
+     * Sells a membership as a standalone walk-in purchase with no accompanying service visit, by
+     * routing it through the same zero-line booking + payment pipeline that a visit-attached
+     * membership sale already uses. This ensures the sale produces a real {@link Invoice} tied to
+     * a {@link Booking}, so it appears in bookings lists and branch revenue like any other visit,
+     * instead of only creating an orphan {@link MembershipSubscription} that nothing else can see.
+     * Any {@code amount} override on the request is ignored — {@link #completePayment} always
+     * charges the plan's fee amount, matching the existing visit-attached membership sale flow.
+     */
+    @Transactional
+    public BookingResponse sellStandaloneMembership(SellMembershipRequest request) {
+        CreateBookingRequest bookingRequest = new CreateBookingRequest();
+        bookingRequest.setBranchId(request.getBranchId());
+        bookingRequest.setCustomerId(request.getCustomerId());
+        bookingRequest.setPendingMembershipPlanId(request.getPlanId());
+        bookingRequest.setKeepOpen(false);
+        BookingResponse booking = create(bookingRequest);
+
+        SetPendingMembershipPlanRequest staffRequest = new SetPendingMembershipPlanRequest();
+        staffRequest.setPlanId(request.getPlanId());
+        staffRequest.setSoldByStaffId(request.getSoldByStaffId());
+        setPendingMembershipPlan(booking.getId(), staffRequest);
+
+        MembershipPlan plan = membershipService.loadPlan(request.getPlanId());
+        RecordPaymentRequest paymentRequest = new RecordPaymentRequest();
+        paymentRequest.setMode(request.getPaymentMode());
+        paymentRequest.setReference(request.getPaymentReference());
+        paymentRequest.setAmount(plan.getFeeAmount() != null ? plan.getFeeAmount() : BigDecimal.ZERO);
+        return completePayment(booking.getId(), paymentRequest);
+    }
+
+    /**
      * Replaces visit lines on a completed booking while admin is correcting an issued bill.
      * Does not change booking status (remains {@code COMPLETED} until the invoice is voided).
      */

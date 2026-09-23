@@ -14,6 +14,7 @@ import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -34,6 +35,7 @@ public class BranchPerformanceService {
     private final BranchRepository branchRepository;
     private final InvoiceRepository invoiceRepository;
 
+    @Transactional(readOnly = true)
     public BranchTargetPerformanceResponse getTargetPerformance(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
@@ -137,6 +139,7 @@ public class BranchPerformanceService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public BranchTargetTrendsResponse getTargetTrends(
             LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
         UserPrincipal user = SecurityUtils.currentUser();
