@@ -106,13 +106,21 @@ public class BookingService {
         assertPendingMembershipAllowed(tenantId, request.getBranchId(), customer.getId(), request.getPendingMembershipPlanId());
         assertPendingPackageAllowed(tenantId, request.getBranchId(), customer.getId(), request.getPendingMembershipPlanId(), request.getPendingPackagePlanId());
 
+        // createdAt is set explicitly (not left to @CreationTimestamp) — when this booking is created
+        // with a pending membership/package plan, the extra promo-resolution lookups just above appear
+        // to disrupt Hibernate's insert-time generator for this entity, leaving created_at NULL in the
+        // DB (verified: serviceStartedAt, set explicitly the same way, is never affected). A NULL
+        // created_at silently drops the booking from every date-range-filtered query (branch
+        // performance drill-down, bookings list, etc.) since NULL comparisons never match.
+        Instant now = Instant.now();
         Booking booking = bookingRepository.save(Booking.builder()
                 .tenantId(tenantId)
                 .branchId(request.getBranchId())
                 .customerId(customer.getId())
                 .createdByUserId(user.getId())
                 .status(BookingStatus.IN_PROGRESS)
-                .serviceStartedAt(Instant.now())
+                .createdAt(now)
+                .serviceStartedAt(now)
                 .notes(request.getNotes())
                 .billDiscountType(promo.getCoupon() == null && promo.getOffer() == null
                         ? request.getBillDiscountType() : null)

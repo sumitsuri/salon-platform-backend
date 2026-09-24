@@ -248,12 +248,15 @@ public class OnlineBookingService {
         List<String> serviceNames = selectedServices.stream().map(ResolvedService::displayName).toList();
         String serviceLabel = String.join(" · ", serviceNames);
 
+        // createdAt set explicitly rather than left to @CreationTimestamp — see BookingService#create
+        // for why relying on the generator alone can silently leave this column NULL.
         Booking booking = bookingRepository.save(Booking.builder()
                 .tenantId(tenant.getId())
                 .branchId(branch.getId())
                 .customerId(customer.getId())
                 .createdByUserId(null)
                 .status(BookingStatus.CONFIRMED)
+                .createdAt(Instant.now())
                 .source(BookingSource.ONLINE)
                 .scheduledStartAt(scheduledStart)
                 .scheduledEndAt(scheduledEnd)

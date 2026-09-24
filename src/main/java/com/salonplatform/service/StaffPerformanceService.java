@@ -58,9 +58,8 @@ public class StaffPerformanceService {
             invoices = invoices.stream().filter(i -> branchSet.contains(i.getBranchId())).collect(Collectors.toList());
         }
 
-        Set<UUID> branchFilter = branchIds != null && !branchIds.isEmpty() ? new HashSet<>(branchIds) : null;
         Map<UUID, InvoiceSalesAggregationService.StaffLineAggregate> salesByStaff =
-                invoiceSalesAggregationService.aggregateByStaff(invoices, tenantId, rangeStart, rangeEnd, branchFilter);
+                invoiceSalesAggregationService.aggregateByStaff(invoices);
 
         long daysInPeriod = ChronoUnit.DAYS.between(start, end) + 1;
         LocalDate today = LocalDate.now(ZONE);

@@ -2,13 +2,9 @@ package com.salonplatform.service;
 
 import com.salonplatform.domain.entity.Booking;
 import com.salonplatform.domain.entity.BookingLineItem;
-import com.salonplatform.domain.entity.CustomerPackageSubscription;
 import com.salonplatform.domain.entity.Invoice;
-import com.salonplatform.domain.entity.MembershipSubscription;
 import com.salonplatform.domain.repository.BookingLineItemRepository;
 import com.salonplatform.domain.repository.BookingRepository;
-import com.salonplatform.domain.repository.CustomerPackageSubscriptionRepository;
-import com.salonplatform.domain.repository.MembershipSubscriptionRepository;
 import com.salonplatform.dto.billing.BillLinePreview;
 import com.salonplatform.dto.billing.BillPreviewResponse;
 import com.salonplatform.exception.BadRequestException;
@@ -20,11 +16,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -43,19 +37,17 @@ public class InvoiceSalesAggregationService {
     private final PromoResolutionService promoResolutionService;
     private final ServicePackageService servicePackageService;
     private final PackageStaffSaleImputationService packageStaffSaleImputationService;
-    private final MembershipSubscriptionRepository membershipSubscriptionRepository;
-    private final CustomerPackageSubscriptionRepository packageSubscriptionRepository;
 
     /**
-     * Staff sales for a date range — booking line items (services, plus redemptions imputed by
-     * {@link PackageStaffSaleImputationService}) PLUS membership and package sale amounts, credited
-     * to whoever sold them. Membership and package purchases never create booking line items (a
-     * membership sold standalone has no booking at all, and a package sold during checkout is only
-     * recorded as a fee on the invoice), so without this second pass those sale amounts silently
-     * vanish from every staff total.
+     * Staff sales for a date range — booking line items only: direct services plus redemptions
+     * imputed by {@link PackageStaffSaleImputationService} (the pro-rated value of a service paid
+     * for out of a previously-sold package/membership, credited to whoever performed it). The sale
+     * of a membership or package itself is intentionally excluded — that's a distinct upsell
+     * incentive (flat fee / percentage, see {@link StaffPromoSalesAnalyticsService}), not service
+     * revenue, and crediting the full sale price here would double-count it against the stylist's
+     * actual service-sales performance.
      */
-    public Map<UUID, StaffLineAggregate> aggregateByStaff(
-            List<Invoice> invoices, UUID tenantId, Instant rangeStart, Instant rangeEnd, Set<UUID> branchFilter) {
+    public Map<UUID, StaffLineAggregate> aggregateByStaff(List<Invoice> invoices) {
         Map<UUID, List<BookingLineItem>> linesByBooking = fetchLinesByBooking(invoices);
         Map<UUID, Booking> bookingsById = fetchBookingsById(invoices);
         Map<UUID, BookingLineAggregate> byStaff = new HashMap<>();
@@ -91,56 +83,9 @@ public class InvoiceSalesAggregationService {
                 });
             }
         }
-        addPromoSales(byStaff, tenantId, rangeStart, rangeEnd, branchFilter);
         Map<UUID, StaffLineAggregate> result = new HashMap<>();
         byStaff.forEach((staffId, acc) -> result.put(staffId, acc.toStaffAggregate()));
         return result;
-    }
-
-    private void addPromoSales(
-            Map<UUID, BookingLineAggregate> byStaff,
-            UUID tenantId,
-            Instant rangeStart,
-            Instant rangeEnd,
-            Set<UUID> branchFilter) {
-        for (MembershipSubscription sub : membershipSubscriptionRepository
-                .findByTenantIdAndSoldByStaffIdIsNotNull(tenantId)) {
-            addPromoSale(byStaff, sub.getSoldByStaffId(), sub.getBranchId(), sub.getAmountPaid(),
-                    sub.getCreatedAt(), rangeStart, rangeEnd, branchFilter);
-        }
-        for (CustomerPackageSubscription sub : packageSubscriptionRepository
-                .findByTenantIdAndSoldByStaffIdIsNotNull(tenantId)) {
-            addPromoSale(byStaff, sub.getSoldByStaffId(), sub.getBranchId(), sub.getAmountPaid(),
-                    sub.getCreatedAt(), rangeStart, rangeEnd, branchFilter);
-        }
-    }
-
-    private static void addPromoSale(
-            Map<UUID, BookingLineAggregate> byStaff,
-            UUID staffId,
-            UUID branchId,
-            BigDecimal amountPaid,
-            Instant soldAt,
-            Instant rangeStart,
-            Instant rangeEnd,
-            Set<UUID> branchFilter) {
-        if (staffId == null) {
-            return;
-        }
-        if (branchFilter != null && !branchFilter.contains(branchId)) {
-            return;
-        }
-        if (rangeStart != null && (soldAt == null || soldAt.isBefore(rangeStart))) {
-            return;
-        }
-        if (rangeEnd != null && (soldAt == null || !soldAt.isBefore(rangeEnd))) {
-            return;
-        }
-        BigDecimal amount = amountPaid != null ? amountPaid : BigDecimal.ZERO;
-        byStaff.compute(staffId, (k, acc) -> {
-            BookingLineAggregate current = acc == null ? new BookingLineAggregate() : acc;
-            return current.add(amount, amount, 1);
-        });
     }
 
     public Map<String, ServiceLineAggregate> aggregateByServiceName(List<Invoice> invoices) {

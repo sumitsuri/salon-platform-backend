@@ -140,11 +140,8 @@ public class AnalyticsService {
         UUID tenantId = SecurityUtils.requireTenantId();
         List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
         List<Invoice> invoices = fetchInvoices(tenantId, startDate, endDate, resolvedBranchIds);
-        Instant[] range = resolveInstantRange(startDate, endDate);
-        Set<UUID> branchFilter = resolvedBranchIds != null && !resolvedBranchIds.isEmpty()
-                ? new HashSet<>(resolvedBranchIds) : null;
         Map<UUID, InvoiceSalesAggregationService.StaffLineAggregate> salesByStaff =
-                invoiceSalesAggregationService.aggregateByStaff(invoices, tenantId, range[0], range[1], branchFilter);
+                invoiceSalesAggregationService.aggregateByStaff(invoices);
 
         List<StaffSalesPerformanceResponse.StaffSalesRow> staff = salesByStaff.entrySet().stream()
                 .map(e -> {
