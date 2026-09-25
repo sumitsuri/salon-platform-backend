@@ -229,5 +229,28 @@ public class SalesSchemaPatch implements ApplicationRunner {
         } catch (Exception e) {
             log.warn("Sales leads SKU selection column patch failed: {}", e.getMessage());
         }
+        try {
+            jdbcTemplate.execute("""
+                    CREATE TABLE IF NOT EXISTS sales_field_location_pings (
+                        id UUID PRIMARY KEY,
+                        rep_id UUID NOT NULL,
+                        latitude DOUBLE PRECISION NOT NULL,
+                        longitude DOUBLE PRECISION NOT NULL,
+                        accuracy_meters DOUBLE PRECISION,
+                        captured_at TIMESTAMP NOT NULL,
+                        created_at TIMESTAMP
+                    )
+                    """);
+            jdbcTemplate.execute("""
+                    CREATE INDEX IF NOT EXISTS sales_field_location_pings_rep_captured_idx
+                    ON sales_field_location_pings (rep_id, captured_at)
+                    """);
+            jdbcTemplate.execute("""
+                    CREATE INDEX IF NOT EXISTS sales_field_location_pings_captured_idx
+                    ON sales_field_location_pings (captured_at)
+                    """);
+        } catch (Exception e) {
+            log.warn("Sales field tracking schema patch failed: {}", e.getMessage());
+        }
     }
 }

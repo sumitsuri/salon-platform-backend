@@ -34,6 +34,7 @@ public class SalesController {
     private final SalesAnalyticsService analyticsService;
     private final SalesLeadDiscoveryService leadDiscoveryService;
     private final SalesMapSyncService mapSyncService;
+    private final SalesFieldTrackingService fieldTrackingService;
     private final GooglePlacesPhotoService googlePlacesPhotoService;
 
     @GetMapping("/leads")
@@ -261,5 +262,23 @@ public class SalesController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ApiResponse.ok(repService.myPerformance(weekStart, from, to));
+    }
+
+    @PostMapping("/field-tracking/ping")
+    public ApiResponse<Void> recordFieldPing(@Valid @RequestBody CreateFieldLocationPingRequest request) {
+        fieldTrackingService.recordPing(request);
+        return ApiResponse.ok(null);
+    }
+
+    @GetMapping("/field-tracking/active")
+    public ApiResponse<List<ActiveFieldRepResponse>> activeFieldReps() {
+        return ApiResponse.ok(fieldTrackingService.listActiveReps());
+    }
+
+    @GetMapping("/field-tracking/{repId}/trail")
+    public ApiResponse<List<FieldLocationPingResponse>> fieldTrail(
+            @PathVariable UUID repId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ApiResponse.ok(fieldTrackingService.getTrail(repId, date));
     }
 }
