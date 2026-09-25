@@ -11,9 +11,13 @@ import java.util.UUID;
 public class ActiveFieldRepResponse {
     private UUID repId;
     private String repName;
-    private double latitude;
-    private double longitude;
+    /** True when the latest ping is within the server active window (field mode recently on). */
+    private boolean active;
+    /** False when the rep has never sent a location ping. */
+    private boolean hasLocation;
+    private Double latitude;
+    private Double longitude;
     private Double accuracyMeters;
     private Instant capturedAt;
-    private long secondsSinceLastPing;
+    private Long secondsSinceLastPing;
 }
