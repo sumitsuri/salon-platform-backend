@@ -249,10 +249,17 @@ public class GooglePlacesDirectGateway {
         if (p == null || p.isMissingNode()) return null;
         JsonNode loc = p.path("location");
         int photoCount = p.path("photos").isArray() ? p.path("photos").size() : 0;
-        String photoName = null;
-        if (p.path("photos").isArray() && !p.path("photos").isEmpty()) {
-            photoName = text(p.path("photos").get(0), "name");
+        java.util.List<String> photoNames = new java.util.ArrayList<>();
+        if (p.path("photos").isArray()) {
+            int limit = Math.min(3, p.path("photos").size());
+            for (int i = 0; i < limit; i++) {
+                String name = text(p.path("photos").get(i), "name");
+                if (name != null && !name.isBlank()) {
+                    photoNames.add(name);
+                }
+            }
         }
+        String photoName = photoNames.isEmpty() ? null : photoNames.get(0);
         JsonNode currentHours = p.path("currentOpeningHours");
         JsonNode regularHours = p.path("regularOpeningHours");
         Boolean openNow = null;
@@ -276,6 +283,7 @@ public class GooglePlacesDirectGateway {
                 .phone(text(p, "nationalPhoneNumber"))
                 .hasOpeningHours(p.has("regularOpeningHours") && !p.path("regularOpeningHours").isNull())
                 .photoName(photoName)
+                .photoNames(photoNames.isEmpty() ? java.util.List.of() : java.util.List.copyOf(photoNames))
                 .openNow(openNow)
                 .hoursSummary(hoursSummary)
                 .primaryType(text(p, "primaryType"))

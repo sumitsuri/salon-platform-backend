@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -21,6 +22,7 @@ public class DiscoveredSalonPreview {
     private String websiteUrl;
     private String category;
     private String photoRef;
+    private List<String> photoRefs;
     private Integer photoCount;
     private Boolean openNow;
     private String hoursSummary;

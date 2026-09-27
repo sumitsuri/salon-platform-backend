@@ -3,6 +3,8 @@ package com.salonplatform.google;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 @Builder
 public class GooglePlaceSnapshot {
@@ -20,6 +22,8 @@ public class GooglePlaceSnapshot {
     private boolean hasOpeningHours;
     /** First photo resource name for Places Photo API, e.g. places/…/photos/…. */
     private String photoName;
+    /** Up to three photo resource names for listing galleries. */
+    private List<String> photoNames;
     private Boolean openNow;
     /** Short hours line for listing UI, e.g. weekday description or open/closed hint. */
     private String hoursSummary;
