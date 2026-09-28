@@ -86,10 +86,15 @@ public class BookingService {
         }
 
         List<BookingLineRequest> lineRequests = request.getLines() != null ? request.getLines() : List.of();
+        boolean isFutureAppointment = request.getScheduledStartAt() != null;
         if (lineRequests.isEmpty()
                 && request.getPendingMembershipPlanId() == null
-                && request.getPendingPackagePlanId() == null) {
+                && request.getPendingPackagePlanId() == null
+                && !isFutureAppointment) {
             throw new BadRequestException("error.booking.servicesRequired");
+        }
+        if (isFutureAppointment && lineRequests.isEmpty() && request.getStaffId() == null) {
+            throw new BadRequestException("error.booking.staffRequired");
         }
         if (!lineRequests.isEmpty()) {
             lineRequests = normalizeBookingLineRequests(lineRequests);
@@ -118,9 +123,12 @@ public class BookingService {
                 .branchId(request.getBranchId())
                 .customerId(customer.getId())
                 .createdByUserId(user.getId())
-                .status(BookingStatus.IN_PROGRESS)
+                .status(isFutureAppointment ? BookingStatus.CONFIRMED : BookingStatus.IN_PROGRESS)
                 .createdAt(now)
-                .serviceStartedAt(now)
+                .serviceStartedAt(isFutureAppointment ? null : now)
+                .scheduledStartAt(request.getScheduledStartAt())
+                .scheduledEndAt(request.getScheduledEndAt())
+                .staffId(isFutureAppointment ? request.getStaffId() : null)
                 .notes(request.getNotes())
                 .billDiscountType(promo.getCoupon() == null && promo.getOffer() == null
                         ? request.getBillDiscountType() : null)
@@ -144,17 +152,23 @@ public class BookingService {
         for (BookingLineRequest lineReq : lineRequests) {
             saveLine(booking.getId(), lineReq, booking.getServiceStartedAt());
         }
-        refreshEstimatedEnd(booking);
+        if (!isFutureAppointment) {
+            refreshEstimatedEnd(booking);
+        }
 
         boolean keepOpen = Boolean.TRUE.equals(request.getKeepOpen());
-        booking.setStatus(keepOpen ? BookingStatus.IN_PROGRESS : BookingStatus.READY_FOR_BILLING);
+        if (!isFutureAppointment) {
+            booking.setStatus(keepOpen ? BookingStatus.IN_PROGRESS : BookingStatus.READY_FOR_BILLING);
+        }
         persistPromoAmounts(booking, promo);
         bookingRepository.save(booking);
         auditService.log(
-                keepOpen ? "OPEN_VISIT" : "CREATE_BOOKING",
+                isFutureAppointment ? "SCHEDULE_APPOINTMENT" : keepOpen ? "OPEN_VISIT" : "CREATE_BOOKING",
                 "Booking",
                 booking.getId(),
-                keepOpen ? "Walk-in visit kept open" : "Walk-in ready for billing");
+                isFutureAppointment
+                        ? "Appointment scheduled for " + request.getScheduledStartAt()
+                        : keepOpen ? "Walk-in visit kept open" : "Walk-in ready for billing");
         return toResponse(booking, branch, customer);
     }
 
@@ -986,6 +1000,45 @@ public class BookingService {
         booking.setStatus(BookingStatus.CANCELLED);
         bookingRepository.save(booking);
         auditService.log("CANCEL_BOOKING", "Booking", bookingId, null);
+    }
+
+    /** Moves a not-yet-started scheduled appointment to a new time (and optionally a new stylist). */
+    @Transactional
+    public BookingResponse reschedule(UUID bookingId, RescheduleBookingRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+        SecurityUtils.assertBranchAccess(booking.getBranchId());
+        if (booking.getStatus() != BookingStatus.CONFIRMED) {
+            throw new BadRequestException("error.booking.notReschedulable");
+        }
+        if (!request.getScheduledEndAt().isAfter(request.getScheduledStartAt())) {
+            throw new BadRequestException("error.booking.invalidScheduleWindow");
+        }
+
+        booking.setScheduledStartAt(request.getScheduledStartAt());
+        booking.setScheduledEndAt(request.getScheduledEndAt());
+
+        List<BookingLineItem> lines = lineItemRepository.findByBookingId(bookingId);
+        if (lines.isEmpty()) {
+            if (request.getStaffId() != null) {
+                booking.setStaffId(request.getStaffId());
+            }
+        } else if (request.getStaffId() != null) {
+            for (BookingLineItem line : lines) {
+                line.setStaffId(request.getStaffId());
+                lineItemRepository.save(line);
+            }
+        }
+
+        bookingRepository.save(booking);
+        auditService.log("RESCHEDULE_BOOKING", "Booking", bookingId,
+                "Rescheduled to " + request.getScheduledStartAt());
+
+        Branch branch = branchRepository.findById(booking.getBranchId())
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+        Customer customer = customerRepository.findById(booking.getCustomerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
+        return toResponse(booking, branch, customer);
     }
 
     private String nextInvoiceNumber(Branch branch) {

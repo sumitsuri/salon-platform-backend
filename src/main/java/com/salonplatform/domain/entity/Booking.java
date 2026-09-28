@@ -90,6 +90,13 @@ public class Booking {
     /** Scheduled end for online appointments (from service durations). */
     private Instant scheduledEndAt;
 
+    /**
+     * Stylist for a scheduled appointment whose services aren't chosen yet (so it has no line
+     * items to derive staff attribution from). Ignored once the booking has line items — those
+     * carry their own per-line staffId, which is what the floor schedule uses instead.
+     */
+    private UUID staffId;
+
     /** Public token for customer manage link (cancel/reschedule). */
     private String manageToken;
 

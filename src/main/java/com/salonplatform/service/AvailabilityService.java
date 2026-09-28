@@ -88,12 +88,19 @@ public class AvailabilityService {
                 List<BookingLineItem> lines = linesByBooking.getOrDefault(booking.getId(), List.of()).stream()
                         .filter(l -> staff.getId().equals(l.getStaffId()))
                         .toList();
-                if (lines.isEmpty()) continue;
+                // A scheduled appointment with no services chosen yet has no line items to derive
+                // staff attribution from — fall back to the booking-level staffId set at creation.
+                boolean isUnassignedPlaceholder = lines.isEmpty()
+                        && staff.getId().equals(booking.getStaffId())
+                        && booking.getScheduledStartAt() != null;
+                if (lines.isEmpty() && !isUnassignedPlaceholder) continue;
 
                 Instant start = resolveStart(booking, lines);
-                int estMinutes = lines.stream()
-                        .mapToInt(l -> effectiveDuration(l) * Math.max(1, l.getQuantity() != null ? l.getQuantity() : 1))
-                        .sum();
+                int estMinutes = lines.isEmpty()
+                        ? DEFAULT_DURATION
+                        : lines.stream()
+                                .mapToInt(l -> effectiveDuration(l) * Math.max(1, l.getQuantity() != null ? l.getQuantity() : 1))
+                                .sum();
                 Instant end = resolveEnd(booking, start, estMinutes);
                 boolean openVisit = booking.getStatus() == BookingStatus.IN_PROGRESS
                         || booking.getStatus() == BookingStatus.READY_FOR_BILLING;

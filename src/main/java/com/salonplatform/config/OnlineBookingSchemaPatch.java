@@ -37,6 +37,7 @@ public class OnlineBookingSchemaPatch implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS scheduled_start_at TIMESTAMP WITH TIME ZONE");
             jdbcTemplate.execute("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS scheduled_end_at TIMESTAMP WITH TIME ZONE");
             jdbcTemplate.execute("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS manage_token VARCHAR(64)");
+            jdbcTemplate.execute("ALTER TABLE bookings ADD COLUMN IF NOT EXISTS staff_id UUID");
 
             jdbcTemplate.execute("ALTER TABLE bookings ALTER COLUMN created_by_user_id DROP NOT NULL");
 

@@ -8,6 +8,7 @@ import com.salonplatform.dto.booking.ApplyPromoRequest;
 import com.salonplatform.dto.booking.BookingListFilter;
 import com.salonplatform.dto.booking.BookingResponse;
 import com.salonplatform.dto.booking.CreateBookingRequest;
+import com.salonplatform.dto.booking.RescheduleBookingRequest;
 import com.salonplatform.dto.booking.SetPendingMembershipPlanRequest;
 import com.salonplatform.dto.booking.SetPendingPackagePlanRequest;
 import com.salonplatform.dto.booking.UpdateBookingLinesRequest;
@@ -138,6 +139,12 @@ public class BookingController {
     public ApiResponse<Void> cancel(@PathVariable UUID id) {
         bookingService.cancel(id);
         return ApiResponse.ok("Booking cancelled", null);
+    }
+
+    @PatchMapping("/{id}/reschedule")
+    public ApiResponse<BookingResponse> reschedule(
+            @PathVariable UUID id, @Valid @RequestBody RescheduleBookingRequest request) {
+        return ApiResponse.ok(bookingService.reschedule(id, request));
     }
 
     @PutMapping("/{id}/admin/bill")
