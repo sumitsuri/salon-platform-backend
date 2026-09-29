@@ -3,6 +3,7 @@ package com.salonplatform.service;
 import com.salonplatform.domain.entity.Booking;
 import com.salonplatform.domain.entity.BookingLineItem;
 import com.salonplatform.domain.entity.Branch;
+import com.salonplatform.domain.entity.BranchService;
 import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.CustomerPackageEntitlement;
 import com.salonplatform.domain.entity.CustomerPackageSubscription;
@@ -97,7 +98,7 @@ public class ServicePackageService {
             listTotal = creditValue;
         } else {
             items = buildPlanItems(tenantId, request.getItems());
-            listTotal = computeListTotal(tenantId, items);
+            listTotal = computeListTotal(tenantId, items, request.getBranchIds());
             if (request.getPackagePrice().compareTo(listTotal) > 0) {
                 throw new BadRequestException("Package price cannot exceed combined list price");
             }
@@ -153,7 +154,7 @@ public class ServicePackageService {
             listTotal = creditValue;
         } else {
             items = buildPlanItems(plan.getTenantId(), request.getItems());
-            listTotal = computeListTotal(plan.getTenantId(), items);
+            listTotal = computeListTotal(plan.getTenantId(), items, request.getBranchIds());
             if (request.getPackagePrice().compareTo(listTotal) > 0) {
                 throw new BadRequestException("Package price cannot exceed combined list price");
             }
@@ -787,15 +788,32 @@ public class ServicePackageService {
         return items;
     }
 
-    private BigDecimal computeListTotal(UUID tenantId, List<ServicePackagePlanItem> items) {
+    /**
+     * Prices items at the plan's own branch when one is set, falling back to the tenant-wide
+     * catalog price otherwise. Branch price is what the manager actually sees and builds the
+     * package against in the UI (branchServiceRepository, same as the create-package form) — the
+     * tenant-wide SalonService.listPrice can drift from it (e.g. a branch-scoped catalog re-sync
+     * touching the shared catalog row), which previously made this validation reject valid
+     * packages whenever that drift left the catalog price lower than the branch's real price.
+     */
+    private BigDecimal computeListTotal(UUID tenantId, List<ServicePackagePlanItem> items, List<UUID> branchIds) {
         Map<UUID, SalonService> services = loadServices(tenantId, items);
+        UUID pricingBranchId = branchIds != null && !branchIds.isEmpty() ? branchIds.get(0) : null;
         BigDecimal total = BigDecimal.ZERO;
         for (ServicePackagePlanItem item : items) {
-            SalonService svc = services.get(item.getServiceId());
-            if (svc == null || svc.getListPrice() == null) {
+            BigDecimal unitPrice = pricingBranchId != null
+                    ? branchServiceRepository.findByBranchIdAndServiceId(pricingBranchId, item.getServiceId())
+                            .map(BranchService::getPrice)
+                            .orElse(null)
+                    : null;
+            if (unitPrice == null) {
+                SalonService svc = services.get(item.getServiceId());
+                unitPrice = svc != null ? svc.getListPrice() : null;
+            }
+            if (unitPrice == null) {
                 continue;
             }
-            total = total.add(svc.getListPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            total = total.add(unitPrice.multiply(BigDecimal.valueOf(item.getQuantity())));
         }
         return total.setScale(2, RoundingMode.HALF_UP);
     }
