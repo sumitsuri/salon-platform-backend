@@ -12,6 +12,7 @@ public interface TenantWhatsAppTemplateSettingRepository extends JpaRepository<T
 
     List<TenantWhatsAppTemplateSetting> findByTenantId(UUID tenantId);
 
-    Optional<TenantWhatsAppTemplateSetting> findByTenantIdAndTemplateCodeAndBranchId(
+    // findFirst: branch_id NULL rows are not covered by the unique constraint in Postgres, so duplicates can exist.
+    Optional<TenantWhatsAppTemplateSetting> findFirstByTenantIdAndTemplateCodeAndBranchIdOrderByUpdatedAtDesc(
             UUID tenantId, WhatsAppTemplateCode templateCode, UUID branchId);
 }

@@ -31,38 +31,49 @@ public class CampaignDispatchService {
         MarketingCampaign campaign = campaignRepository.findById(campaignId).orElse(null);
         CampaignRun run = runRepository.findById(runId).orElse(null);
         if (campaign == null || run == null) {
+            log.error("Campaign {} run {} not found at dispatch; nothing sent", campaignId, runId);
             return;
         }
 
         int sent = 0;
         int failed = 0;
         int skipped = 0;
+        boolean aborted = true;
 
-        for (Customer customer : recipients) {
-            try {
-                var deliveryLog = notificationService.sendCampaignMessage(
-                        campaign.getTenantId(),
-                        campaign.getId(),
-                        runId,
-                        customer,
-                        campaign.getChannel(),
-                        campaign.getMessageText());
+        try {
+            for (Customer customer : recipients) {
+                try {
+                    var deliveryLog = notificationService.sendCampaignMessage(
+                            campaign.getTenantId(),
+                            campaign.getId(),
+                            runId,
+                            customer,
+                            campaign.getChannel(),
+                            campaign.getMessageText());
 
-                switch (deliveryLog.getStatus()) {
-                    case SENT -> sent++;
-                    case FAILED -> failed++;
-                    default -> skipped++;
+                    switch (deliveryLog.getStatus()) {
+                        case SENT -> sent++;
+                        case FAILED -> failed++;
+                        default -> skipped++;
+                    }
+                } catch (Exception ex) {
+                    failed++;
+                    log.warn("Campaign {} run {} failed for customer {}: {}",
+                            campaignId, runId, customer.getId(), ex.getMessage(), ex);
                 }
-            } catch (Exception ex) {
-                failed++;
-                log.warn("Campaign {} run {} failed for customer {}: {}",
-                        campaignId, runId, customer.getId(), ex.getMessage());
             }
+            aborted = false;
+        } finally {
+            // Always move the run out of SENDING so the campaign can be re-sent.
+            finish(campaign, run, recipients.size(), sent, failed, skipped, aborted);
         }
+    }
 
+    private void finish(MarketingCampaign campaign, CampaignRun run, int recipientCount,
+                        int sent, int failed, int skipped, boolean aborted) {
         run.setSentCount(sent);
         run.setFailedCount(failed + skipped);
-        run.setStatus(failed == recipients.size() && sent == 0 && !recipients.isEmpty()
+        run.setStatus(aborted || (failed == recipientCount && sent == 0 && recipientCount > 0)
                 ? CampaignRunStatus.FAILED
                 : CampaignRunStatus.COMPLETED);
         run.setCompletedAt(Instant.now());

@@ -66,7 +66,7 @@ public class WhatsAppTemplateService {
 
         UUID branchId = request.getBranchId();
         TenantWhatsAppTemplateSetting setting = settingRepository
-                .findByTenantIdAndTemplateCodeAndBranchId(tenantId, code, branchId)
+                .findFirstByTenantIdAndTemplateCodeAndBranchIdOrderByUpdatedAtDesc(tenantId, code, branchId)
                 .orElseGet(() -> TenantWhatsAppTemplateSetting.builder()
                         .tenantId(tenantId)
                         .templateCode(code)
@@ -114,12 +114,12 @@ public class WhatsAppTemplateService {
     public boolean isActive(UUID tenantId, UUID branchId, WhatsAppTemplateCode code) {
         ensureDefaultSettings(tenantId);
         Optional<TenantWhatsAppTemplateSetting> branchSetting = branchId != null
-                ? settingRepository.findByTenantIdAndTemplateCodeAndBranchId(tenantId, code, branchId)
+                ? settingRepository.findFirstByTenantIdAndTemplateCodeAndBranchIdOrderByUpdatedAtDesc(tenantId, code, branchId)
                 : Optional.empty();
         if (branchSetting.isPresent()) {
             return branchSetting.get().isActive();
         }
-        return settingRepository.findByTenantIdAndTemplateCodeAndBranchId(tenantId, code, null)
+        return settingRepository.findFirstByTenantIdAndTemplateCodeAndBranchIdOrderByUpdatedAtDesc(tenantId, code, null)
                 .map(TenantWhatsAppTemplateSetting::isActive)
                 .orElseGet(() -> WhatsAppTemplateCatalog.find(code).map(WhatsAppTemplateDefinition::isDefaultActive).orElse(false));
     }

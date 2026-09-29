@@ -28,7 +28,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,7 @@ import java.util.stream.Collectors;
 public class CampaignService {
 
     private static final int PREVIEW_CUSTOMER_LIMIT = 100;
+    private static final Duration STALE_RUN_AFTER = Duration.ofMinutes(30);
 
     private final MarketingCampaignRepository campaignRepository;
     private final CampaignRunRepository runRepository;
@@ -222,6 +226,7 @@ public class CampaignService {
         if (campaign.getStatus() == CampaignStatus.ARCHIVED) {
             throw new BadRequestException("error.campaign.archived");
         }
+        failStaleRuns(id);
         if (runRepository.existsByCampaignIdAndStatus(id, CampaignRunStatus.SENDING)) {
             throw new BadRequestException("error.campaign.sendInProgress");
         }
@@ -244,7 +249,16 @@ public class CampaignService {
         campaign.setStatus(CampaignStatus.ACTIVE);
         campaignRepository.save(campaign);
 
-        campaignDispatchService.dispatch(campaign.getId(), run.getId(), recipients);
+        // Dispatch runs on another thread with its own transaction; it must start only after this
+        // transaction commits, otherwise it cannot see the new run row and exits leaving it SENDING.
+        UUID campaignId = campaign.getId();
+        UUID runId = run.getId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                campaignDispatchService.dispatch(campaignId, runId, recipients);
+            }
+        });
         return toResponse(campaign);
     }
 
@@ -269,6 +283,20 @@ public class CampaignService {
             deliveryLogRepository.deleteAll(logs);
         }
         campaignRepository.delete(campaign);
+    }
+
+    /** Runs orphaned in SENDING (e.g. app restart mid-dispatch) would otherwise block re-sends forever. */
+    private void failStaleRuns(UUID campaignId) {
+        Instant cutoff = Instant.now().minus(STALE_RUN_AFTER);
+        List<CampaignRun> stale = runRepository
+                .findByCampaignIdAndStatusAndStartedAtBefore(campaignId, CampaignRunStatus.SENDING, cutoff);
+        for (CampaignRun run : stale) {
+            run.setStatus(CampaignRunStatus.FAILED);
+            run.setCompletedAt(Instant.now());
+        }
+        if (!stale.isEmpty()) {
+            runRepository.saveAll(stale);
+        }
     }
 
     private long countMatching(MarketingCampaign campaign) {
