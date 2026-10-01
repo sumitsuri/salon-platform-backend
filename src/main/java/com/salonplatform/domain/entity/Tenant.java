@@ -1,5 +1,6 @@
 package com.salonplatform.domain.entity;
 
+import com.salonplatform.domain.enums.OutboundMessagingMode;
 import com.salonplatform.domain.enums.SalonTier;
 import com.salonplatform.domain.enums.TenantStatus;
 import jakarta.persistence.*;
@@ -62,6 +63,19 @@ public class Tenant {
     @Builder.Default
     private Boolean onlineBookingEnabled = false;
 
+    /**
+     * Demo / sales-showcase brand. Kept out of real brands' Market Pulse cohorts and platform totals,
+     * and the only kind of brand the demo-data job may rebuild.
+     */
+    @Builder.Default
+    private Boolean demoTenant = false;
+
+    /** Null is treated as LIVE so brands that predate this column keep sending unchanged. */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 16)
+    @Builder.Default
+    private OutboundMessagingMode outboundMessagingMode = OutboundMessagingMode.SIMULATE;
+
     /** Tracks one-off catalog migration patches applied to this tenant. */
     private String catalogPatchVersion;
 
@@ -70,4 +84,12 @@ public class Tenant {
 
     @UpdateTimestamp
     private Instant updatedAt;
+
+    public boolean isDemo() {
+        return Boolean.TRUE.equals(demoTenant);
+    }
+
+    public boolean isMessagingSimulated() {
+        return outboundMessagingMode == OutboundMessagingMode.SIMULATE;
+    }
 }

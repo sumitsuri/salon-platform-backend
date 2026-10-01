@@ -376,6 +376,8 @@ public class BenchmarkService {
         List<TenantMetricsSnapshot> cohort = new ArrayList<>();
         for (Tenant peer : tenantRepository.findByStatus(TenantStatus.ACTIVE)) {
             if (!Boolean.TRUE.equals(peer.getBenchmarkOptIn())) continue;
+            // Demo brands only ever benchmark against each other, never against real brands.
+            if (peer.isDemo() != tenant.isDemo()) continue;
             if (peer.getMarketCity() == null || !peer.getMarketCity().equalsIgnoreCase(city)) continue;
             List<Branch> peerBranches = branchRepository.findByTenantId(peer.getId()).stream()
                     .filter(b -> b.getStatus() == BranchStatus.ACTIVE)

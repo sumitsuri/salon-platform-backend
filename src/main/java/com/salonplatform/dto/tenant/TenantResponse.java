@@ -1,5 +1,6 @@
 package com.salonplatform.dto.tenant;
 
+import com.salonplatform.domain.enums.OutboundMessagingMode;
 import com.salonplatform.domain.enums.TenantStatus;
 import lombok.Builder;
 import lombok.Data;
@@ -18,5 +19,7 @@ public class TenantResponse {
     private TenantStatus status;
     private Boolean gstEnabled;
     private Boolean onlineBookingEnabled;
+    private Boolean demoTenant;
+    private OutboundMessagingMode outboundMessagingMode;
     private Instant createdAt;
 }

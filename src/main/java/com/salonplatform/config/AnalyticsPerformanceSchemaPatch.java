@@ -55,6 +55,23 @@ public class AnalyticsPerformanceSchemaPatch implements ApplicationRunner {
         // inventory_movements: overview query filters tenant + movement_date range.
         createIndex("idx_inventory_movements_tenant_date", "inventory_movements (tenant_id, movement_date)");
 
+        // Tenant-scoped lookups that previously seq-scanned. With several brands sharing these tables
+        // (including a year-deep demo brand), each brand's reads must touch only its own rows.
+        createIndex("idx_bookings_tenant_branch_created", "bookings (tenant_id, branch_id, created_at)");
+        createIndex("idx_bookings_tenant_created", "bookings (tenant_id, created_at)");
+        createIndex("idx_bookings_tenant_scheduled", "bookings (tenant_id, scheduled_start_at)");
+        createIndex("idx_bookings_customer", "bookings (customer_id)");
+        createIndex("idx_invoices_booking", "invoices (booking_id)");
+        createIndex("idx_invoices_customer", "invoices (customer_id)");
+        createIndex("idx_payments_booking", "payments (booking_id)");
+        createIndex("idx_customers_tenant_last_visit", "customers (tenant_id, last_visit_at)");
+        createIndex("idx_membership_subs_tenant_customer", "membership_subscriptions (tenant_id, customer_id)");
+        createIndex("idx_package_subs_tenant_customer", "customer_package_subscriptions (tenant_id, customer_id)");
+        createIndex("idx_review_invitations_tenant_created", "review_invitations (tenant_id, created_at)");
+        createIndex("idx_review_invitations_visit", "review_invitations (visit_id)");
+        createIndex("idx_audit_logs_tenant_action", "audit_logs (tenant_id, action)");
+        createIndex("idx_staff_tenant_branch", "staff (tenant_id, branch_id)");
+
         log.info("Analytics performance schema patch finished");
     }
 

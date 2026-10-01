@@ -41,7 +41,9 @@ public class LocalSpotlightService {
         Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
 
         String syncMessage = null;
-        if (googlePlacesProperties.isConfigured()) {
+        // Demo brands show a stored snapshot of fictional listings; never call Google for them.
+        boolean demo = tenant != null && tenant.isDemo();
+        if (googlePlacesProperties.isConfigured() && !demo) {
             if (refresh) {
                 DigitalPresenceSyncService.SyncResult sync = digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, true);
                 syncMessage = sync.getMessage();
@@ -91,7 +93,7 @@ public class LocalSpotlightService {
         int scoredBranches = 0;
 
         for (Branch branch : branches) {
-            boolean isPilot = tenant != null && digitalPresenceSyncService.isPilotBranch(tenant, branch);
+            boolean isPilot = tenant != null && (demo || digitalPresenceSyncService.isPilotBranch(tenant, branch));
             boolean googleSynced = isPilot && branch.getDigitalPresenceUpdatedAt() != null
                     && notBlank(branch.getGooglePlaceId());
             List<LocalCompetitor> branchRivals = googleRivals.stream()
@@ -154,7 +156,9 @@ public class LocalSpotlightService {
             playbook.addAll(LocalSpotlightPlaybookBuilder.build(branch, row, branchRivals, branchRanks));
         }
 
-        String dataSourceNote = googlePlacesProperties.isConfigured()
+        String dataSourceNote = demo
+                ? "Google Business Profile snapshot · ~" + radiusKm + " km radius"
+                : googlePlacesProperties.isConfigured()
                 ? "Live Google Places data · pilot branch "
                         + googlePlacesProperties.getPilotBranchCode()
                         + " · ~"
@@ -188,6 +192,12 @@ public class LocalSpotlightService {
     public LocalSpotlightSyncResponse syncFromGoogle(int radiusKm, boolean force) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
+        if (tenantRepository.findById(tenantId).map(Tenant::isDemo).orElse(false)) {
+            return LocalSpotlightSyncResponse.builder()
+                    .skipped(true)
+                    .message("Demo brand — showing a stored Google snapshot")
+                    .build();
+        }
         DigitalPresenceSyncService.SyncResult result = digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, force);
         return LocalSpotlightSyncResponse.builder()
                 .skipped(result.isSkipped())

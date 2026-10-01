@@ -80,6 +80,18 @@ app:
       pilot-tenant-slug: demo-brand
       sync-cache-hours: 24
       default-radius-meters: 2000
+  demo-data:
+    enabled: ${APP_DEMO_DATA_ENABLED:false}
+    brand-name: ${APP_DEMO_BRAND_NAME:Aura Salon & Spa}
+    slug: ${APP_DEMO_BRAND_SLUG:aura-demo}
+    email-domain: ${APP_DEMO_EMAIL_DOMAIN:antrahq.com}
+    owner-password: ${APP_DEMO_OWNER_PASSWORD:}
+    manager-password: ${APP_DEMO_MANAGER_PASSWORD:}
+    bills-per-branch-per-day: ${APP_DEMO_BILLS_PER_BRANCH_PER_DAY:20}
+    top-up-enabled: ${APP_DEMO_TOP_UP_ENABLED:false}
+  demo-sandbox:
+    # Comma-separated team phones that still receive real WhatsApp/SMS from SIMULATE brands.
+    allowed-phones: ${APP_DEMO_SANDBOX_ALLOWED_PHONES:}
   production-data-protection:
     enabled: true
     protected-tenant-slugs:

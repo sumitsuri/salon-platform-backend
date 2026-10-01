@@ -17,9 +17,10 @@ public class MonolithTenantReadAdapter implements TenantReadPort {
 
     @Override
     public TenantSnapshot getSnapshot() {
-        long active = tenantRepository.findByStatus(TenantStatus.ACTIVE).size();
-        long trial = tenantRepository.findByStatus(TenantStatus.TRIAL).size();
-        long total = tenantRepository.count();
+        // Demo brands are sales showcases, not customers.
+        long active = tenantRepository.findByStatus(TenantStatus.ACTIVE).stream().filter(t -> !t.isDemo()).count();
+        long trial = tenantRepository.findByStatus(TenantStatus.TRIAL).stream().filter(t -> !t.isDemo()).count();
+        long total = tenantRepository.findAll().stream().filter(t -> !t.isDemo()).count();
         return new TenantSnapshot(active, trial, total, Instant.now());
     }
 }

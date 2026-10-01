@@ -14,6 +14,8 @@ import com.salonplatform.dto.branch.BranchResponse;
 import com.salonplatform.dto.branch.CreateBranchRequest;
 import com.salonplatform.dto.tenant.CreateTenantRequest;
 import com.salonplatform.dto.tenant.TenantResponse;
+import com.salonplatform.dto.tenant.UpdateTenantSandboxRequest;
+import com.salonplatform.domain.enums.OutboundMessagingMode;
 import com.salonplatform.dto.user.CreatePlatformUserRequest;
 import com.salonplatform.dto.user.PlatformUserResponse;
 import com.salonplatform.exception.BadRequestException;
@@ -195,6 +197,20 @@ public class PlatformManagementService {
         tenantRepository.save(tenant);
     }
 
+    @Transactional
+    public TenantResponse updateTenantSandbox(UUID tenantId, UpdateTenantSandboxRequest request) {
+        SecurityUtils.assertPlatformAdmin();
+        productionTenantGuard.assertAdminMutationAllowed(tenantId);
+        Tenant tenant = requireTenant(tenantId);
+        if (request.getDemoTenant() != null) {
+            tenant.setDemoTenant(request.getDemoTenant());
+        }
+        if (request.getOutboundMessagingMode() != null) {
+            tenant.setOutboundMessagingMode(request.getOutboundMessagingMode());
+        }
+        return toTenantResponse(tenantRepository.save(tenant));
+    }
+
     private Tenant requireTenant(UUID tenantId) {
         return tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
@@ -218,6 +234,9 @@ public class PlatformManagementService {
                 .primaryColor(t.getPrimaryColor())
                 .status(t.getStatus())
                 .gstEnabled(t.getGstEnabled())
+                .demoTenant(t.isDemo())
+                .outboundMessagingMode(t.getOutboundMessagingMode() != null
+                        ? t.getOutboundMessagingMode() : OutboundMessagingMode.LIVE)
                 .createdAt(t.getCreatedAt())
                 .build();
     }

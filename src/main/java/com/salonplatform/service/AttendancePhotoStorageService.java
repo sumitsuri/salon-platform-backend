@@ -109,6 +109,31 @@ public class AttendancePhotoStorageService {
         }
     }
 
+    /** Stores a generated image (demo staff portraits) in the same bucket/dir as real punches. */
+    public String storeGenerated(UUID tenantId, UUID branchId, UUID staffId, byte[] bytes) {
+        String relativeKey = tenantId + "/" + branchId + "/" + staffId + "/portrait-" + UUID.randomUUID() + ".png";
+        try {
+            if (isS3Enabled()) {
+                String s3Key = properties.getKeyPrefix() + relativeKey;
+                s3Client.putObject(
+                        PutObjectRequest.builder()
+                                .bucket(properties.getS3Bucket())
+                                .key(s3Key)
+                                .contentType("image/png")
+                                .build(),
+                        RequestBody.fromBytes(bytes));
+                return s3Key;
+            }
+            Path target = Path.of(properties.getStorageDir()).toAbsolutePath().normalize().resolve(relativeKey);
+            Files.createDirectories(target.getParent());
+            Files.write(target, bytes);
+            return relativeKey;
+        } catch (IOException | RuntimeException e) {
+            log.warn("Failed to store generated portrait tenant={} staff={}: {}", tenantId, staffId, e.toString());
+            return null;
+        }
+    }
+
     public byte[] load(String key) {
         if (key == null || key.contains("..")) {
             throw new BadRequestException("Invalid photo key");

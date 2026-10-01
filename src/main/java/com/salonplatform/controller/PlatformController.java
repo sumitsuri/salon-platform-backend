@@ -5,6 +5,7 @@ import com.salonplatform.dto.branch.BranchResponse;
 import com.salonplatform.dto.branch.CreateBranchRequest;
 import com.salonplatform.dto.tenant.CreateTenantRequest;
 import com.salonplatform.dto.tenant.TenantResponse;
+import com.salonplatform.dto.tenant.UpdateTenantSandboxRequest;
 import com.salonplatform.dto.user.CreatePlatformUserRequest;
 import com.salonplatform.dto.user.PlatformUserResponse;
 import com.salonplatform.service.PlatformManagementService;
@@ -30,6 +31,13 @@ public class PlatformController {
     @GetMapping("/tenants")
     public ApiResponse<List<TenantResponse>> listTenants() {
         return ApiResponse.ok(platformService.listTenants());
+    }
+
+    @PatchMapping("/tenants/{tenantId}/sandbox")
+    public ApiResponse<TenantResponse> updateTenantSandbox(
+            @PathVariable UUID tenantId,
+            @RequestBody UpdateTenantSandboxRequest request) {
+        return ApiResponse.ok(platformService.updateTenantSandbox(tenantId, request));
     }
 
     @DeleteMapping("/tenants/{tenantId}")

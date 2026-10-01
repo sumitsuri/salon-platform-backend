@@ -129,5 +129,9 @@ public class Msg91Client {
         static Msg91SendResult skipped(String reason) {
             return new Msg91SendResult(false, true, null, reason);
         }
+
+        static Msg91SendResult simulated(String messageId) {
+            return new Msg91SendResult(true, false, messageId, null);
+        }
     }
 }

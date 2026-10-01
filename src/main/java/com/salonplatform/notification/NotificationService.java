@@ -31,6 +31,7 @@ public class NotificationService {
     private final TenantRepository tenantRepository;
     private final BranchRepository branchRepository;
     private final WhatsAppTemplateService whatsAppTemplateService;
+    private final OutboundMessagingGate messagingGate;
 
     @Value("${app.api-public-url:http://localhost:8080}")
     private String apiPublicUrl;
@@ -84,7 +85,8 @@ public class NotificationService {
                 invoice.getGrandTotal().toPlainString()
         ));
 
-        Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
+        Msg91Client.Msg91SendResult result = sendWhatsApp(
+                invoice.getTenantId(),
                 phone,
                 whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.BILL_RECEIPT),
                 components);
@@ -133,7 +135,8 @@ public class NotificationService {
                     customer.getName(),
                     messageText,
                     resolveBrandName(tenantId)));
-            Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
+            Msg91Client.Msg91SendResult result = sendWhatsApp(
+                    tenantId,
                     phone,
                     whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.PROMO_CAMPAIGN),
                     components);
@@ -148,11 +151,21 @@ public class NotificationService {
             vars.put("VAR1", customer.getName());
             vars.put("VAR2", messageText);
             vars.put("VAR3", resolveBrandName(tenantId));
-            Msg91Client.Msg91SendResult result = msg91Client.sendSmsFlow(phone, vars);
+            Msg91Client.Msg91SendResult result = messagingGate.shouldSimulate(tenantId, phone)
+                    ? messagingGate.simulatedResult(tenantId, "sms-flow")
+                    : msg91Client.sendSmsFlow(phone, vars);
             applyResult(log, result);
         }
 
         return deliveryLogRepository.save(log);
+    }
+
+    private Msg91Client.Msg91SendResult sendWhatsApp(
+            UUID tenantId, String phone, String templateName, List<Map<String, Object>> components) {
+        if (messagingGate.shouldSimulate(tenantId, phone)) {
+            return messagingGate.simulatedResult(tenantId, templateName);
+        }
+        return msg91Client.sendWhatsAppTemplate(phone, templateName, components);
     }
 
     private void applyResult(MessageDeliveryLog deliveryLog, Msg91Client.Msg91SendResult result) {

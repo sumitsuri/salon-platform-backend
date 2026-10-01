@@ -6,6 +6,7 @@ import com.salonplatform.domain.entity.Customer;
 import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.notification.Msg91Client;
+import com.salonplatform.notification.OutboundMessagingGate;
 import com.salonplatform.config.Msg91Properties;
 import com.salonplatform.domain.entity.MessageDeliveryLog;
 import com.salonplatform.domain.enums.MessageChannel;
@@ -42,6 +43,7 @@ public class AppointmentNotificationService {
     private final MessageDeliveryLogRepository deliveryLogRepository;
     private final TenantRepository tenantRepository;
     private final WhatsAppTemplateService whatsAppTemplateService;
+    private final OutboundMessagingGate messagingGate;
 
     public void sendConfirmation(Booking booking, Branch branch, Customer customer, String serviceName, String staffName) {
         String phone = customer.getPhone() != null ? PhoneUtils.normalizeIndianMobile(customer.getPhone()) : null;
@@ -76,7 +78,8 @@ public class AppointmentNotificationService {
                 serviceName != null ? serviceName : "Salon service"
         ));
 
-        if (!msg91Properties.isEnabled()) {
+        boolean simulate = messagingGate.shouldSimulate(booking.getTenantId(), phone);
+        if (!simulate && !msg91Properties.isEnabled()) {
             deliveryLog.setStatus(MessageDeliveryStatus.SKIPPED);
             deliveryLog.setErrorMessage("MSG91 not configured");
             deliveryLogRepository.save(deliveryLog);
@@ -91,10 +94,10 @@ public class AppointmentNotificationService {
             return;
         }
 
-        Msg91Client.Msg91SendResult result = msg91Client.sendWhatsAppTemplate(
-                phone,
-                whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.APPOINTMENT_CONFIRMED),
-                components);
+        String templateName = whatsAppTemplateService.resolveTemplateName(WhatsAppTemplateCode.APPOINTMENT_CONFIRMED);
+        Msg91Client.Msg91SendResult result = simulate
+                ? messagingGate.simulatedResult(booking.getTenantId(), templateName)
+                : msg91Client.sendWhatsAppTemplate(phone, templateName, components);
 
         if (result.skipped()) {
             deliveryLog.setStatus(MessageDeliveryStatus.SKIPPED);
