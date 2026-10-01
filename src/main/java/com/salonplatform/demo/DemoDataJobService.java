@@ -152,7 +152,8 @@ public class DemoDataJobService {
         tenantRepository.save(tenant);
 
         progress("Creating branches and logins");
-        UUID ownerId = createUser(tenantId, null, "Brand Owner", "owner", UserRole.BRAND_ADMIN, properties.getOwnerPassword());
+        UUID ownerId = createUser(tenantId, null, "Brand Owner",
+                properties.getBrandName().split("\\s+")[0].toLowerCase(), UserRole.BRAND_ADMIN, properties.getOwnerPassword());
         DemoRowWriter writer = new DemoRowWriter(jdbcTemplate, properties.getBatchSize(), properties.getPauseMillisBetweenBatches());
         DemoHistoryGenerator.declareTables(writer);
         DemoHistoryGenerator generator = new DemoHistoryGenerator(writer, properties.getRandomSeed(), tenantId,

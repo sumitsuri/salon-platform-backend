@@ -83,6 +83,8 @@ public class DataSeeder implements CommandLineRunner {
                     .benchmarkOptIn(true)
                     .marketCity("Bangalore")
                     .salonTier(seed.salonTier())
+                    // Synthetic brands: never peers of real brands in Market Pulse.
+                    .demoTenant(true)
                     .build());
             created = true;
         } else {

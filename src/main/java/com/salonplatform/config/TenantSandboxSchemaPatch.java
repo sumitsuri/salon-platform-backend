@@ -20,6 +20,8 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class TenantSandboxSchemaPatch implements ApplicationRunner {
 
+    private static final String SEED_BRANDS_DEMO_ACTION = "SEED_BRANDS_MARKED_DEMO";
+
     private final JdbcTemplate jdbcTemplate;
 
     @Override
@@ -36,6 +38,19 @@ public class TenantSandboxSchemaPatch implements ApplicationRunner {
             int live = jdbcTemplate.update(
                     "UPDATE tenants SET outbound_messaging_mode = 'LIVE' WHERE outbound_messaging_mode IS NULL");
             log.info("Tenant sandbox schema patch applied (simulate={}, live={})", simulated, live);
+
+            // One-shot: the synthetic seed brands stop appearing as real brands' Market Pulse peers.
+            // Recorded in audit_logs so a later manual change from platform admin is never overridden.
+            Integer done = jdbcTemplate.queryForObject(
+                    "SELECT count(*) FROM audit_logs WHERE action = ?", Integer.class, SEED_BRANDS_DEMO_ACTION);
+            if (done != null && done == 0) {
+                int flagged = jdbcTemplate.update(
+                        "UPDATE tenants SET demo_tenant = true WHERE slug IN (" + seedSlugs + ")");
+                jdbcTemplate.update("INSERT INTO audit_logs (id, action, entity_type, details, created_at) "
+                                + "VALUES (?, ?, 'TENANT', ?, now())",
+                        java.util.UUID.randomUUID(), SEED_BRANDS_DEMO_ACTION, "{\"flagged\":" + flagged + "}");
+                log.info("Flagged {} synthetic seed brands as demo", flagged);
+            }
         } catch (Exception e) {
             log.warn("Tenant sandbox schema patch skipped or partial: {}", e.getMessage());
         }
