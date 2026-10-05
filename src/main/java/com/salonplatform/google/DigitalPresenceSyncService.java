@@ -165,11 +165,12 @@ public class DigitalPresenceSyncService {
         if (pilot.isEmpty()) {
             return SyncResult.builder().skipped(true).message("Pilot branch not found.").build();
         }
-        if (isFresh(pilot.get().getDigitalPresenceUpdatedAt())) {
+        Branch pilotBranch = pilot.get();
+        if (isFresh(pilotBranch.getDigitalPresenceUpdatedAt()) && !rankKeywordsStale(pilotBranch)) {
             return SyncResult.builder()
                     .skipped(true)
                     .message("Using cached Google data.")
-                    .syncedAt(pilot.get().getDigitalPresenceUpdatedAt())
+                    .syncedAt(pilotBranch.getDigitalPresenceUpdatedAt())
                     .build();
         }
         return syncPilotBranch(tenantId, radiusKm, false);
@@ -412,6 +413,19 @@ public class DigitalPresenceSyncService {
     private boolean isFresh(Instant updatedAt) {
         if (updatedAt == null) return false;
         return updatedAt.isAfter(Instant.now().minus(properties.getSyncCacheHours(), ChronoUnit.HOURS));
+    }
+
+    /** Re-sync when locality/keyword templates changed (e.g. pincode → neighbourhood). */
+    private boolean rankKeywordsStale(Branch branch) {
+        List<GoogleSearchRankEntry> stored = readRankEntries(branch);
+        if (stored.isEmpty()) {
+            return false;
+        }
+        List<String> keywords = stored.stream()
+                .map(GoogleSearchRankEntry::getKeyword)
+                .filter(k -> k != null && !k.isBlank())
+                .toList();
+        return !LocalSpotlightKeywords.rankKeywordsMatchStored(keywords, branch);
     }
 
     private String writeRankEntries(List<GoogleSearchRankEntry> entries) {

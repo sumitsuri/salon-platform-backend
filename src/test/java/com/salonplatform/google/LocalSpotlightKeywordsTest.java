@@ -54,6 +54,20 @@ class LocalSpotlightKeywordsTest {
     }
 
     @Test
+    void rankKeywordsMatchStored_rejectsLegacyPincodeKeywords() {
+        Branch branch = branch(
+                "Varthur",
+                "SLV Sunrise, Varthur, Bangalore",
+                "SLV Sunrise",
+                BranchBusinessType.SALON_AND_SPA);
+
+        assertFalse(LocalSpotlightKeywords.rankKeywordsMatchStored(
+                List.of("salon near 560087"), branch));
+        assertTrue(LocalSpotlightKeywords.rankKeywordsMatchStored(
+                LocalSpotlightKeywords.searchKeywords(branch), branch));
+    }
+
+    @Test
     void resolveCity_readsCityFromAddress() {
         Branch branch = branch(
                 "Mystic Varthur",

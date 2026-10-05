@@ -51,6 +51,24 @@ public final class LocalSpotlightKeywords {
         return "Bangalore";
     }
 
+    /** True when persisted Google rank rows match the keywords we would generate today. */
+    public static boolean rankKeywordsMatchStored(List<String> storedKeywords, Branch branch) {
+        if (storedKeywords == null || storedKeywords.isEmpty()) {
+            return true;
+        }
+        List<String> expected = searchKeywords(branch);
+        if (storedKeywords.size() != expected.size()) {
+            return false;
+        }
+        for (int i = 0; i < expected.size(); i++) {
+            String stored = storedKeywords.get(i);
+            if (stored == null || !stored.equalsIgnoreCase(expected.get(i))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public static List<String> searchKeywords(Branch branch) {
         String locality = resolveLocality(branch);
         if (locality.isBlank()) {

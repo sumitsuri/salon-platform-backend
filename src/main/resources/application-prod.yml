@@ -76,8 +76,8 @@ app:
       internal-proxy-enabled: false
       internal-proxy-base-url: ${API_PUBLIC_URL:https://api.antrahq.com}
       internal-proxy-secret: ${PLACES_INTERNAL_PROXY_SECRET:}
-      pilot-branch-code: VAR
-      pilot-tenant-slug: demo-brand
+      pilot-branch-code: ${APP_GOOGLE_PLACES_PILOT_BRANCH_CODE:MW01}
+      pilot-tenant-slug: ${APP_GOOGLE_PLACES_PILOT_TENANT_SLUG:mystic-wellness}
       sync-cache-hours: 24
       default-radius-meters: 2000
   demo-data:

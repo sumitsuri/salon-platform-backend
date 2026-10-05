@@ -44,9 +44,6 @@ public class BranchSchemaPatch implements ApplicationRunner {
                     "UPDATE branches SET society_default = 'SLV Sunrise' "
                             + "WHERE lower(code) = 'mw01' "
                             + "AND tenant_id IN (SELECT id FROM tenants WHERE lower(slug) = 'mystic-wellness')");
-            jdbcTemplate.update(
-                    "UPDATE branches SET google_search_rank_data = NULL, digital_presence_updated_at = NULL "
-                            + "WHERE code = 'VAR' AND google_search_rank_data IS NOT NULL");
             log.info("Branch schema patch applied");
         } catch (Exception e) {
             log.warn("Branch schema patch skipped or partial: {}", e.getMessage());
