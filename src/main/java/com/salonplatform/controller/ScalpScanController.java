@@ -33,9 +33,9 @@ public class ScalpScanController {
     @PostMapping(value = "/{sessionId}/captures", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<ScalpScanCaptureDto> addCapture(
             @PathVariable UUID sessionId,
-            @RequestParam ScalpCaptureZone zone,
-            @RequestParam(defaultValue = "WHITE") ScalpLightMode lightMode,
-            @RequestPart("photo") MultipartFile photo) {
+            @RequestParam("zone") ScalpCaptureZone zone,
+            @RequestParam(value = "lightMode", defaultValue = "WHITE") ScalpLightMode lightMode,
+            @RequestParam("photo") MultipartFile photo) {
         return ApiResponse.ok(scalpScanService.addCapture(sessionId, zone, lightMode, photo));
     }
 

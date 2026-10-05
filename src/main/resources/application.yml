@@ -46,7 +46,7 @@ app:
   scalp-scan:
     photos:
       s3-bucket: ${SCALP_SCAN_S3_BUCKET:${ATTENDANCE_S3_BUCKET:}}
-      key-prefix: ${SCALP_SCAN_S3_PREFIX:scalp-scans/}
+      key-prefix: ${SCALP_SCAN_S3_PREFIX:attendance/scalp-scans/}
       storage-dir: ${SCALP_SCAN_PHOTO_DIR:data/scalp-scan-photos}
       aws-region: ${AWS_REGION:ap-south-1}
       max-bytes: 2097152

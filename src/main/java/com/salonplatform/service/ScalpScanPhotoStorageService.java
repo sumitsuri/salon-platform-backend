@@ -91,7 +91,8 @@ public class ScalpScanPhotoStorageService {
             }
             return relativeKey;
         } catch (IOException | RuntimeException e) {
-            log.error("Failed to store scalp scan photo session={} s3={}: {}", sessionId, isS3Enabled(), e.toString());
+            log.error("Failed to store scalp scan photo session={} s3={} keyPrefix={}: {}",
+                    sessionId, isS3Enabled(), properties.getKeyPrefix(), e.toString());
             throw new BadRequestException("Failed to store photo");
         }
     }

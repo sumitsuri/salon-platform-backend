@@ -11,7 +11,8 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "app.scalp-scan.photos")
 public class ScalpScanPhotoProperties {
     private String s3Bucket = "";
-    private String keyPrefix = "scalp-scans/";
+    /** Under {@code attendance/} so prod EC2 IAM (attendance/*) can write scan photos. */
+    private String keyPrefix = "attendance/scalp-scans/";
     private String storageDir = "data/scalp-scan-photos";
     private String awsRegion = "ap-south-1";
     private long maxBytes = 2097152;
