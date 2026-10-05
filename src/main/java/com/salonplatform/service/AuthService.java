@@ -37,8 +37,13 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        // Normalise the email (mobile keyboards add capitals and trailing spaces); the user lookup falls back
+        // to a case-insensitive match so accounts stored with capitals still sign in. Passwords are compared
+        // exactly as typed.
+        String email = request.getEmail() == null ? "" : request.getEmail().trim().toLowerCase();
+        String password = request.getPassword() == null ? "" : request.getPassword();
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword()));
+                new UsernamePasswordAuthenticationToken(email, password));
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
         String accessToken = jwtTokenProvider.generateAccessToken(authentication);
         String refreshTokenValue = jwtTokenProvider.generateRefreshTokenValue();

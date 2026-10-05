@@ -10,6 +10,9 @@ import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
+
+    /** Login fallback for accounts whose stored email has capitals (login input is lower-cased). */
+    Optional<User> findFirstByEmailIgnoreCaseOrderByCreatedAtAsc(String email);
     Optional<User> findByTenantIdAndEmail(UUID tenantId, String email);
     List<User> findByTenantId(UUID tenantId);
     List<User> findByTenantIdAndBranchId(UUID tenantId, UUID branchId);

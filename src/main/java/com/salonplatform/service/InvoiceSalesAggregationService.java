@@ -58,6 +58,7 @@ public class InvoiceSalesAggregationService {
             }
             BillPreviewResponse bill = billPreviewForInvoice(invoice, bookingsById.get(invoice.getBookingId()), lines);
             Map<UUID, BillLinePreview> previewByLineId = previewIndex(bill);
+            BigDecimal paidShare = paidShareAfterBillDiscount(bill);
             for (BookingLineItem line : lines) {
                 if (line.getStaffId() == null) {
                     continue;
@@ -73,9 +74,10 @@ public class InvoiceSalesAggregationService {
                     finalAmount = imputed.finalAmount();
                 } else {
                     listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
-                    finalAmount = preview != null && preview.getLineTotal() != null
+                    finalAmount = (preview != null && preview.getLineTotal() != null
                             ? preview.getLineTotal()
-                            : listAmount;
+                            : listAmount)
+                            .multiply(paidShare).setScale(2, RoundingMode.HALF_UP);
                 }
                 byStaff.compute(line.getStaffId(), (k, acc) -> {
                     BookingLineAggregate current = acc == null ? new BookingLineAggregate() : acc;
@@ -99,6 +101,7 @@ public class InvoiceSalesAggregationService {
             }
             BillPreviewResponse bill = billPreviewForInvoice(invoice, bookingsById.get(invoice.getBookingId()), lines);
             Map<UUID, BillLinePreview> previewByLineId = previewIndex(bill);
+            BigDecimal paidShare = paidShareAfterBillDiscount(bill);
             for (BookingLineItem line : lines) {
                 if (line.getServiceName() == null) {
                     continue;
@@ -114,9 +117,10 @@ public class InvoiceSalesAggregationService {
                     finalAmount = imputed.finalAmount();
                 } else {
                     listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
-                    finalAmount = preview != null && preview.getLineTotal() != null
+                    finalAmount = (preview != null && preview.getLineTotal() != null
                             ? preview.getLineTotal()
-                            : listAmount;
+                            : listAmount)
+                            .multiply(paidShare).setScale(2, RoundingMode.HALF_UP);
                 }
                 byService.compute(line.getServiceName(), (k, acc) -> {
                     ServiceLineAggregate current = acc == null ? new ServiceLineAggregate() : acc;
@@ -125,6 +129,27 @@ public class InvoiceSalesAggregationService {
             }
         }
         return byService;
+    }
+
+    /**
+     * The manager's bill-level discount is taken off the post-tax bill total, after line totals are
+     * computed, so it never reaches the lines. Spread it across the lines pro rata so each line's
+     * final amount is what the guest actually paid for it (and staff incentives are based on that).
+     */
+    static BigDecimal paidShareAfterBillDiscount(BillPreviewResponse bill) {
+        if (bill == null || bill.getLines() == null || bill.getManualDiscountAmount() == null
+                || bill.getManualDiscountAmount().signum() <= 0) {
+            return BigDecimal.ONE;
+        }
+        BigDecimal linesTotal = bill.getLines().stream()
+                .filter(l -> l.getLineItemId() != null && l.getLineTotal() != null)
+                .map(BillLinePreview::getLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (linesTotal.signum() <= 0) {
+            return BigDecimal.ONE;
+        }
+        BigDecimal paid = linesTotal.subtract(bill.getManualDiscountAmount()).max(BigDecimal.ZERO);
+        return paid.divide(linesTotal, 10, RoundingMode.HALF_UP);
     }
 
     /** One bulk query for every invoice's line items instead of a findByBookingId() call per invoice. */
