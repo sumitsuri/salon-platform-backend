@@ -44,7 +44,6 @@ public class LocalSpotlightDailyRankService {
      * Fetches or reuses pin-code SERPs, records per-branch ranks for today, and returns entries
      * for the branch snapshot JSON field.
      */
-    @Transactional
     public List<GoogleSearchRankEntry> syncAndRecordDailyRanks(
             UUID tenantId, Branch branch, int radiusKm, boolean forceRefresh) {
         String pin = LocalSpotlightKeywords.resolvePinCode(branch);

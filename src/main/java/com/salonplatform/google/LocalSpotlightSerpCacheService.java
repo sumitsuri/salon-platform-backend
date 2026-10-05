@@ -9,7 +9,6 @@ import com.salonplatform.domain.repository.LocalSpotlightSerpCacheRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -34,7 +33,6 @@ public class LocalSpotlightSerpCacheService {
 
     public record CachedSerp(List<GoogleRankedPlace> rankedPlaces) {}
 
-    @Transactional
     public CachedSerp resolveSerp(Branch branch, String keyword, int radiusMeters, LocalDate snapshotDate,
                                   boolean forceRefresh) {
         String cacheKey = LocalSpotlightKeywords.serpCacheKey(branch, keyword);
