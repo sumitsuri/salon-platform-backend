@@ -323,7 +323,7 @@ public class BenchmarkService {
     private BigDecimal computeAttendanceCompliance(
             UUID tenantId, Set<UUID> branchSet, LocalDate start, LocalDate end) {
         List<Staff> staff = staffRepository.findByTenantId(tenantId).stream()
-                .filter(Staff::isActive)
+                .filter(s -> s.onRosterOnOrAfter(start, ZONE))
                 .filter(s -> branchSet.contains(s.getBranchId()))
                 .toList();
         if (staff.isEmpty()) return BigDecimal.ZERO;

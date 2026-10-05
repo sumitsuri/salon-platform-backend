@@ -56,6 +56,11 @@ public class StaffController {
         return ApiResponse.ok(null);
     }
 
+    @PostMapping("/{id}/reactivate")
+    public ApiResponse<StaffResponse> reactivate(@PathVariable UUID id) {
+        return ApiResponse.ok(staffService.reactivate(id));
+    }
+
     @GetMapping("/performance/targets")
     public ApiResponse<StaffTargetPerformanceResponse> targetPerformance(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,

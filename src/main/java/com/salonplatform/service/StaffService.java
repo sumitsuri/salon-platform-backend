@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -82,7 +83,7 @@ public class StaffService {
         if (request.getIdProofReference() != null) staff.setIdProofReference(request.getIdProofReference());
         if (request.getMonthlySalesTarget() != null) staff.setMonthlySalesTarget(request.getMonthlySalesTarget());
         if (request.getIncentivePercent() != null) staff.setIncentivePercent(request.getIncentivePercent());
-        if (request.getActive() != null) staff.setActive(request.getActive());
+        if (request.getActive() != null) applyActive(staff, request.getActive());
 
         return toResponse(staffRepository.save(staff));
     }
@@ -92,8 +93,24 @@ public class StaffService {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
         Staff staff = requireStaff(tenantId, id);
-        staff.setActive(false);
+        applyActive(staff, false);
         staffRepository.save(staff);
+    }
+
+    @Transactional
+    public StaffResponse reactivate(UUID id) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Staff staff = requireStaff(tenantId, id);
+        applyActive(staff, true);
+        return toResponse(staffRepository.save(staff));
+    }
+
+    /** Soft state change: deactivation stamps the moment so earlier attendance/sales stay attributed to the employee. */
+    private void applyActive(Staff staff, boolean active) {
+        if (active == staff.isActive()) return;
+        staff.setActive(active);
+        staff.setDeactivatedAt(active ? null : Instant.now());
     }
 
     public List<StaffResponse> listByBranch(UUID branchId) {
@@ -144,7 +161,8 @@ public class StaffService {
                 .role(s.getRole())
                 .skills(s.getSkills())
                 .biometricId(s.getBiometricId())
-                .active(s.isActive());
+                .active(s.isActive())
+                .deactivatedAt(s.getDeactivatedAt());
 
         if (SecurityUtils.isBrandAdmin()) {
             builder.salary(s.getSalary())

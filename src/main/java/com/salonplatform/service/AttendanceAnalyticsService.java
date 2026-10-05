@@ -47,10 +47,14 @@ public class AttendanceAnalyticsService {
         Set<UUID> branchFilter = branchIds != null && !branchIds.isEmpty()
                 ? new HashSet<>(branchIds) : null;
 
+        // Everyone on the roster at any point in the period (keeps history of since-deactivated staff)...
         List<Staff> allStaff = staffRepository.findByTenantId(tenantId).stream()
-                .filter(Staff::isActive)
+                .filter(s -> s.onRosterOnOrAfter(start, ZONE))
                 .filter(s -> branchFilter == null || branchFilter.contains(s.getBranchId()))
                 .collect(Collectors.toList());
+        // ...but "today" figures only count people who can still check in.
+        List<Staff> activeNow = allStaff.stream().filter(Staff::isActive).collect(Collectors.toList());
+        Set<UUID> activeNowIds = activeNow.stream().map(Staff::getId).collect(Collectors.toSet());
 
         List<AttendanceRecord> records = branchFilter != null
                 ? attendanceRepository.findByTenantIdAndBranchIdInAndWorkDateBetween(tenantId, new ArrayList<>(branchFilter), start, end)
@@ -67,14 +71,15 @@ public class AttendanceAnalyticsService {
 
         Set<UUID> presentToday = records.stream()
                 .filter(r -> r.getWorkDate().equals(today) && r.getEntryTime() != null)
+                .filter(r -> activeNowIds.contains(r.getStaffId()))
                 .map(AttendanceRecord::getStaffId)
                 .collect(Collectors.toSet());
 
-        long onLeaveToday = allStaff.stream()
+        long onLeaveToday = activeNow.stream()
                 .filter(s -> isOnLeave(s.getId(), approvedLeaves, today))
                 .count();
 
-        long absentToday = allStaff.size() - presentToday.size() - onLeaveToday;
+        long absentToday = activeNow.size() - presentToday.size() - onLeaveToday;
         if (absentToday < 0) absentToday = 0;
 
         List<DailyAttendanceTrend> dailyTrends = buildDailyTrends(start, end, records, approvedLeaves, allStaff.size());
@@ -84,7 +89,7 @@ public class AttendanceAnalyticsService {
 
         Map<UUID, Long> leaveDaysByStaff = new HashMap<>();
         for (Staff staff : allStaff) {
-            long days = countLeaveDays(staff.getId(), approvedLeaves, start, end);
+            long days = countLeaveDays(staff.getId(), approvedLeaves, start, effectiveEnd(staff, end));
             leaveDaysByStaff.put(staff.getId(), days);
         }
 
@@ -92,7 +97,7 @@ public class AttendanceAnalyticsService {
             List<AttendanceRecord> staffRecords = byStaff.getOrDefault(staff.getId(), List.of());
             Branch branch = branchRepository.findById(staff.getBranchId()).orElse(null);
             long daysPresent = staffRecords.stream().filter(r -> r.getEntryTime() != null).count();
-            long absentDays = countAbsentDays(staff.getId(), staffRecords, approvedLeaves, start, end);
+            long absentDays = countAbsentDays(staff.getId(), staffRecords, approvedLeaves, start, effectiveEnd(staff, end));
             double totalHours = staffRecords.stream()
                     .map(AttendanceService::computeHours)
                     .filter(Objects::nonNull)
@@ -163,7 +168,7 @@ public class AttendanceAnalyticsService {
                 .collect(Collectors.toList());
 
         return AttendanceDashboardResponse.builder()
-                .totalStaff(allStaff.size())
+                .totalStaff(activeNow.size())
                 .presentToday(presentToday.size())
                 .onLeaveToday(onLeaveToday)
                 .absentToday(absentToday)
@@ -208,6 +213,12 @@ public class AttendanceAnalyticsService {
                     .build());
         }
         return trends;
+    }
+
+    /** Days after an employee was deactivated must not count as absences. */
+    private static LocalDate effectiveEnd(Staff staff, LocalDate end) {
+        LocalDate last = staff.lastRosterDate(ZONE);
+        return last != null && last.isBefore(end) ? last : end;
     }
 
     private boolean isOnLeave(UUID staffId, List<LeaveRecord> leaves, LocalDate date) {

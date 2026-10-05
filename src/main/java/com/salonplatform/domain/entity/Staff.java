@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 @Entity
@@ -65,9 +66,24 @@ public class Staff {
     @Builder.Default
     private boolean active = true;
 
+    /** When the employee was soft-deactivated; null while active. Reports use it to keep history before this point. */
+    private Instant deactivatedAt;
+
     @CreationTimestamp
     private Instant createdAt;
 
     @UpdateTimestamp
     private Instant updatedAt;
+
+    /** Last calendar day this employee still counts on the roster; null while active (no end). */
+    public LocalDate lastRosterDate(ZoneId zone) {
+        return active || deactivatedAt == null ? null : deactivatedAt.atZone(zone).toLocalDate();
+    }
+
+    /** True if the employee was on the roster on {@code day} or later (still active, or deactivated on/after it). */
+    public boolean onRosterOnOrAfter(LocalDate day, ZoneId zone) {
+        if (active) return true;
+        LocalDate last = lastRosterDate(zone);
+        return last != null && !last.isBefore(day);
+    }
 }

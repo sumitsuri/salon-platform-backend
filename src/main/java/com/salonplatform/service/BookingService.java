@@ -387,8 +387,7 @@ public class BookingService {
                 .orElseThrow(() -> new ResourceNotFoundException("Branch service not found"));
         SalonService svc = salonServiceRepository.findById(bs.getServiceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Service not found"));
-        staffRepository.findById(lineReq.getStaffId())
-                .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+        assertStaffAssignable(booking.getTenantId(), lineReq.getStaffId());
 
         int duration = svc.getDurationMinutes() != null && svc.getDurationMinutes() > 0
                 ? svc.getDurationMinutes() : 30;
@@ -1015,6 +1014,10 @@ public class BookingService {
             throw new BadRequestException("error.booking.invalidScheduleWindow");
         }
 
+        if (request.getStaffId() != null) {
+            assertStaffAssignable(booking.getTenantId(), request.getStaffId());
+        }
+
         booking.setScheduledStartAt(request.getScheduledStartAt());
         booking.setScheduledEndAt(request.getScheduledEndAt());
 
@@ -1217,6 +1220,18 @@ public class BookingService {
         BillPreviewResponse bill = gstCalculationService.calculate(booking, lines, promo);
         booking.setMembershipDiscountAmount(bill.getMembershipDiscountAmount());
         booking.setPromoDiscountAmount(bill.getPromoDiscountAmount());
+    }
+
+    /** Deactivated employees keep their history but can no longer be given new services or appointments. */
+    private void assertStaffAssignable(UUID tenantId, UUID staffId) {
+        Staff staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+        if (!staff.getTenantId().equals(tenantId)) {
+            throw new ResourceNotFoundException("Staff not found");
+        }
+        if (!staff.isActive()) {
+            throw new BadRequestException("error.booking.staffInactive");
+        }
     }
 
     private void assertPackageSoldByStaff(UUID tenantId, UUID branchId, UUID staffId) {

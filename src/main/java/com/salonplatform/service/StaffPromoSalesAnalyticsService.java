@@ -77,7 +77,7 @@ public class StaffPromoSalesAnalyticsService {
             }
         }
 
-        List<Staff> roster = loadRoster(tenantId, resolvedBranchIds);
+        List<Staff> roster = loadRoster(tenantId, resolvedBranchIds, day);
         for (Staff member : roster) {
             byStaff.putIfAbsent(member.getId(), new MutableAgg());
         }
@@ -156,18 +156,20 @@ public class StaffPromoSalesAnalyticsService {
         return branchIds;
     }
 
-    private List<Staff> loadRoster(UUID tenantId, List<UUID> resolvedBranchIds) {
+    /** Staff still on the roster on {@code day}: active, or deactivated on/after that day (history stays visible). */
+    private List<Staff> loadRoster(UUID tenantId, List<UUID> resolvedBranchIds, LocalDate day) {
+        List<Staff> all;
         if (resolvedBranchIds != null && resolvedBranchIds.size() == 1) {
-            return staffRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, resolvedBranchIds.get(0));
-        }
-        if (resolvedBranchIds != null && !resolvedBranchIds.isEmpty()) {
-            List<Staff> merged = new ArrayList<>();
+            all = staffRepository.findByTenantIdAndBranchId(tenantId, resolvedBranchIds.get(0));
+        } else if (resolvedBranchIds != null && !resolvedBranchIds.isEmpty()) {
+            all = new ArrayList<>();
             for (UUID branchId : resolvedBranchIds) {
-                merged.addAll(staffRepository.findByTenantIdAndBranchIdAndActiveTrue(tenantId, branchId));
+                all.addAll(staffRepository.findByTenantIdAndBranchId(tenantId, branchId));
             }
-            return merged;
+        } else {
+            all = staffRepository.findByTenantId(tenantId);
         }
-        return staffRepository.findByTenantId(tenantId).stream().filter(Staff::isActive).toList();
+        return all.stream().filter(s -> s.onRosterOnOrAfter(day, IST)).toList();
     }
 
     private static final class MutableAgg {

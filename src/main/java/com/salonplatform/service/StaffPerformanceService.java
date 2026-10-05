@@ -48,7 +48,7 @@ public class StaffPerformanceService {
         Instant rangeEnd = end.plusDays(1).atStartOfDay(ZONE).toInstant();
 
         List<Staff> staffList = staffRepository.findByTenantId(tenantId).stream()
-                .filter(Staff::isActive)
+                .filter(s -> s.onRosterOnOrAfter(start, ZONE))
                 .filter(s -> branchIds == null || branchIds.isEmpty() || branchIds.contains(s.getBranchId()))
                 .collect(Collectors.toList());
 
@@ -150,7 +150,7 @@ public class StaffPerformanceService {
         Instant rangeEnd = end.plusDays(1).atStartOfDay(ZONE).toInstant();
 
         List<Staff> staffList = staffRepository.findByTenantId(tenantId).stream()
-                .filter(Staff::isActive)
+                .filter(s -> s.onRosterOnOrAfter(start, ZONE))
                 .filter(s -> s.getMonthlySalesTarget() != null
                         && s.getMonthlySalesTarget().compareTo(BigDecimal.ZERO) > 0)
                 .filter(s -> branchIds == null || branchIds.isEmpty() || branchIds.contains(s.getBranchId()))

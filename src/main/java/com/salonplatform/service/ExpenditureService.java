@@ -149,7 +149,7 @@ public class ExpenditureService {
 
         List<Branch> branches = branchRepository.findByTenantId(tenantId);
         List<Staff> staffList = staffRepository.findByTenantId(tenantId).stream()
-                .filter(Staff::isActive)
+                .filter(s -> s.onRosterOnOrAfter(month, java.time.ZoneId.of("Asia/Kolkata")))
                 .filter(s -> s.getSalary() != null && s.getSalary().compareTo(BigDecimal.ZERO) > 0)
                 .collect(Collectors.toList());
 
