@@ -1,6 +1,7 @@
 package com.salonplatform.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.LocalSpotlightKeywordRankDaily;
@@ -156,6 +157,33 @@ public class LocalSpotlightDailyRankService {
 
     public Optional<LocalSpotlightKeywordRankDaily> findSnapshot(UUID branchId, String keyword, LocalDate date) {
         return dailyRepository.findByBranchIdAndKeywordAndSnapshotDate(branchId, keyword, date);
+    }
+
+    /** Maps a daily snapshot row into the same shape as branch JSON rank entries (for display). */
+    public Optional<GoogleSearchRankEntry> toRankEntry(LocalSpotlightKeywordRankDaily daily) {
+        if (daily == null) {
+            return Optional.empty();
+        }
+        List<GoogleRankedPlace> topThree = readTopThree(daily.getTopThreeJson());
+        return Optional.of(GoogleSearchRankEntry.builder()
+                .keyword(daily.getKeyword())
+                .yourRank(daily.getYourRank())
+                .yourRankBeyondTop20(daily.isBeyondTop20())
+                .topThreePlaces(topThree)
+                .build());
+    }
+
+    private List<GoogleRankedPlace> readTopThree(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<GoogleRankedPlace> places = objectMapper.readValue(json, new TypeReference<>() {});
+            return places != null ? places : List.of();
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse daily top-three JSON: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     private String writeTopThree(List<GoogleRankedPlace> topPlaces) {

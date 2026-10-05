@@ -31,6 +31,8 @@ public class LocalSpotlightResponse {
     private List<SearchRankRow> searchRanks;
     /** When set, {@link SearchRankRow#compareRank} / {@link SearchRankRow#rankChange} are vs this date. */
     private LocalDate rankCompareDate;
+    /** True when Google sync exists but keyword-level ranks are missing or outdated (PIN template drift). */
+    private boolean keywordRanksNeedRefresh;
     private List<PlaybookItem> playbook;
 
     @Data

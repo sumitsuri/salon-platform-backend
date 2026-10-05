@@ -87,6 +87,7 @@ public class LocalSpotlightService {
 
         List<LocalSpotlightResponse.BranchRow> branchRows = new ArrayList<>();
         List<LocalSpotlightResponse.SearchRankRow> searchRanks = new ArrayList<>();
+        boolean keywordRanksNeedRefresh = false;
         int notInTop3 = 0;
         int ratingBelow = 0;
         int incompleteGbp = 0;
@@ -123,7 +124,11 @@ public class LocalSpotlightService {
             branchRows.add(buildBranchRow(effective, lvs, completeness, listingLinked, branchRivals.size(), isPilot, googleSynced));
 
             if (googleSynced) {
-                searchRanks.addAll(buildSearchRanks(effective, branchRivals, rankCompareDate));
+                SearchRankBuildResult built = buildSearchRanks(effective, rankCompareDate);
+                searchRanks.addAll(built.rows());
+                if (built.needsRefresh()) {
+                    keywordRanksNeedRefresh = true;
+                }
             }
         }
 
@@ -189,9 +194,12 @@ public class LocalSpotlightService {
                 .rivals(rivalRows)
                 .searchRanks(searchRanks)
                 .rankCompareDate(rankCompareDate)
+                .keywordRanksNeedRefresh(keywordRanksNeedRefresh)
                 .playbook(playbook)
                 .build();
     }
+
+    private record SearchRankBuildResult(List<LocalSpotlightResponse.SearchRankRow> rows, boolean needsRefresh) {}
 
     public com.salonplatform.dto.analytics.LocalSpotlightRankHistoryResponse keywordRankHistory(
             UUID branchId, LocalDate from, LocalDate to) {
@@ -304,46 +312,94 @@ public class LocalSpotlightService {
                 .build();
     }
 
-    private List<LocalSpotlightResponse.SearchRankRow> buildSearchRanks(
-            Branch branch, List<LocalCompetitor> rivals, LocalDate rankCompareDate) {
+    private SearchRankBuildResult buildSearchRanks(Branch branch, LocalDate rankCompareDate) {
         List<String> expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch);
+        if (expectedKeywords.isEmpty()) {
+            return new SearchRankBuildResult(List.of(), false);
+        }
+
         List<GoogleSearchRankEntry> stored = digitalPresenceSyncService.readRankEntries(branch);
         List<String> storedKeywords = stored.stream()
                 .map(GoogleSearchRankEntry::getKeyword)
                 .filter(k -> k != null && !k.isBlank())
                 .toList();
-        if (!stored.isEmpty() && LocalSpotlightKeywords.rankKeywordsMatchStored(storedKeywords, branch)) {
-            return stored.stream()
-                    .map(entry -> {
-                        List<LocalSpotlightResponse.TopThreeRival> topThree = mapTopThreeRivals(entry);
-                        return enrichCompare(
-                                branch,
-                                LocalSpotlightResponse.SearchRankRow.builder()
-                                        .branchId(branch.getId())
-                                        .branchName(branch.getName())
-                                        .keyword(entry.getKeyword())
-                                        .yourRank(entry.getYourRank())
-                                        .yourRankBeyondTop20(Boolean.TRUE.equals(entry.getYourRankBeyondTop20()))
-                                        .yourRankLabel(buildYourRankLabel(entry))
-                                        .inTop3(entry.getYourRank() != null && entry.getYourRank() <= 3)
-                                        .topThreeSummary(buildTopThreeSummary(topThree, entry))
-                                        .topThreeRivals(topThree)
-                                        .build(),
-                                rankCompareDate);
-                    })
-                    .toList();
-        }
+        boolean storedMatchesTemplate =
+                !stored.isEmpty() && LocalSpotlightKeywords.rankKeywordsMatchStored(storedKeywords, branch);
 
+        LocalDate today = localSpotlightDailyRankService.today();
         List<LocalSpotlightResponse.SearchRankRow> rows = new ArrayList<>();
-        if (expectedKeywords.isEmpty()) {
-            return rows;
-        }
+        boolean needsRefresh = false;
 
         for (String keyword : expectedKeywords) {
-            rows.add(enrichCompare(
-                    branch, buildFallbackSearchRankRow(branch, keyword, rivals), rankCompareDate));
+            GoogleSearchRankEntry entry = resolveKeywordRankEntry(
+                    branch, keyword, stored, storedMatchesTemplate, today);
+            if (entry == null) {
+                needsRefresh = true;
+                rows.add(enrichCompare(branch, buildPendingKeywordRow(branch, keyword), rankCompareDate));
+            } else {
+                rows.add(enrichCompare(branch, rowFromRankEntry(branch, entry), rankCompareDate));
+            }
         }
-        return rows;
+        return new SearchRankBuildResult(rows, needsRefresh);
+    }
+
+    private GoogleSearchRankEntry resolveKeywordRankEntry(
+            Branch branch,
+            String keyword,
+            List<GoogleSearchRankEntry> stored,
+            boolean storedMatchesTemplate,
+            LocalDate today) {
+        if (storedMatchesTemplate) {
+            GoogleSearchRankEntry fromBranch = findStoredEntry(stored, keyword);
+            if (fromBranch != null) {
+                return fromBranch;
+            }
+        } else {
+            GoogleSearchRankEntry legacy = findStoredEntry(stored, keyword);
+            if (legacy != null) {
+                return legacy;
+            }
+        }
+        return localSpotlightDailyRankService
+                .findSnapshot(branch.getId(), keyword, today)
+                .flatMap(localSpotlightDailyRankService::toRankEntry)
+                .orElse(null);
+    }
+
+    private static GoogleSearchRankEntry findStoredEntry(List<GoogleSearchRankEntry> stored, String keyword) {
+        return stored.stream()
+                .filter(e -> e.getKeyword() != null && e.getKeyword().equalsIgnoreCase(keyword))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private LocalSpotlightResponse.SearchRankRow rowFromRankEntry(Branch branch, GoogleSearchRankEntry entry) {
+        List<LocalSpotlightResponse.TopThreeRival> topThree = mapTopThreeRivals(entry);
+        return LocalSpotlightResponse.SearchRankRow.builder()
+                .branchId(branch.getId())
+                .branchName(branch.getName())
+                .keyword(entry.getKeyword())
+                .yourRank(entry.getYourRank())
+                .yourRankBeyondTop20(Boolean.TRUE.equals(entry.getYourRankBeyondTop20()))
+                .yourRankLabel(buildYourRankLabel(entry))
+                .inTop3(entry.getYourRank() != null && entry.getYourRank() <= 3)
+                .topThreeSummary(buildTopThreeSummary(topThree, entry))
+                .topThreeRivals(topThree)
+                .build();
+    }
+
+    private LocalSpotlightResponse.SearchRankRow buildPendingKeywordRow(Branch branch, String keyword) {
+        return LocalSpotlightResponse.SearchRankRow.builder()
+                .branchId(branch.getId())
+                .branchName(branch.getName())
+                .keyword(keyword)
+                .yourRank(null)
+                .yourRankBeyondTop20(false)
+                .yourRankLabel("Refresh from Google")
+                .inTop3(false)
+                .topThreeSummary("Per-keyword ranks load after Refresh from Google")
+                .topThreeRivals(List.of())
+                .build();
     }
 
     private LocalSpotlightResponse.SearchRankRow enrichCompare(
@@ -382,44 +438,6 @@ public class LocalSpotlightService {
             return baseline - 21;
         }
         return null;
-    }
-
-    private LocalSpotlightResponse.SearchRankRow buildFallbackSearchRankRow(
-            Branch branch, String keyword, List<LocalCompetitor> rivals) {
-        Integer rank = branch.getEstimatedSearchRank();
-        List<LocalCompetitor> topRivals = rivals.stream()
-                .filter(r -> r.getGoogleRating() != null)
-                .sorted(Comparator.comparing(LocalCompetitor::getGoogleRating, Comparator.nullsLast(Comparator.reverseOrder())))
-                .limit(3)
-                .toList();
-        List<LocalSpotlightResponse.TopThreeRival> topThree = new ArrayList<>();
-        for (int i = 0; i < topRivals.size(); i++) {
-            LocalCompetitor rival = topRivals.get(i);
-            topThree.add(LocalSpotlightResponse.TopThreeRival.builder()
-                    .rank(i + 1)
-                    .name(rival.getName())
-                    .googlePlaceId(rival.getGooglePlaceId())
-                    .googleMapsUrl(rival.getGoogleMapsUrl())
-                    .build());
-        }
-        String topSummary = topThree.isEmpty()
-                ? "Sync from Google to load keyword ranks"
-                : topThree.stream()
-                        .map(r -> r.getRank() + "." + r.getName())
-                        .reduce((a, b) -> a + " · " + b)
-                        .orElse("");
-
-        return LocalSpotlightResponse.SearchRankRow.builder()
-                .branchId(branch.getId())
-                .branchName(branch.getName())
-                .keyword(keyword)
-                .yourRank(rank)
-                .yourRankBeyondTop20(rank == null)
-                .yourRankLabel(rank != null ? "#" + rank : "Not in top 20")
-                .inTop3(rank != null && rank <= 3)
-                .topThreeSummary(topSummary)
-                .topThreeRivals(topThree)
-                .build();
     }
 
     private boolean isListingLinked(Branch branch) {
