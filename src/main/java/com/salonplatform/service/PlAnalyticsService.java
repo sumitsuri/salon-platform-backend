@@ -1,5 +1,6 @@
 package com.salonplatform.service;
 
+import com.salonplatform.domain.branch.BranchReporting;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.BranchExpenditure;
 import com.salonplatform.domain.entity.Invoice;
@@ -50,6 +51,7 @@ public class PlAnalyticsService {
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
                 .collect(Collectors.toList());
+        branches = BranchReporting.filterForReporting(branches, start, end);
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
         if (branchIds != null && !branchIds.isEmpty()) {
@@ -140,6 +142,7 @@ public class PlAnalyticsService {
 
         Instant rangeStart = start.atStartOfDay(ZONE).toInstant();
         LocalDate rangeEndDate = end.withDayOfMonth(end.lengthOfMonth());
+        branches = BranchReporting.filterForReporting(branches, start, rangeEndDate);
         Instant rangeEnd = rangeEndDate.plusDays(1).atStartOfDay(ZONE).toInstant();
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);

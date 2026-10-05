@@ -1,5 +1,6 @@
 package com.salonplatform.service;
 
+import com.salonplatform.domain.branch.BranchReporting;
 import com.salonplatform.domain.entity.*;
 import com.salonplatform.domain.enums.MovementType;
 import com.salonplatform.domain.repository.*;
@@ -40,6 +41,7 @@ public class InventoryAnalyticsService {
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
                 .collect(Collectors.toList());
+        branches = BranchReporting.filterForReporting(branches, m, monthEnd);
 
         List<BranchInventory> allStock = stockRepository.findByTenantId(tenantId).stream()
                 .filter(s -> branchIds == null || branchIds.isEmpty() || branchIds.contains(s.getBranchId()))
@@ -148,6 +150,7 @@ public class InventoryAnalyticsService {
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
                 .collect(Collectors.toList());
+        branches = BranchReporting.filterForReporting(branches, start, rangeEnd);
 
         List<InventoryMovement> movements = movementRepository
                 .findByTenantIdAndMovementDateBetweenOrderByMovementDateDescCreatedAtDesc(tenantId, start, rangeEnd);

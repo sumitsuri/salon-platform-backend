@@ -127,6 +127,7 @@ public class PlatformManagementService {
         SecurityUtils.assertPlatformAdmin();
         Branch branch = requireBranch(tenantId, branchId);
         branch.setStatus(BranchStatus.INACTIVE);
+        branch.setDeactivatedAt(java.time.Instant.now());
         branchRepository.save(branch);
         userRepository.findByTenantIdAndBranchId(tenantId, branchId).forEach(u -> {
             u.setActive(false);
@@ -254,6 +255,7 @@ public class PlatformManagementService {
                 .closeTime(b.getCloseTime())
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
+                .deactivatedAt(b.getDeactivatedAt())
                 .businessType(b.getBusinessType())
                 .phoneNumberRequired(b.getPhoneNumberRequired())
                 .createdAt(b.getCreatedAt())

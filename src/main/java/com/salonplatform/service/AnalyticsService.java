@@ -1,5 +1,6 @@
 package com.salonplatform.service;
 
+import com.salonplatform.domain.branch.BranchReporting;
 import com.salonplatform.domain.entity.*;
 import com.salonplatform.domain.enums.PaymentMode;
 import com.salonplatform.domain.repository.*;
@@ -247,6 +248,17 @@ public class AnalyticsService {
         List<Branch> branchesToShow = branchFilter != null
                 ? branchRepository.findAllById(branchFilter)
                 : branchRepository.findByTenantId(tenantId);
+
+        LocalDate reportFrom;
+        LocalDate reportTo;
+        if (startDate != null || endDate != null) {
+            reportFrom = startDate != null ? startDate : endDate;
+            reportTo = endDate != null ? endDate : startDate;
+        } else {
+            reportFrom = LocalDate.now(zone);
+            reportTo = reportFrom;
+        }
+        branchesToShow = BranchReporting.filterForReporting(branchesToShow, reportFrom, reportTo);
 
         List<BranchStats> branchStats = branchesToShow.stream().map(branch -> {
             List<Invoice> branchInvoices = byBranch.getOrDefault(branch.getId(), List.of());

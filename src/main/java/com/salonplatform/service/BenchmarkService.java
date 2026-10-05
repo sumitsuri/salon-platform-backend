@@ -1,5 +1,6 @@
 package com.salonplatform.service;
 
+import com.salonplatform.domain.branch.BranchReporting;
 import com.salonplatform.domain.entity.*;
 import com.salonplatform.domain.enums.*;
 import com.salonplatform.domain.repository.*;
@@ -50,8 +51,8 @@ public class BenchmarkService {
 
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
-                .filter(b -> b.getStatus() == BranchStatus.ACTIVE)
                 .toList();
+        branches = BranchReporting.filterForReporting(branches, start, end);
 
         TenantMetricsSnapshot you = computeTenantMetrics(tenantId, branches, rangeStart, rangeEnd, periodDays);
 

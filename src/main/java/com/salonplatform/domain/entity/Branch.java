@@ -59,6 +59,9 @@ public class Branch {
     @Builder.Default
     private BranchStatus status = BranchStatus.ACTIVE;
 
+    /** When the branch was soft-deactivated; null while active. Historical data before this instant is retained. */
+    private Instant deactivatedAt;
+
     /** Salon / spa positioning for Local Spotlight keyword and rival discovery. */
     @Enumerated(EnumType.STRING)
     @Builder.Default
