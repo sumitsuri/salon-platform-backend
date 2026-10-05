@@ -88,6 +88,8 @@ public class LocalSpotlightService {
         List<LocalSpotlightResponse.BranchRow> branchRows = new ArrayList<>();
         List<LocalSpotlightResponse.SearchRankRow> searchRanks = new ArrayList<>();
         boolean keywordRanksNeedRefresh = false;
+        int keywordRanksExpectedTotal = 0;
+        int keywordRanksStoredTotal = 0;
         int notInTop3 = 0;
         int ratingBelow = 0;
         int incompleteGbp = 0;
@@ -126,11 +128,15 @@ public class LocalSpotlightService {
             if (googleSynced) {
                 SearchRankBuildResult built = buildSearchRanks(effective, rankCompareDate);
                 searchRanks.addAll(built.rows());
+                keywordRanksExpectedTotal += built.expectedCount();
+                keywordRanksStoredTotal += built.storedCount();
                 if (built.needsRefresh()) {
                     keywordRanksNeedRefresh = true;
                 }
             }
         }
+
+        searchRanks.sort(Comparator.comparingInt(LocalSpotlightService::searchRankRowSortKey));
 
         branchRows.sort(Comparator.comparingInt(LocalSpotlightResponse.BranchRow::getLocalVisibilityScore).reversed());
 
@@ -195,11 +201,24 @@ public class LocalSpotlightService {
                 .searchRanks(searchRanks)
                 .rankCompareDate(rankCompareDate)
                 .keywordRanksNeedRefresh(keywordRanksNeedRefresh)
+                .keywordRanksExpectedCount(keywordRanksExpectedTotal)
+                .keywordRanksStoredCount(keywordRanksStoredTotal)
                 .playbook(playbook)
                 .build();
     }
 
-    private record SearchRankBuildResult(List<LocalSpotlightResponse.SearchRankRow> rows, boolean needsRefresh) {}
+    private record SearchRankBuildResult(
+            List<LocalSpotlightResponse.SearchRankRow> rows, boolean needsRefresh, int expectedCount, int storedCount) {}
+
+    private static int searchRankRowSortKey(LocalSpotlightResponse.SearchRankRow row) {
+        if (row.getYourRank() != null || row.isYourRankBeyondTop20()) {
+            return 0;
+        }
+        if ("Refresh from Google".equals(row.getYourRankLabel())) {
+            return 2;
+        }
+        return 1;
+    }
 
     public com.salonplatform.dto.analytics.LocalSpotlightRankHistoryResponse keywordRankHistory(
             UUID branchId, LocalDate from, LocalDate to) {
@@ -315,7 +334,7 @@ public class LocalSpotlightService {
     private SearchRankBuildResult buildSearchRanks(Branch branch, LocalDate rankCompareDate) {
         List<String> expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch);
         if (expectedKeywords.isEmpty()) {
-            return new SearchRankBuildResult(List.of(), false);
+            return new SearchRankBuildResult(List.of(), false, 0, 0);
         }
 
         List<GoogleSearchRankEntry> stored = digitalPresenceSyncService.readRankEntries(branch);
@@ -329,6 +348,7 @@ public class LocalSpotlightService {
         LocalDate today = localSpotlightDailyRankService.today();
         List<LocalSpotlightResponse.SearchRankRow> rows = new ArrayList<>();
         boolean needsRefresh = false;
+        int storedCount = 0;
 
         for (String keyword : expectedKeywords) {
             GoogleSearchRankEntry entry = resolveKeywordRankEntry(
@@ -337,10 +357,11 @@ public class LocalSpotlightService {
                 needsRefresh = true;
                 rows.add(enrichCompare(branch, buildPendingKeywordRow(branch, keyword), rankCompareDate));
             } else {
+                storedCount++;
                 rows.add(enrichCompare(branch, rowFromRankEntry(branch, entry), rankCompareDate));
             }
         }
-        return new SearchRankBuildResult(rows, needsRefresh);
+        return new SearchRankBuildResult(rows, needsRefresh, expectedKeywords.size(), storedCount);
     }
 
     private GoogleSearchRankEntry resolveKeywordRankEntry(

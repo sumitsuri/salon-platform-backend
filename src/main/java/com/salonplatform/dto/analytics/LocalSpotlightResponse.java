@@ -33,6 +33,8 @@ public class LocalSpotlightResponse {
     private LocalDate rankCompareDate;
     /** True when Google sync exists but keyword-level ranks are missing or outdated (PIN template drift). */
     private boolean keywordRanksNeedRefresh;
+    private int keywordRanksExpectedCount;
+    private int keywordRanksStoredCount;
     private List<PlaybookItem> playbook;
 
     @Data

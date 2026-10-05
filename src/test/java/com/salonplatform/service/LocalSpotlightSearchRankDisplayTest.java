@@ -64,6 +64,8 @@ class LocalSpotlightSearchRankDisplayTest {
                 (List<LocalSpotlightResponse.SearchRankRow>) result.getClass()
                         .getDeclaredMethod("rows")
                         .invoke(result);
+        int storedCount = (Integer) result.getClass().getDeclaredMethod("storedCount").invoke(result);
+        assertEquals(0, storedCount);
 
         assertFalse(rows.isEmpty());
         assertTrue(rows.stream().noneMatch(r -> Integer.valueOf(3).equals(r.getYourRank())),

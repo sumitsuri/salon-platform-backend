@@ -59,18 +59,26 @@ public class LocalSpotlightDailyRankService {
         String ownPlaceId = branch.getGooglePlaceId();
 
         for (String keyword : keywords) {
-            LocalSpotlightSerpCacheService.CachedSerp serp =
-                    serpCacheService.resolveSerp(branch, keyword, radiusM, snapshotDate, forceRefresh);
-            if (LocalSpotlightKeywords.isNearMeKeyword(keyword)) {
-                GooglePlacesClient.TextSearchInsight insight =
-                        serpCacheService.insightForBranch(serp, ownPlaceId);
-                entries.add(toRankEntry(keyword, insight));
-                persistDailyRow(tenantId, branch, pin, keyword, snapshotDate, insight);
-            } else {
-                recordPinKeywordRanksForAllBranches(pin, keyword, serp, snapshotDate);
-                GooglePlacesClient.TextSearchInsight insight =
-                        serpCacheService.insightForBranch(serp, ownPlaceId);
-                entries.add(toRankEntry(keyword, insight));
+            try {
+                LocalSpotlightSerpCacheService.CachedSerp serp =
+                        serpCacheService.resolveSerp(branch, keyword, radiusM, snapshotDate, forceRefresh);
+                if (LocalSpotlightKeywords.isNearMeKeyword(keyword)) {
+                    GooglePlacesClient.TextSearchInsight insight =
+                            serpCacheService.insightForBranch(serp, ownPlaceId);
+                    entries.add(toRankEntry(keyword, insight));
+                    persistDailyRow(tenantId, branch, pin, keyword, snapshotDate, insight);
+                } else {
+                    recordPinKeywordRanksForAllBranches(pin, keyword, serp, snapshotDate);
+                    GooglePlacesClient.TextSearchInsight insight =
+                            serpCacheService.insightForBranch(serp, ownPlaceId);
+                    entries.add(toRankEntry(keyword, insight));
+                }
+            } catch (Exception ex) {
+                log.warn(
+                        "Keyword rank sync failed for branch {} keyword '{}': {}",
+                        branch.getCode(),
+                        keyword,
+                        ex.getMessage());
             }
         }
         return entries;

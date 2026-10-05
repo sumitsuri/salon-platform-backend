@@ -105,8 +105,11 @@ public class DigitalPresenceSyncService {
         }
 
         Map<String, Integer> ranks = new LinkedHashMap<>();
-        List<GoogleSearchRankEntry> rankEntries =
+        List<GoogleSearchRankEntry> previousRanks = readRankEntries(branch);
+        List<GoogleSearchRankEntry> freshRanks =
                 localSpotlightDailyRankService.syncAndRecordDailyRanks(tenantId, branch, radiusKm, force);
+        List<GoogleSearchRankEntry> rankEntries =
+                mergeRankEntries(branch, previousRanks, freshRanks);
         for (GoogleSearchRankEntry entry : rankEntries) {
             if (entry.getYourRank() != null && entry.getYourRank() > 0) {
                 ranks.put(entry.getKeyword(), entry.getYourRank());
@@ -117,6 +120,8 @@ public class DigitalPresenceSyncService {
             branch.setEstimatedSearchRank(bestRank);
         }
         branch.setGoogleSearchRankData(writeRankEntries(rankEntries));
+        int expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch).size();
+        String keywordSyncNote = buildKeywordSyncNote(expectedKeywords, freshRanks.size(), rankEntries.size());
 
         branch.setDigitalPresenceUpdatedAt(Instant.now());
         branchRepository.save(branch);
@@ -133,13 +138,73 @@ public class DigitalPresenceSyncService {
                 .googleFormattedAddress(ownListing != null ? ownListing.getFormattedAddress() : branch.getAddress())
                 .rivalsSynced(rivalCount)
                 .searchRanks(ranks)
-                .message(ownListing != null
-                        ? "Synced from Google Places — matched \"" + ownListing.getName() + "\", "
-                                + rivalCount + " nearby businesses within ~" + radiusKm + " km."
-                        : "Synced " + rivalCount + " nearby rivals, but could not match your Google listing. "
-                                + "Check branch name vs Google Business Profile name, then refresh.")
+                .message(buildSyncMessage(ownListing, rivalCount, radiusKm, keywordSyncNote))
                 .syncedAt(branch.getDigitalPresenceUpdatedAt())
                 .build();
+    }
+
+    private static String buildSyncMessage(
+            GooglePlaceSnapshot ownListing, int rivalCount, int radiusKm, String keywordSyncNote) {
+        String base = ownListing != null
+                ? "Synced from Google Places — matched \"" + ownListing.getName() + "\", "
+                        + rivalCount + " nearby businesses within ~" + radiusKm + " km."
+                : "Synced " + rivalCount + " nearby rivals, but could not match your Google listing. "
+                        + "Check branch name vs Google Business Profile name, then refresh.";
+        if (keywordSyncNote == null || keywordSyncNote.isBlank()) {
+            return base;
+        }
+        return base + " " + keywordSyncNote;
+    }
+
+    private static String buildKeywordSyncNote(int expected, int freshCount, int storedCount) {
+        if (expected <= 0) {
+            return "";
+        }
+        if (freshCount >= expected) {
+            return "Keyword ranks updated for " + freshCount + " search terms.";
+        }
+        if (freshCount == 0 && storedCount > 0) {
+            return "Keyword ranks kept from last successful sync (" + storedCount + " of " + expected
+                    + " terms). Google Text Search did not return new ranks — check Places API (New) permissions.";
+        }
+        if (freshCount > 0) {
+            return "Keyword ranks updated for " + freshCount + " of " + expected + " terms (partial).";
+        }
+        return "No keyword ranks stored yet (" + expected + " terms). Enable Google Places API (New) for Text Search.";
+    }
+
+    /** Merge by keyword; fresh wins. Output order follows current template list. */
+    static List<GoogleSearchRankEntry> mergeRankEntries(
+            Branch branch, List<GoogleSearchRankEntry> previous, List<GoogleSearchRankEntry> fresh) {
+        Map<String, GoogleSearchRankEntry> byKeyword = new LinkedHashMap<>();
+        for (GoogleSearchRankEntry entry : previous) {
+            if (entry.getKeyword() != null && !entry.getKeyword().isBlank()) {
+                byKeyword.put(entry.getKeyword().toLowerCase(Locale.ROOT), entry);
+            }
+        }
+        for (GoogleSearchRankEntry entry : fresh) {
+            if (entry.getKeyword() != null && !entry.getKeyword().isBlank()) {
+                byKeyword.put(entry.getKeyword().toLowerCase(Locale.ROOT), entry);
+            }
+        }
+        List<GoogleSearchRankEntry> ordered = new ArrayList<>();
+        for (String keyword : LocalSpotlightKeywords.searchKeywords(branch)) {
+            GoogleSearchRankEntry hit = byKeyword.get(keyword.toLowerCase(Locale.ROOT));
+            if (hit != null) {
+                ordered.add(hit);
+            }
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (GoogleSearchRankEntry entry : ordered) {
+            seen.add(entry.getKeyword().toLowerCase(Locale.ROOT));
+        }
+        for (GoogleSearchRankEntry entry : byKeyword.values()) {
+            String key = entry.getKeyword().toLowerCase(Locale.ROOT);
+            if (!seen.contains(key)) {
+                ordered.add(entry);
+            }
+        }
+        return ordered;
     }
 
     @Transactional
@@ -339,19 +404,26 @@ public class DigitalPresenceSyncService {
             branch.setGbpVideoCount(0);
             branch.setGbpServicesListedCount(null);
         } else {
-            branch.setGooglePlaceId(null);
-            branch.setGoogleMapsUrl(mapsPinUrl(branch.getLatitude(), branch.getLongitude()));
-            branch.setGoogleReviewUrl(null);
-            branch.setGoogleRating(null);
-            branch.setGoogleReviewCount(null);
-            branch.setGoogleLowRatingReviewCount(null);
-            branch.setGoogleReviewsSampleSize(null);
-            branch.setGbpPhotoCount(null);
-            branch.setGbpHasPhone(null);
-            branch.setGbpHasWebsite(null);
-            branch.setGbpHasHours(null);
-            branch.setGoogleFormattedAddress(null);
-            branch.setGoogleSearchRankData(null);
+            boolean hadListing = branch.getGooglePlaceId() != null && !branch.getGooglePlaceId().isBlank();
+            if (!hadListing) {
+                branch.setGooglePlaceId(null);
+                branch.setGoogleMapsUrl(mapsPinUrl(branch.getLatitude(), branch.getLongitude()));
+                branch.setGoogleReviewUrl(null);
+                branch.setGoogleRating(null);
+                branch.setGoogleReviewCount(null);
+                branch.setGoogleLowRatingReviewCount(null);
+                branch.setGoogleReviewsSampleSize(null);
+                branch.setGbpPhotoCount(null);
+                branch.setGbpHasPhone(null);
+                branch.setGbpHasWebsite(null);
+                branch.setGbpHasHours(null);
+                branch.setGoogleFormattedAddress(null);
+                branch.setGoogleSearchRankData(null);
+            } else {
+                log.warn(
+                        "Could not re-match Google listing for branch {} — keeping existing place id and keyword ranks",
+                        branch.getCode());
+            }
         }
     }
 
