@@ -80,28 +80,35 @@ public class DigitalPresenceSyncService {
         requireGeofence(branch);
         int radiusM = radiusKm > 0 ? radiusKm * 1000 : properties.getDefaultRadiusMeters();
 
-        GooglePlaceSnapshot ownListing = enrichSnapshot(resolveOwnListing(branch, tenant));
-        applySnapshotToBranch(branch, ownListing);
-
-        List<GooglePlaceSnapshot> nearby = googlePlacesClient.searchNearby(
-                branch.getLatitude(),
-                branch.getLongitude(),
-                radiusM,
-                15,
-                LocalSpotlightKeywords.nearbyPlaceTypes(branch));
-
-        String ownPlaceId = ownListing != null ? ownListing.getPlaceId() : branch.getGooglePlaceId();
-        List<GooglePlaceSnapshot> competitors = nearby.stream()
-                .filter(p -> ownPlaceId == null || !GooglePlacesClient.normalizePlaceId(ownPlaceId)
-                        .equals(GooglePlacesClient.normalizePlaceId(p.getPlaceId())))
-                .limit(8)
-                .toList();
-
-        deactivateAutoDiscoveredForBranch(tenantId, branch.getId());
+        GooglePlaceSnapshot ownListing = null;
         int rivalCount = 0;
-        for (GooglePlaceSnapshot rival : competitors) {
-            upsertAutoDiscoveredCompetitor(tenantId, branch.getId(), enrichSnapshot(rival));
-            rivalCount++;
+        String listingSyncWarning = null;
+        try {
+            ownListing = enrichSnapshot(resolveOwnListing(branch, tenant));
+            applySnapshotToBranch(branch, ownListing);
+
+            List<GooglePlaceSnapshot> nearby = googlePlacesClient.searchNearby(
+                    branch.getLatitude(),
+                    branch.getLongitude(),
+                    radiusM,
+                    15,
+                    LocalSpotlightKeywords.nearbyPlaceTypes(branch));
+
+            String ownPlaceId = ownListing != null ? ownListing.getPlaceId() : branch.getGooglePlaceId();
+            List<GooglePlaceSnapshot> competitors = nearby.stream()
+                    .filter(p -> ownPlaceId == null || !GooglePlacesClient.normalizePlaceId(ownPlaceId)
+                            .equals(GooglePlacesClient.normalizePlaceId(p.getPlaceId())))
+                    .limit(8)
+                    .toList();
+
+            deactivateAutoDiscoveredForBranch(tenantId, branch.getId());
+            for (GooglePlaceSnapshot rival : competitors) {
+                upsertAutoDiscoveredCompetitor(tenantId, branch.getId(), enrichSnapshot(rival));
+                rivalCount++;
+            }
+        } catch (BadRequestException e) {
+            listingSyncWarning = e.getMessage();
+            log.warn("Listing/rival Google sync degraded for branch {}: {}", branch.getCode(), listingSyncWarning);
         }
 
         Map<String, Integer> ranks = new LinkedHashMap<>();
@@ -138,18 +145,27 @@ public class DigitalPresenceSyncService {
                 .googleFormattedAddress(ownListing != null ? ownListing.getFormattedAddress() : branch.getAddress())
                 .rivalsSynced(rivalCount)
                 .searchRanks(ranks)
-                .message(buildSyncMessage(ownListing, rivalCount, radiusKm, keywordSyncNote))
+                .message(buildSyncMessage(ownListing, rivalCount, radiusKm, keywordSyncNote, listingSyncWarning))
                 .syncedAt(branch.getDigitalPresenceUpdatedAt())
                 .build();
     }
 
     private static String buildSyncMessage(
-            GooglePlaceSnapshot ownListing, int rivalCount, int radiusKm, String keywordSyncNote) {
-        String base = ownListing != null
-                ? "Synced from Google Places — matched \"" + ownListing.getName() + "\", "
-                        + rivalCount + " nearby businesses within ~" + radiusKm + " km."
-                : "Synced " + rivalCount + " nearby rivals, but could not match your Google listing. "
-                        + "Check branch name vs Google Business Profile name, then refresh.";
+            GooglePlaceSnapshot ownListing,
+            int rivalCount,
+            int radiusKm,
+            String keywordSyncNote,
+            String listingSyncWarning) {
+        String base;
+        if (listingSyncWarning != null && !listingSyncWarning.isBlank()) {
+            base = "Using saved listing data — Google listing/rival refresh failed: " + listingSyncWarning;
+        } else if (ownListing != null) {
+            base = "Synced from Google Places — matched \"" + ownListing.getName() + "\", "
+                    + rivalCount + " nearby businesses within ~" + radiusKm + " km.";
+        } else {
+            base = "Synced " + rivalCount + " nearby rivals, but could not match your Google listing. "
+                    + "Check branch name vs Google Business Profile name, then refresh.";
+        }
         if (keywordSyncNote == null || keywordSyncNote.isBlank()) {
             return base;
         }
