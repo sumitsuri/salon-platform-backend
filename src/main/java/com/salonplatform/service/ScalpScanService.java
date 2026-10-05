@@ -31,8 +31,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ScalpScanService {
 
-    private static final int MIN_CAPTURES_FOR_ANALYSIS = 3;
-
     private final ScalpScanSessionRepository sessionRepository;
     private final ScalpScanCaptureRepository captureRepository;
     private final CustomerRepository customerRepository;
@@ -98,12 +96,8 @@ public class ScalpScanService {
         assertDraft(session);
 
         List<ScalpScanCapture> captures = captureRepository.findBySessionIdOrderByCapturedAtAsc(session.getId());
-        if (captures.size() < MIN_CAPTURES_FOR_ANALYSIS) {
-            throw new BadRequestException("Capture at least " + MIN_CAPTURES_FOR_ANALYSIS + " scalp photos before analysis");
-        }
-        long whiteCount = captures.stream().filter(c -> c.getLightMode() == ScalpLightMode.WHITE).count();
-        if (whiteCount < 2) {
-            throw new BadRequestException("Include at least 2 photos under white light (crown, hairline, or parting)");
+        if (captures.isEmpty()) {
+            throw new BadRequestException("Add at least one scalp or hair photo before analysis");
         }
 
         Set<String> staffConfirmed = parseConcernCodes(request != null ? request.getStaffConfirmedConcerns() : null);
