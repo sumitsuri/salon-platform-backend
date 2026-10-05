@@ -43,15 +43,15 @@ public class LocalSpotlightService {
         String syncMessage = null;
         // Demo brands show a stored snapshot of fictional listings; never call Google for them.
         boolean demo = tenant != null && tenant.isDemo();
-        if (googlePlacesProperties.isConfigured() && !demo) {
-            if (refresh) {
-                DigitalPresenceSyncService.SyncResult sync = digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, true);
+        // Live Google sync runs only on explicit refresh — never block the GET on background sync
+        // (403 / slow Places calls were leaving the UI on "Loading digital presence…" for minutes).
+        if (googlePlacesProperties.isConfigured() && !demo && refresh) {
+            try {
+                DigitalPresenceSyncService.SyncResult sync =
+                        digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, true);
                 syncMessage = sync.getMessage();
-            } else {
-                DigitalPresenceSyncService.SyncResult sync = digitalPresenceSyncService.syncIfStale(tenantId, radiusKm);
-                if (sync.getMessage() != null && !sync.isSkipped()) {
-                    syncMessage = sync.getMessage();
-                }
+            } catch (Exception e) {
+                syncMessage = e.getMessage();
             }
         }
 

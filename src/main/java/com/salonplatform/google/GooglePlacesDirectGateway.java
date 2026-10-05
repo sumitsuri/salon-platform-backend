@@ -232,6 +232,11 @@ public class GooglePlacesDirectGateway {
             return "Google Places API key is restricted by HTTP referrer (403). Use a server key without "
                     + "referrer restrictions for backend Places calls.";
         }
+        if (body != null && body.contains("PERMISSION_DENIED")) {
+            return "Google Places API returned permission denied (403). In Google Cloud Console enable "
+                    + "Places API (New) for this key's project, ensure billing is active, and confirm the key "
+                    + "is allowed to call Places API (New). See backend/docs/GOOGLE_PLACES_LOCAL.md.";
+        }
         return "Google Places API request failed: " + e.getStatusCode().value();
     }
 
