@@ -1,0 +1,65 @@
+package com.salonplatform.domain.entity;
+
+import com.salonplatform.domain.enums.ScalpScanStatus;
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "scalp_scan_sessions", indexes = {
+        @Index(name = "idx_scalp_scan_tenant_branch", columnList = "tenant_id, branch_id"),
+        @Index(name = "idx_scalp_scan_customer", columnList = "customer_id")
+})
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ScalpScanSession {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(nullable = false)
+    private UUID tenantId;
+
+    @Column(nullable = false)
+    private UUID branchId;
+
+    @Column(nullable = false)
+    private UUID customerId;
+
+    @Column(nullable = false)
+    private UUID performedByUserId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    @Builder.Default
+    private ScalpScanStatus status = ScalpScanStatus.DRAFT;
+
+    /** JSON blob: concerns, metrics, routine, service matches. */
+    @Column(columnDefinition = "TEXT")
+    private String reportJson;
+
+    /** Comma-separated staff-confirmed concern codes (optional). */
+    @Column(length = 512)
+    private String staffNotes;
+
+    @Column(length = 32)
+    private String primaryConcernCode;
+
+    private Integer scalpHealthScore;
+
+    @CreationTimestamp
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    private Instant updatedAt;
+
+    private Instant analyzedAt;
+}

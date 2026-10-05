@@ -43,6 +43,13 @@ app:
       storage-dir: ${ATTENDANCE_PHOTO_DIR:data/attendance-photos}
       aws-region: ${AWS_REGION:ap-south-1}
       max-bytes: 1048576
+  scalp-scan:
+    photos:
+      s3-bucket: ${SCALP_SCAN_S3_BUCKET:${ATTENDANCE_S3_BUCKET:}}
+      key-prefix: ${SCALP_SCAN_S3_PREFIX:scalp-scans/}
+      storage-dir: ${SCALP_SCAN_PHOTO_DIR:data/scalp-scan-photos}
+      aws-region: ${AWS_REGION:ap-south-1}
+      max-bytes: 2097152
   msg91:
     auth-key: ${MSG91_AUTH_KEY:}
     whatsapp-integrated-number: ${MSG91_WHATSAPP_NUMBER:}
