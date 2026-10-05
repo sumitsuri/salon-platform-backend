@@ -60,6 +60,13 @@ app:
       storage-dir: ${SCALP_SCAN_PHOTO_DIR:data/scalp-scan-photos}
       aws-region: ${AWS_REGION:ap-south-1}
       max-bytes: 2097152
+  face-scan:
+    photos:
+      s3-bucket: ${FACE_SCAN_S3_BUCKET:${ATTENDANCE_S3_BUCKET:${INVOICE_S3_BUCKET:}}}
+      key-prefix: ${FACE_SCAN_S3_PREFIX:attendance/face-scans/}
+      storage-dir: ${FACE_SCAN_PHOTO_DIR:data/face-scan-photos}
+      aws-region: ${AWS_REGION:ap-south-1}
+      max-bytes: 2097152
   invoice-pdf:
     s3-bucket: ${INVOICE_S3_BUCKET:}
     key-prefix: ${INVOICE_S3_PREFIX:invoices/}
