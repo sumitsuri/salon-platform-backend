@@ -19,6 +19,10 @@ public class BranchSchemaPatch implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         try {
+            jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP WITH TIME ZONE");
+            jdbcTemplate.update(
+                    "UPDATE branches SET deactivated_at = COALESCE(updated_at, created_at, NOW()) "
+                            + "WHERE status = 'INACTIVE' AND deactivated_at IS NULL");
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS monthly_sales_target NUMERIC(19, 2)");
             jdbcTemplate.execute("ALTER TABLE branches ADD COLUMN IF NOT EXISTS scratch_card_enabled BOOLEAN");
             jdbcTemplate.update("UPDATE branches SET scratch_card_enabled = false WHERE scratch_card_enabled IS NULL");

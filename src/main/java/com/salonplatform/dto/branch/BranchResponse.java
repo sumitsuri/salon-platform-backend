@@ -27,6 +27,8 @@ public class BranchResponse {
     private Integer attendanceGraceMinutes;
     private BigDecimal monthlySalesTarget;
     private BranchStatus status;
+    /** Set when status is INACTIVE — last day of operation uses branch reporting timezone. */
+    private Instant deactivatedAt;
     private BranchBusinessType businessType;
     private Boolean phoneNumberRequired;
     private Boolean scratchCardEnabled;

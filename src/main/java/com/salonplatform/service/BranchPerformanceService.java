@@ -1,5 +1,6 @@
 package com.salonplatform.service;
 
+import com.salonplatform.domain.branch.BranchReporting;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.Invoice;
 import com.salonplatform.domain.repository.BranchRepository;
@@ -50,6 +51,7 @@ public class BranchPerformanceService {
         List<Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .filter(b -> resolvedBranchIds == null || resolvedBranchIds.isEmpty() || resolvedBranchIds.contains(b.getId()))
                 .collect(Collectors.toList());
+        branches = BranchReporting.filterForReporting(branches, start, end);
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
         Map<UUID, BigDecimal> salesByBranch = aggregateBranchSales(invoices);
@@ -156,6 +158,7 @@ public class BranchPerformanceService {
                         && b.getMonthlySalesTarget().compareTo(BigDecimal.ZERO) > 0)
                 .filter(b -> resolvedBranchIds == null || resolvedBranchIds.isEmpty() || resolvedBranchIds.contains(b.getId()))
                 .collect(Collectors.toList());
+        branches = BranchReporting.filterForReporting(branches, start, end);
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
         if (resolvedBranchIds != null && !resolvedBranchIds.isEmpty()) {

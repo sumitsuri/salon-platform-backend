@@ -4,6 +4,8 @@ import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.User;
 import com.salonplatform.domain.enums.BranchBusinessType;
 import com.salonplatform.domain.enums.BranchStatus;
+
+import java.time.Instant;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.domain.repository.UserRepository;
@@ -91,7 +93,14 @@ public class BranchManagementService {
         if (request.getOpenTime() != null) branch.setOpenTime(request.getOpenTime());
         if (request.getCloseTime() != null) branch.setCloseTime(request.getCloseTime());
         if (request.getMonthlySalesTarget() != null) branch.setMonthlySalesTarget(request.getMonthlySalesTarget());
-        if (request.getStatus() != null) branch.setStatus(request.getStatus());
+        if (request.getStatus() != null) {
+            branch.setStatus(request.getStatus());
+            if (request.getStatus() == BranchStatus.ACTIVE) {
+                branch.setDeactivatedAt(null);
+            } else if (request.getStatus() == BranchStatus.INACTIVE && branch.getDeactivatedAt() == null) {
+                branch.setDeactivatedAt(Instant.now());
+            }
+        }
         if (request.getBusinessType() != null && request.getBusinessType() != branch.getBusinessType()) {
             branch.setBusinessType(request.getBusinessType());
             branch.setGoogleSearchRankData(null);
@@ -194,6 +203,7 @@ public class BranchManagementService {
         UUID tenantId = SecurityUtils.requireTenantId();
         Branch branch = requireBranch(tenantId, id);
         branch.setStatus(BranchStatus.INACTIVE);
+        branch.setDeactivatedAt(Instant.now());
         branchRepository.save(branch);
         userRepository.findByTenantIdAndBranchId(tenantId, id).forEach(u -> {
             u.setActive(false);
@@ -231,6 +241,7 @@ public class BranchManagementService {
                 .attendanceGraceMinutes(b.getAttendanceGraceMinutes())
                 .monthlySalesTarget(b.getMonthlySalesTarget())
                 .status(b.getStatus())
+                .deactivatedAt(b.getDeactivatedAt())
                 .businessType(b.getBusinessType())
                 .phoneNumberRequired(b.getPhoneNumberRequired())
                 .scratchCardEnabled(Boolean.TRUE.equals(b.getScratchCardEnabled()))
