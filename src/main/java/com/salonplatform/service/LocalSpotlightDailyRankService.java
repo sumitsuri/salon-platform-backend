@@ -35,6 +35,7 @@ public class LocalSpotlightDailyRankService {
     private final LocalSpotlightKeywordRankDailyRepository dailyRepository;
     private final BranchRepository branchRepository;
     private final ObjectMapper objectMapper;
+    private final LocalSpotlightSyncProgressService syncProgressService;
 
     public LocalDate today() {
         return LocalDate.now(LocalSpotlightSerpCacheService.SNAPSHOT_ZONE);
@@ -44,20 +45,31 @@ public class LocalSpotlightDailyRankService {
      * Fetches or reuses pin-code SERPs, records per-branch ranks for today, and returns entries
      * for the branch snapshot JSON field.
      */
+    public record RankSyncOutcome(List<GoogleSearchRankEntry> entries, String lastErrorMessage) {}
+
     public List<GoogleSearchRankEntry> syncAndRecordDailyRanks(
+            UUID tenantId, Branch branch, int radiusKm, boolean forceRefresh) {
+        return syncAndRecordDailyRanksWithOutcome(tenantId, branch, radiusKm, forceRefresh).entries();
+    }
+
+    public RankSyncOutcome syncAndRecordDailyRanksWithOutcome(
             UUID tenantId, Branch branch, int radiusKm, boolean forceRefresh) {
         String pin = LocalSpotlightKeywords.resolvePinCode(branch);
         if (pin.isBlank()) {
             log.warn("Branch {} has no PIN in address — skipping keyword rank sync", branch.getCode());
-            return List.of();
+            return new RankSyncOutcome(List.of(), null);
         }
         int radiusM = radiusKm > 0 ? radiusKm * 1000 : 2000;
         LocalDate snapshotDate = today();
         List<String> keywords = LocalSpotlightKeywords.searchKeywords(branch);
         List<GoogleSearchRankEntry> entries = new ArrayList<>();
         String ownPlaceId = branch.getGooglePlaceId();
+        String lastError = null;
+        int keywordTotal = keywords.size();
 
-        for (String keyword : keywords) {
+        for (int i = 0; i < keywords.size(); i++) {
+            String keyword = keywords.get(i);
+            syncProgressService.keywordStep(tenantId, i + 1, keywordTotal, keyword);
             try {
                 LocalSpotlightSerpCacheService.CachedSerp serp =
                         serpCacheService.resolveSerp(branch, keyword, radiusM, snapshotDate, forceRefresh);
@@ -73,6 +85,7 @@ public class LocalSpotlightDailyRankService {
                     entries.add(toRankEntry(keyword, insight));
                 }
             } catch (Exception ex) {
+                lastError = ex.getMessage();
                 log.warn(
                         "Keyword rank sync failed for branch {} keyword '{}': {}",
                         branch.getCode(),
@@ -80,7 +93,7 @@ public class LocalSpotlightDailyRankService {
                         ex.getMessage());
             }
         }
-        return entries;
+        return new RankSyncOutcome(entries, lastError);
     }
 
     /**

@@ -10,6 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
 class LocalSpotlightKeywordsTest {
 
     @Test
@@ -32,6 +37,25 @@ class LocalSpotlightKeywordsTest {
                 BranchBusinessType.SALON_AND_SPA);
 
         assertEquals("560087", LocalSpotlightKeywords.resolvePinCode(branch));
+    }
+
+    @Test
+    void searchKeywords_dedupeCaseInsensitivePinTerms() {
+        Branch branch = branch(
+                "Mystic Varthur",
+                "SLV Sunrise, Varthur, Bangalore 560087",
+                "Mystic Varthur",
+                BranchBusinessType.SALON_AND_SPA);
+
+        List<String> keywords = LocalSpotlightKeywords.searchKeywords(branch);
+        Set<String> normalized = new HashSet<>();
+        for (String keyword : keywords) {
+            assertTrue(normalized.add(keyword.trim().toLowerCase(Locale.ROOT)), "duplicate keyword: " + keyword);
+        }
+        long spaNearPin = keywords.stream()
+                .filter(k -> k.equalsIgnoreCase("spa near 560087"))
+                .count();
+        assertEquals(1, spaNearPin);
     }
 
     @Test

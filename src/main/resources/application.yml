@@ -187,6 +187,10 @@ app:
       pilot-tenant-slug: demo-brand
       sync-cache-hours: 24
       default-radius-meters: 2000
+      min-interval-between-requests-ms: 350
+      rate-limit-max-retries: 3
+      rate-limit-backoff-ms: 2000
+      reuse-keyword-serp-cache-on-force: false
   demo-data:
     enabled: ${APP_DEMO_DATA_ENABLED:false}
     brand-name: ${APP_DEMO_BRAND_NAME:Aura Salon & Spa}

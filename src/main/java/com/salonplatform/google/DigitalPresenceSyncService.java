@@ -36,6 +36,7 @@ public class DigitalPresenceSyncService {
     private final TenantRepository tenantRepository;
     private final ObjectMapper objectMapper;
     private final com.salonplatform.service.LocalSpotlightDailyRankService localSpotlightDailyRankService;
+    private final com.salonplatform.service.LocalSpotlightSyncProgressService syncProgressService;
 
     public boolean isConfigured() {
         return properties.isConfigured();
@@ -56,6 +57,11 @@ public class DigitalPresenceSyncService {
 
     @Transactional
     public SyncResult syncPilotBranch(UUID tenantId, int radiusKm, boolean force) {
+        return syncPilotBranch(tenantId, radiusKm, force, force);
+    }
+
+    @Transactional
+    public SyncResult syncPilotBranch(UUID tenantId, int radiusKm, boolean force, boolean forceKeywords) {
         if (!properties.isConfigured()) {
             throw new BadRequestException(
                     "Google Places API key is not configured. Set GOOGLE_PLACES_API_KEY on the server.");
@@ -79,12 +85,17 @@ public class DigitalPresenceSyncService {
 
         requireGeofence(branch);
         int radiusM = radiusKm > 0 ? radiusKm * 1000 : properties.getDefaultRadiusMeters();
+        int keywordCount = LocalSpotlightKeywords.searchKeywords(branch).size();
+        syncProgressService.start(tenantId, keywordCount);
+        syncProgressService.setPhase(tenantId, com.salonplatform.service.LocalSpotlightSyncProgressService.Phase.LISTING, 0, null);
 
         GooglePlaceSnapshot ownListing = null;
         int rivalCount = 0;
         String listingSyncWarning = null;
         try {
             ownListing = enrichSnapshot(resolveOwnListing(branch, tenant));
+            syncProgressService.setPhase(
+                    tenantId, com.salonplatform.service.LocalSpotlightSyncProgressService.Phase.RIVALS, 1, null);
             applySnapshotToBranch(branch, ownListing);
 
             List<GooglePlaceSnapshot> nearby = googlePlacesClient.searchNearby(
@@ -113,41 +124,59 @@ public class DigitalPresenceSyncService {
 
         Map<String, Integer> ranks = new LinkedHashMap<>();
         List<GoogleSearchRankEntry> previousRanks = readRankEntries(branch);
-        List<GoogleSearchRankEntry> freshRanks =
-                localSpotlightDailyRankService.syncAndRecordDailyRanks(tenantId, branch, radiusKm, force);
-        List<GoogleSearchRankEntry> rankEntries =
-                mergeRankEntries(branch, previousRanks, freshRanks);
-        for (GoogleSearchRankEntry entry : rankEntries) {
-            if (entry.getYourRank() != null && entry.getYourRank() > 0) {
-                ranks.put(entry.getKeyword(), entry.getYourRank());
+        try {
+            boolean forceKeywordSerp = forceKeywords && !(force && properties.isReuseKeywordSerpCacheOnForce());
+            syncProgressService.setPhase(
+                    tenantId,
+                    com.salonplatform.service.LocalSpotlightSyncProgressService.Phase.KEYWORDS,
+                    2,
+                    null);
+            com.salonplatform.service.LocalSpotlightDailyRankService.RankSyncOutcome rankOutcome =
+                    localSpotlightDailyRankService.syncAndRecordDailyRanksWithOutcome(
+                            tenantId, branch, radiusKm, forceKeywordSerp);
+            List<GoogleSearchRankEntry> freshRanks = rankOutcome.entries();
+            List<GoogleSearchRankEntry> rankEntries =
+                    mergeRankEntries(branch, previousRanks, freshRanks);
+            for (GoogleSearchRankEntry entry : rankEntries) {
+                if (entry.getYourRank() != null && entry.getYourRank() > 0) {
+                    ranks.put(entry.getKeyword(), entry.getYourRank());
+                }
             }
+            Integer bestRank = ranks.values().stream().min(Integer::compareTo).orElse(null);
+            if (bestRank != null && bestRank > 0) {
+                branch.setEstimatedSearchRank(bestRank);
+            }
+            branch.setGoogleSearchRankData(writeRankEntries(rankEntries));
+            int expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch).size();
+            String keywordSyncNote = buildKeywordSyncNote(
+                    expectedKeywords, freshRanks.size(), rankEntries.size(), rankOutcome.lastErrorMessage());
+
+            branch.setDigitalPresenceUpdatedAt(Instant.now());
+            branchRepository.save(branch);
+
+            log.info(
+                    "Google sync complete for branch {} — ownMatch={}, rivals={}",
+                    branch.getCode(),
+                    ownListing != null,
+                    rivalCount);
+
+            return SyncResult.builder()
+                    .skipped(false)
+                    .branchId(branch.getId())
+                    .branchName(branch.getName())
+                    .ownListingMatched(ownListing != null)
+                    .ownListingName(ownListing != null ? ownListing.getName() : null)
+                    .googleMapsUrl(branch.getGoogleMapsUrl())
+                    .googleFormattedAddress(
+                            ownListing != null ? ownListing.getFormattedAddress() : branch.getAddress())
+                    .rivalsSynced(rivalCount)
+                    .searchRanks(ranks)
+                    .message(buildSyncMessage(ownListing, rivalCount, radiusKm, keywordSyncNote, listingSyncWarning))
+                    .syncedAt(branch.getDigitalPresenceUpdatedAt())
+                    .build();
+        } finally {
+            syncProgressService.finish(tenantId);
         }
-        Integer bestRank = ranks.values().stream().min(Integer::compareTo).orElse(null);
-        if (bestRank != null && bestRank > 0) {
-            branch.setEstimatedSearchRank(bestRank);
-        }
-        branch.setGoogleSearchRankData(writeRankEntries(rankEntries));
-        int expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch).size();
-        String keywordSyncNote = buildKeywordSyncNote(expectedKeywords, freshRanks.size(), rankEntries.size());
-
-        branch.setDigitalPresenceUpdatedAt(Instant.now());
-        branchRepository.save(branch);
-
-        log.info("Google sync complete for branch {} — ownMatch={}, rivals={}", branch.getCode(), ownListing != null, rivalCount);
-
-        return SyncResult.builder()
-                .skipped(false)
-                .branchId(branch.getId())
-                .branchName(branch.getName())
-                .ownListingMatched(ownListing != null)
-                .ownListingName(ownListing != null ? ownListing.getName() : null)
-                .googleMapsUrl(branch.getGoogleMapsUrl())
-                .googleFormattedAddress(ownListing != null ? ownListing.getFormattedAddress() : branch.getAddress())
-                .rivalsSynced(rivalCount)
-                .searchRanks(ranks)
-                .message(buildSyncMessage(ownListing, rivalCount, radiusKm, keywordSyncNote, listingSyncWarning))
-                .syncedAt(branch.getDigitalPresenceUpdatedAt())
-                .build();
     }
 
     private static String buildSyncMessage(
@@ -172,7 +201,7 @@ public class DigitalPresenceSyncService {
         return base + " " + keywordSyncNote;
     }
 
-    private static String buildKeywordSyncNote(int expected, int freshCount, int storedCount) {
+    private static String buildKeywordSyncNote(int expected, int freshCount, int storedCount, String lastError) {
         if (expected <= 0) {
             return "";
         }
@@ -180,6 +209,15 @@ public class DigitalPresenceSyncService {
             return "Keyword ranks updated for " + freshCount + " search terms.";
         }
         if (freshCount == 0 && storedCount > 0) {
+            if (lastError != null && (lastError.contains("429") || lastError.contains("rate limit"))) {
+                return "Keyword ranks kept from last successful sync (" + storedCount + " of " + expected
+                        + " terms). Google rate-limited Text Search (429) — wait a few minutes and refresh again.";
+            }
+            if (lastError != null && lastError.toLowerCase(Locale.ROOT).contains("permission denied")) {
+                return "Keyword ranks kept from last successful sync (" + storedCount + " of " + expected
+                        + " terms). Google Text Search permission denied — enable Places API (New) and billing "
+                        + "for this API key.";
+            }
             return "Keyword ranks kept from last successful sync (" + storedCount + " of " + expected
                     + " terms). Google Text Search did not return new ranks — check Places API (New) permissions.";
         }
