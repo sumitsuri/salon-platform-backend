@@ -37,6 +37,7 @@ public class GooglePlacesDirectGateway {
             "id,reviews.rating,reviews.text";
 
     private final GooglePlacesProperties properties;
+    private final GooglePlacesRequestPacer requestPacer;
 
     private RestClient client() {
         if (!properties.isConfigured()) {
@@ -131,15 +132,18 @@ public class GooglePlacesDirectGateway {
     public GooglePlaceSnapshot getPlace(String placeId) {
         String resource = placeId.startsWith("places/") ? placeId : "places/" + placeId;
         try {
-            JsonNode node = client()
-                    .get()
-                    .uri("/" + resource)
-                    .header("X-Goog-FieldMask", PLACE_FIELD_MASK)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode node = executeWithRetry(() -> {
+                requestPacer.paceBeforeRequest();
+                return client()
+                        .get()
+                        .uri("/" + resource)
+                        .header("X-Goog-FieldMask", PLACE_FIELD_MASK)
+                        .retrieve()
+                        .body(JsonNode.class);
+            });
             if (node == null) return null;
             return parsePlace(node);
-        } catch (RestClientResponseException e) {
+        } catch (BadRequestException e) {
             log.warn("Google getPlace failed for {}: {}", placeId, e.getMessage());
             return null;
         }
@@ -178,12 +182,15 @@ public class GooglePlacesDirectGateway {
         }
         String resource = snap.getPlaceId().startsWith("places/") ? snap.getPlaceId() : "places/" + snap.getPlaceId();
         try {
-            JsonNode node = client()
-                    .get()
-                    .uri("/" + resource)
-                    .header("X-Goog-FieldMask", PLACE_REVIEWS_FIELD_MASK)
-                    .retrieve()
-                    .body(JsonNode.class);
+            JsonNode node = executeWithRetry(() -> {
+                requestPacer.paceBeforeRequest();
+                return client()
+                        .get()
+                        .uri("/" + resource)
+                        .header("X-Goog-FieldMask", PLACE_REVIEWS_FIELD_MASK)
+                        .retrieve()
+                        .body(JsonNode.class);
+            });
             if (node == null) return snap;
             JsonNode reviews = node.path("reviews");
             int sample = 0;
@@ -198,14 +205,15 @@ public class GooglePlacesDirectGateway {
             }
             snap.setReviewsSampleSize(sample > 0 ? sample : null);
             snap.setLowRatingReviewCount(sample > 0 ? low : null);
-        } catch (RestClientResponseException e) {
+        } catch (BadRequestException e) {
             log.warn("Google review stats failed for {}: {}", snap.getPlaceId(), e.getMessage());
         }
         return snap;
     }
 
     private JsonNode post(String path, Object body, String fieldMask) {
-        try {
+        return executeWithRetry(() -> {
+            requestPacer.paceBeforeRequest();
             return client()
                     .post()
                     .uri(path)
@@ -213,13 +221,66 @@ public class GooglePlacesDirectGateway {
                     .body(body)
                     .retrieve()
                     .body(JsonNode.class);
-        } catch (RestClientResponseException e) {
-            log.error("Google Places API error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            throw new BadRequestException(formatGooglePlacesError(e));
+        });
+    }
+
+    private <T> T executeWithRetry(java.util.function.Supplier<T> call) {
+        int maxRetries = Math.max(0, properties.getRateLimitMaxRetries());
+        RestClientResponseException last429 = null;
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                return call.get();
+            } catch (RestClientResponseException e) {
+                if (e.getStatusCode().value() == 429 && isDailyQuotaExhausted(e)) {
+                    log.error("Google Places API daily quota exhausted — not retrying");
+                    throw new BadRequestException(formatGooglePlacesError(e));
+                }
+                if (e.getStatusCode().value() == 429 && attempt < maxRetries) {
+                    last429 = e;
+                    long wait = requestPacer.backoffMsFor429(attempt);
+                    log.warn("Google Places API 429 — retry {}/{} after {}ms", attempt + 1, maxRetries, wait);
+                    sleepQuietly(wait);
+                    continue;
+                }
+                log.error("Google Places API error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+                throw new BadRequestException(formatGooglePlacesError(e));
+            }
+        }
+        if (last429 != null) {
+            log.error("Google Places API error 429 after {} retries", maxRetries);
+            throw new BadRequestException(formatGooglePlacesError(last429));
+        }
+        throw new BadRequestException("Google Places API request failed");
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
+    private static boolean isDailyQuotaExhausted(RestClientResponseException e) {
+        String body = e.getResponseBodyAsString();
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        return body.contains("PerDay")
+                || body.contains("per day")
+                || body.contains("SearchTextRequestPerDay");
+    }
+
     static String formatGooglePlacesError(RestClientResponseException e) {
+        if (e.getStatusCode().value() == 429) {
+            if (isDailyQuotaExhausted(e)) {
+                return "Google Places API daily Text Search quota exceeded (429). Request a higher limit in Google "
+                        + "Cloud Console (Places API New → SearchTextRequest per day) or try again after quota reset.";
+            }
+            return "Google Places API rate limit (429). Too many requests — wait a few minutes and try Refresh again "
+                    + "(avoid clicking Refresh repeatedly). Check Places API (New) quotas in Google Cloud Console if "
+                    + "this persists.";
+        }
         String body = e.getResponseBodyAsString();
         if (body != null && body.contains("API_KEY_IP_ADDRESS_BLOCKED")) {
             return "Google Places API key is restricted to server IPs (403). For local dev: set "

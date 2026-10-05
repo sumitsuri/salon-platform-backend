@@ -26,6 +26,21 @@ public class GooglePlacesProperties {
     /** Default nearby search radius in metres. */
     private int defaultRadiusMeters = 2000;
 
+    /** Minimum delay between consecutive Places API HTTP calls (reduces 429 during sync). */
+    private int minIntervalBetweenRequestsMs = 350;
+
+    /** Max retries after HTTP 429 before failing the call. */
+    private int rateLimitMaxRetries = 3;
+
+    /** Base backoff (ms) for 429 retries; doubled each attempt up to 30s. */
+    private int rateLimitBackoffMs = 2_000;
+
+    /**
+     * When true, a force refresh reuses today's cached keyword SERPs when available
+     * (listing/rivals still refresh). Reduces quota use on repeated Refresh clicks.
+     */
+    private boolean reuseKeywordSerpCacheOnForce = false;
+
     /** When true, Places search calls go through production (for IP-restricted prod keys). */
     private boolean internalProxyEnabled = false;
 

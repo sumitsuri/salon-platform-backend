@@ -5,6 +5,7 @@ import com.salonplatform.domain.enums.BranchBusinessType;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -109,72 +110,84 @@ public final class LocalSpotlightKeywords {
         String city = resolveCity(branch);
         BranchBusinessType type = effectiveType(branch);
         Set<String> keywords = new LinkedHashSet<>();
-        addPinKeywords(keywords, pin, city, type);
-        addNearMeKeywords(keywords, type);
+        Set<String> seenNormalized = new HashSet<>();
+        addPinKeywords(keywords, seenNormalized, pin, city, type);
+        addNearMeKeywords(keywords, seenNormalized, type);
         return new ArrayList<>(keywords);
     }
 
-    private static void addPinKeywords(Set<String> keywords, String pin, String city, BranchBusinessType type) {
+    /** Google text search treats queries case-insensitively — keep one canonical row per term. */
+    private static void addKeyword(Set<String> keywords, Set<String> seenNormalized, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return;
+        }
+        String normalized = keyword.trim().toLowerCase(Locale.ROOT);
+        if (seenNormalized.add(normalized)) {
+            keywords.add(keyword.trim());
+        }
+    }
+
+    private static void addPinKeywords(
+            Set<String> keywords, Set<String> seenNormalized, String pin, String city, BranchBusinessType type) {
         switch (type) {
             case SALON -> {
-                keywords.add("beauty salons in " + pin);
-                keywords.add("Hair Salon in " + pin);
-                keywords.add("premium salon in " + pin);
-                keywords.add("Luxury Salon in " + pin);
-                keywords.add("Grooming salon in " + pin);
-                keywords.add("salon near " + pin);
-                keywords.add("hair salon " + pin + " " + city);
-                keywords.add("best salon " + pin);
-                keywords.add("unisex salon " + pin);
-                keywords.add("Waxing salon in " + pin);
-                keywords.add("advanced hair coloring in " + pin);
+                addKeyword(keywords, seenNormalized, "beauty salons in " + pin);
+                addKeyword(keywords, seenNormalized, "Hair Salon in " + pin);
+                addKeyword(keywords, seenNormalized, "premium salon in " + pin);
+                addKeyword(keywords, seenNormalized, "Luxury Salon in " + pin);
+                addKeyword(keywords, seenNormalized, "Grooming salon in " + pin);
+                addKeyword(keywords, seenNormalized, "salon near " + pin);
+                addKeyword(keywords, seenNormalized, "hair salon " + pin + " " + city);
+                addKeyword(keywords, seenNormalized, "best salon " + pin);
+                addKeyword(keywords, seenNormalized, "unisex salon " + pin);
+                addKeyword(keywords, seenNormalized, "Waxing salon in " + pin);
+                addKeyword(keywords, seenNormalized, "advanced hair coloring in " + pin);
             }
             case SPA -> {
-                keywords.add("spa in " + pin);
-                keywords.add("Luxury spa in " + pin);
-                keywords.add("Spa near " + pin);
-                keywords.add("Premium spa in " + pin);
-                keywords.add("Body Spa near " + pin);
-                keywords.add("Body Massage in " + pin);
-                keywords.add("body spa " + pin + " " + city);
-                keywords.add("best spa " + pin);
-                keywords.add("wellness spa " + pin);
+                addKeyword(keywords, seenNormalized, "spa in " + pin);
+                addKeyword(keywords, seenNormalized, "Luxury spa in " + pin);
+                addKeyword(keywords, seenNormalized, "Spa near " + pin);
+                addKeyword(keywords, seenNormalized, "Premium spa in " + pin);
+                addKeyword(keywords, seenNormalized, "Body Spa near " + pin);
+                addKeyword(keywords, seenNormalized, "Body Massage in " + pin);
+                addKeyword(keywords, seenNormalized, "body spa " + pin + " " + city);
+                addKeyword(keywords, seenNormalized, "best spa " + pin);
+                addKeyword(keywords, seenNormalized, "wellness spa " + pin);
             }
             case SALON_AND_SPA -> {
-                keywords.add("beauty salons in " + pin);
-                keywords.add("Hair Salon in " + pin);
-                keywords.add("premium salon in " + pin);
-                keywords.add("Luxury Salon in " + pin);
-                keywords.add("Grooming salon in " + pin);
-                keywords.add("salon near " + pin);
-                keywords.add("spa near " + pin);
-                keywords.add("spa in " + pin);
-                keywords.add("Luxury spa in " + pin);
-                keywords.add("Spa near " + pin);
-                keywords.add("Premium spa in " + pin);
-                keywords.add("Spa and salon in " + pin);
-                keywords.add("Body Spa near " + pin);
-                keywords.add("Body Massage in " + pin);
-                keywords.add("salon and spa " + pin);
-                keywords.add("salon spa " + pin + " " + city);
-                keywords.add("hair salon " + pin + " " + city);
-                keywords.add("best salon " + pin);
-                keywords.add("best spa " + pin);
-                keywords.add("unisex salon " + pin);
-                keywords.add("Waxing salon in " + pin);
-                keywords.add("Skin care salon in " + pin);
-                keywords.add("advanced hair coloring in " + pin);
+                addKeyword(keywords, seenNormalized, "beauty salons in " + pin);
+                addKeyword(keywords, seenNormalized, "Hair Salon in " + pin);
+                addKeyword(keywords, seenNormalized, "premium salon in " + pin);
+                addKeyword(keywords, seenNormalized, "Luxury Salon in " + pin);
+                addKeyword(keywords, seenNormalized, "Grooming salon in " + pin);
+                addKeyword(keywords, seenNormalized, "salon near " + pin);
+                addKeyword(keywords, seenNormalized, "Spa near " + pin);
+                addKeyword(keywords, seenNormalized, "spa in " + pin);
+                addKeyword(keywords, seenNormalized, "Luxury spa in " + pin);
+                addKeyword(keywords, seenNormalized, "Premium spa in " + pin);
+                addKeyword(keywords, seenNormalized, "Spa and salon in " + pin);
+                addKeyword(keywords, seenNormalized, "Body Spa near " + pin);
+                addKeyword(keywords, seenNormalized, "Body Massage in " + pin);
+                addKeyword(keywords, seenNormalized, "salon and spa " + pin);
+                addKeyword(keywords, seenNormalized, "salon spa " + pin + " " + city);
+                addKeyword(keywords, seenNormalized, "hair salon " + pin + " " + city);
+                addKeyword(keywords, seenNormalized, "best salon " + pin);
+                addKeyword(keywords, seenNormalized, "best spa " + pin);
+                addKeyword(keywords, seenNormalized, "unisex salon " + pin);
+                addKeyword(keywords, seenNormalized, "Waxing salon in " + pin);
+                addKeyword(keywords, seenNormalized, "Skin care salon in " + pin);
+                addKeyword(keywords, seenNormalized, "advanced hair coloring in " + pin);
             }
         }
     }
 
-    private static void addNearMeKeywords(Set<String> keywords, BranchBusinessType type) {
+    private static void addNearMeKeywords(Set<String> keywords, Set<String> seenNormalized, BranchBusinessType type) {
         switch (type) {
-            case SALON -> keywords.add("Hair Salon near me");
-            case SPA -> keywords.add("Spa near me");
+            case SALON -> addKeyword(keywords, seenNormalized, "Hair Salon near me");
+            case SPA -> addKeyword(keywords, seenNormalized, "Spa near me");
             case SALON_AND_SPA -> {
-                keywords.add("Hair Salon near me");
-                keywords.add("Spa near me");
+                addKeyword(keywords, seenNormalized, "Hair Salon near me");
+                addKeyword(keywords, seenNormalized, "Spa near me");
             }
         }
     }

@@ -8,7 +8,9 @@ import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.LocalCompetitorRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.dto.analytics.LocalSpotlightResponse;
+import com.salonplatform.dto.analytics.LocalSpotlightSyncProgressResponse;
 import com.salonplatform.dto.analytics.LocalSpotlightSyncResponse;
+import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.dto.branch.BranchResponse;
 import com.salonplatform.dto.branch.UpdateBranchDigitalPresenceRequest;
 import com.salonplatform.google.DigitalPresenceSyncService;
@@ -36,6 +38,7 @@ public class LocalSpotlightService {
     private final GooglePlacesProperties googlePlacesProperties;
     private final TenantRepository tenantRepository;
     private final LocalSpotlightDailyRankService localSpotlightDailyRankService;
+    private final LocalSpotlightSyncProgressService syncProgressService;
 
     public LocalSpotlightResponse getLocalSpotlight(
             List<UUID> branchIds, int radiusKm, boolean refresh, LocalDate rankCompareDate) {
@@ -136,6 +139,7 @@ public class LocalSpotlightService {
             }
         }
 
+        searchRanks = dedupeSearchRankRows(searchRanks);
         searchRanks.sort(Comparator.comparingInt(LocalSpotlightService::searchRankRowSortKey));
 
         branchRows.sort(Comparator.comparingInt(LocalSpotlightResponse.BranchRow::getLocalVisibilityScore).reversed());
@@ -210,6 +214,19 @@ public class LocalSpotlightService {
     private record SearchRankBuildResult(
             List<LocalSpotlightResponse.SearchRankRow> rows, boolean needsRefresh, int expectedCount, int storedCount) {}
 
+    private static List<LocalSpotlightResponse.SearchRankRow> dedupeSearchRankRows(
+            List<LocalSpotlightResponse.SearchRankRow> rows) {
+        Map<String, LocalSpotlightResponse.SearchRankRow> unique = new LinkedHashMap<>();
+        for (LocalSpotlightResponse.SearchRankRow row : rows) {
+            if (row.getKeyword() == null || row.getBranchId() == null) {
+                continue;
+            }
+            String key = row.getBranchId() + "|" + row.getKeyword().trim().toLowerCase(Locale.ROOT);
+            unique.putIfAbsent(key, row);
+        }
+        return new ArrayList<>(unique.values());
+    }
+
     private static int searchRankRowSortKey(LocalSpotlightResponse.SearchRankRow row) {
         if (row.getYourRank() != null || row.isYourRankBeyondTop20()) {
             return 0;
@@ -226,16 +243,36 @@ public class LocalSpotlightService {
         return localSpotlightDailyRankService.rankHistory(branchId, from, to);
     }
 
-    public LocalSpotlightSyncResponse syncFromGoogle(int radiusKm, boolean force) {
+    public LocalSpotlightSyncProgressResponse syncProgress() {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
+        return syncProgressService.snapshot(tenantId).orElseGet(() -> LocalSpotlightSyncProgressResponse.builder()
+                .active(false)
+                .phase(LocalSpotlightSyncProgressService.Phase.IDLE.name())
+                .percent(0)
+                .build());
+    }
+
+    public LocalSpotlightSyncResponse syncFromGoogle(int radiusKm, boolean force, boolean forceKeywords) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        if (syncProgressService.isActive(tenantId)) {
+            throw new BadRequestException(
+                    "Google sync is already running for this brand. Wait for it to finish before refreshing again.");
+        }
         if (tenantRepository.findById(tenantId).map(Tenant::isDemo).orElse(false)) {
             return LocalSpotlightSyncResponse.builder()
                     .skipped(true)
                     .message("Demo brand — showing a stored Google snapshot")
                     .build();
         }
-        DigitalPresenceSyncService.SyncResult result = digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, force);
+        DigitalPresenceSyncService.SyncResult result;
+        try {
+            result = digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, force, forceKeywords);
+        } catch (RuntimeException e) {
+            syncProgressService.clear(tenantId);
+            throw e;
+        }
         return LocalSpotlightSyncResponse.builder()
                 .skipped(result.isSkipped())
                 .branchId(result.getBranchId())

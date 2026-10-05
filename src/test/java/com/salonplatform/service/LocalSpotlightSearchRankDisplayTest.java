@@ -40,7 +40,8 @@ class LocalSpotlightSearchRankDisplayTest {
                 digitalPresenceSyncService,
                 new GooglePlacesProperties(),
                 null,
-                localSpotlightDailyRankService);
+                localSpotlightDailyRankService,
+                null);
     }
 
     @Test

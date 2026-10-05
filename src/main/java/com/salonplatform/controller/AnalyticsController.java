@@ -173,10 +173,16 @@ public class AnalyticsController {
         return ApiResponse.ok(localSpotlightService.keywordRankHistory(branchId, from, to));
     }
 
+    @GetMapping("/local-spotlight/sync/progress")
+    public ApiResponse<com.salonplatform.dto.analytics.LocalSpotlightSyncProgressResponse> localSpotlightSyncProgress() {
+        return ApiResponse.ok(localSpotlightService.syncProgress());
+    }
+
     @PostMapping("/local-spotlight/sync")
     public ApiResponse<LocalSpotlightSyncResponse> syncLocalSpotlight(
             @RequestParam(defaultValue = "2") int radiusKm,
-            @RequestParam(defaultValue = "true") boolean force) {
-        return ApiResponse.ok(localSpotlightService.syncFromGoogle(radiusKm, force));
+            @RequestParam(defaultValue = "true") boolean force,
+            @RequestParam(defaultValue = "true") boolean forceKeywords) {
+        return ApiResponse.ok(localSpotlightService.syncFromGoogle(radiusKm, force, forceKeywords));
     }
 }
