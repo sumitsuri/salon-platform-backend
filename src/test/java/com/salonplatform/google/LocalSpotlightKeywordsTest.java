@@ -24,19 +24,57 @@ class LocalSpotlightKeywordsTest {
     }
 
     @Test
-    void searchKeywords_useGeographicLocality() {
+    void resolvePinCode_readsSixDigitPinFromAddress() {
         Branch branch = branch(
                 "Mystic Varthur",
-                "SLV Sunrise, Varthur, Bangalore",
+                "SLV Sunrise, Varthur, Bangalore 560087",
+                "Mystic Varthur",
+                BranchBusinessType.SALON_AND_SPA);
+
+        assertEquals("560087", LocalSpotlightKeywords.resolvePinCode(branch));
+    }
+
+    @Test
+    void searchKeywords_usePinCodeNotLocalityName() {
+        Branch branch = branch(
+                "Mystic Varthur",
+                "SLV Sunrise, Varthur, Bangalore 560087",
                 "Mystic Varthur",
                 BranchBusinessType.SALON_AND_SPA);
 
         List<String> keywords = LocalSpotlightKeywords.searchKeywords(branch);
 
-        assertTrue(keywords.contains("salon near Varthur"));
-        assertTrue(keywords.contains("spa near Varthur"));
-        assertTrue(keywords.contains("hair salon Varthur Bangalore"));
+        assertTrue(keywords.contains("beauty salons in 560087"));
+        assertTrue(keywords.contains("Spa and salon in 560087"));
+        assertTrue(keywords.contains("Hair Salon near me"));
+        assertFalse(keywords.stream().anyMatch(k -> k.contains("Varthur")));
         assertFalse(keywords.stream().anyMatch(k -> k.contains("Mystic")));
+    }
+
+    @Test
+    void serpCacheKey_sharesPinAcrossBranches() {
+        Branch a = branch("A", "Addr 560087", null, BranchBusinessType.SPA);
+        Branch b = branch("B", "Other, 560087", null, BranchBusinessType.SPA);
+        a.setId(java.util.UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+        b.setId(java.util.UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+
+        String keyword = "spa in 560087";
+        assertEquals(
+                LocalSpotlightKeywords.serpCacheKey(a, keyword),
+                LocalSpotlightKeywords.serpCacheKey(b, keyword));
+    }
+
+    @Test
+    void serpCacheKey_nearMeIsPerBranch() {
+        Branch a = branch("A", "Addr 560087", null, BranchBusinessType.SPA);
+        Branch b = branch("B", "Other, 560087", null, BranchBusinessType.SPA);
+        a.setId(java.util.UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+        b.setId(java.util.UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+
+        String keyword = "Spa near me";
+        assertFalse(
+                LocalSpotlightKeywords.serpCacheKey(a, keyword)
+                        .equals(LocalSpotlightKeywords.serpCacheKey(b, keyword)));
     }
 
     @Test
@@ -54,15 +92,15 @@ class LocalSpotlightKeywordsTest {
     }
 
     @Test
-    void rankKeywordsMatchStored_rejectsLegacyPincodeKeywords() {
+    void rankKeywordsMatchStored_rejectsLegacyLocalityKeywords() {
         Branch branch = branch(
                 "Varthur",
-                "SLV Sunrise, Varthur, Bangalore",
+                "SLV Sunrise, Varthur, Bangalore 560087",
                 "SLV Sunrise",
                 BranchBusinessType.SALON_AND_SPA);
 
         assertFalse(LocalSpotlightKeywords.rankKeywordsMatchStored(
-                List.of("salon near 560087"), branch));
+                List.of("salon near Varthur"), branch));
         assertTrue(LocalSpotlightKeywords.rankKeywordsMatchStored(
                 LocalSpotlightKeywords.searchKeywords(branch), branch));
     }
@@ -71,7 +109,7 @@ class LocalSpotlightKeywordsTest {
     void resolveCity_readsCityFromAddress() {
         Branch branch = branch(
                 "Mystic Varthur",
-                "SLV Sunrise, Varthur, Bangalore",
+                "SLV Sunrise, Varthur, Bangalore 560087",
                 "Varthur",
                 BranchBusinessType.SALON_AND_SPA);
 

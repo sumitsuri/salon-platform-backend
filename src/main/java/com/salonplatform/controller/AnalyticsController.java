@@ -160,8 +160,17 @@ public class AnalyticsController {
     public ApiResponse<LocalSpotlightResponse> localSpotlight(
             @RequestParam(required = false) List<java.util.UUID> branchIds,
             @RequestParam(defaultValue = "2") int radiusKm,
-            @RequestParam(defaultValue = "false") boolean refresh) {
-        return ApiResponse.ok(localSpotlightService.getLocalSpotlight(branchIds, radiusKm, refresh));
+            @RequestParam(defaultValue = "false") boolean refresh,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate rankCompareDate) {
+        return ApiResponse.ok(localSpotlightService.getLocalSpotlight(branchIds, radiusKm, refresh, rankCompareDate));
+    }
+
+    @GetMapping("/local-spotlight/rank-history")
+    public ApiResponse<LocalSpotlightRankHistoryResponse> localSpotlightRankHistory(
+            @RequestParam java.util.UUID branchId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.ok(localSpotlightService.keywordRankHistory(branchId, from, to));
     }
 
     @PostMapping("/local-spotlight/sync")

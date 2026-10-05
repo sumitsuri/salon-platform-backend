@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +29,8 @@ public class LocalSpotlightResponse {
     private List<BranchRow> branches;
     private List<RivalRow> rivals;
     private List<SearchRankRow> searchRanks;
+    /** When set, {@link SearchRankRow#compareRank} / {@link SearchRankRow#rankChange} are vs this date. */
+    private LocalDate rankCompareDate;
     private List<PlaybookItem> playbook;
 
     @Data
@@ -101,6 +104,11 @@ public class LocalSpotlightResponse {
         private boolean inTop3;
         private String topThreeSummary;
         private List<TopThreeRival> topThreeRivals;
+        /** Rank stored for {@link LocalSpotlightResponse#rankCompareDate}. */
+        private Integer compareRank;
+        /** Positive = moved up (lower rank number); negative = dropped. */
+        private Integer rankChange;
+        private boolean compareBeyondTop20;
     }
 
     @Data

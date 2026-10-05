@@ -12,4 +12,6 @@ public interface BranchRepository extends JpaRepository<Branch, UUID> {
     List<Branch> findByTenantId(UUID tenantId);
     List<Branch> findByTenantIdAndStatus(UUID tenantId, BranchStatus status);
     Optional<Branch> findByTenantIdAndCode(UUID tenantId, String code);
+
+    List<Branch> findByStatusAndAddressContaining(BranchStatus status, String addressFragment);
 }

@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.*;
 
 @Service
@@ -34,8 +35,10 @@ public class LocalSpotlightService {
     private final DigitalPresenceSyncService digitalPresenceSyncService;
     private final GooglePlacesProperties googlePlacesProperties;
     private final TenantRepository tenantRepository;
+    private final LocalSpotlightDailyRankService localSpotlightDailyRankService;
 
-    public LocalSpotlightResponse getLocalSpotlight(List<UUID> branchIds, int radiusKm, boolean refresh) {
+    public LocalSpotlightResponse getLocalSpotlight(
+            List<UUID> branchIds, int radiusKm, boolean refresh, LocalDate rankCompareDate) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
         Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
@@ -120,7 +123,7 @@ public class LocalSpotlightService {
             branchRows.add(buildBranchRow(effective, lvs, completeness, listingLinked, branchRivals.size(), isPilot, googleSynced));
 
             if (googleSynced) {
-                searchRanks.addAll(buildSearchRanks(effective, branchRivals));
+                searchRanks.addAll(buildSearchRanks(effective, branchRivals, rankCompareDate));
             }
         }
 
@@ -185,8 +188,15 @@ public class LocalSpotlightService {
                 .branches(branchRows)
                 .rivals(rivalRows)
                 .searchRanks(searchRanks)
+                .rankCompareDate(rankCompareDate)
                 .playbook(playbook)
                 .build();
+    }
+
+    public com.salonplatform.dto.analytics.LocalSpotlightRankHistoryResponse keywordRankHistory(
+            UUID branchId, LocalDate from, LocalDate to) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        return localSpotlightDailyRankService.rankHistory(branchId, from, to);
     }
 
     public LocalSpotlightSyncResponse syncFromGoogle(int radiusKm, boolean force) {
@@ -294,24 +304,32 @@ public class LocalSpotlightService {
                 .build();
     }
 
-    private List<LocalSpotlightResponse.SearchRankRow> buildSearchRanks(Branch branch, List<LocalCompetitor> rivals) {
+    private List<LocalSpotlightResponse.SearchRankRow> buildSearchRanks(
+            Branch branch, List<LocalCompetitor> rivals, LocalDate rankCompareDate) {
         List<String> expectedKeywords = LocalSpotlightKeywords.searchKeywords(branch);
         List<GoogleSearchRankEntry> stored = digitalPresenceSyncService.readRankEntries(branch);
-        if (!stored.isEmpty() && keywordsMatch(stored, expectedKeywords)) {
+        List<String> storedKeywords = stored.stream()
+                .map(GoogleSearchRankEntry::getKeyword)
+                .filter(k -> k != null && !k.isBlank())
+                .toList();
+        if (!stored.isEmpty() && LocalSpotlightKeywords.rankKeywordsMatchStored(storedKeywords, branch)) {
             return stored.stream()
                     .map(entry -> {
                         List<LocalSpotlightResponse.TopThreeRival> topThree = mapTopThreeRivals(entry);
-                        return LocalSpotlightResponse.SearchRankRow.builder()
-                                .branchId(branch.getId())
-                                .branchName(branch.getName())
-                                .keyword(entry.getKeyword())
-                                .yourRank(entry.getYourRank())
-                                .yourRankBeyondTop20(Boolean.TRUE.equals(entry.getYourRankBeyondTop20()))
-                                .yourRankLabel(buildYourRankLabel(entry))
-                                .inTop3(entry.getYourRank() != null && entry.getYourRank() <= 3)
-                                .topThreeSummary(buildTopThreeSummary(topThree, entry))
-                                .topThreeRivals(topThree)
-                                .build();
+                        return enrichCompare(
+                                branch,
+                                LocalSpotlightResponse.SearchRankRow.builder()
+                                        .branchId(branch.getId())
+                                        .branchName(branch.getName())
+                                        .keyword(entry.getKeyword())
+                                        .yourRank(entry.getYourRank())
+                                        .yourRankBeyondTop20(Boolean.TRUE.equals(entry.getYourRankBeyondTop20()))
+                                        .yourRankLabel(buildYourRankLabel(entry))
+                                        .inTop3(entry.getYourRank() != null && entry.getYourRank() <= 3)
+                                        .topThreeSummary(buildTopThreeSummary(topThree, entry))
+                                        .topThreeRivals(topThree)
+                                        .build(),
+                                rankCompareDate);
                     })
                     .toList();
         }
@@ -322,22 +340,48 @@ public class LocalSpotlightService {
         }
 
         for (String keyword : expectedKeywords) {
-            rows.add(buildFallbackSearchRankRow(branch, keyword, rivals));
+            rows.add(enrichCompare(
+                    branch, buildFallbackSearchRankRow(branch, keyword, rivals), rankCompareDate));
         }
         return rows;
     }
 
-    private boolean keywordsMatch(List<GoogleSearchRankEntry> stored, List<String> expected) {
-        if (stored.size() != expected.size()) {
-            return false;
+    private LocalSpotlightResponse.SearchRankRow enrichCompare(
+            Branch branch, LocalSpotlightResponse.SearchRankRow row, LocalDate compareDate) {
+        if (compareDate == null) {
+            return row;
         }
-        for (int i = 0; i < expected.size(); i++) {
-            String storedKeyword = stored.get(i).getKeyword();
-            if (storedKeyword == null || !storedKeyword.equalsIgnoreCase(expected.get(i))) {
-                return false;
-            }
+        var snapshot = localSpotlightDailyRankService.findSnapshot(
+                branch.getId(), row.getKeyword(), compareDate);
+        if (snapshot.isEmpty()) {
+            return row;
         }
-        return true;
+        var past = snapshot.get();
+        Integer compareRank = past.getYourRank();
+        boolean compareBeyond = past.isBeyondTop20();
+        Integer rankChange = computeRankChange(compareRank, compareBeyond, row.getYourRank(), row.isYourRankBeyondTop20());
+        row.setCompareRank(compareRank);
+        row.setCompareBeyondTop20(compareBeyond);
+        row.setRankChange(rankChange);
+        return row;
+    }
+
+    private static Integer computeRankChange(
+            Integer compareRank, boolean compareBeyond, Integer currentRank, boolean currentBeyond) {
+        if (currentRank == null && currentBeyond && compareRank == null && compareBeyond) {
+            return 0;
+        }
+        int baseline = compareRank != null ? compareRank : (compareBeyond ? 21 : 0);
+        if (baseline <= 0) {
+            return null;
+        }
+        if (currentRank != null) {
+            return baseline - currentRank;
+        }
+        if (currentBeyond) {
+            return baseline - 21;
+        }
+        return null;
     }
 
     private LocalSpotlightResponse.SearchRankRow buildFallbackSearchRankRow(

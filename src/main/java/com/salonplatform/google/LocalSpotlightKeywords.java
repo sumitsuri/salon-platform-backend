@@ -9,8 +9,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class LocalSpotlightKeywords {
+
+    private static final Pattern INDIAN_PIN = Pattern.compile("\\b([1-9][0-9]{5})\\b");
 
     private static final Set<String> KNOWN_CITIES = Set.of(
             "bangalore", "bengaluru", "mumbai", "delhi", "new delhi", "chennai", "hyderabad",
@@ -42,7 +46,35 @@ public final class LocalSpotlightKeywords {
         return name;
     }
 
-    /** City suffix for keyword templates such as "hair salon Varthur Bangalore". */
+    /** Six-digit Indian PIN from the branch address (last match wins). Required for keyword templates. */
+    public static String resolvePinCode(Branch branch) {
+        if (branch == null || branch.getAddress() == null || branch.getAddress().isBlank()) {
+            return "";
+        }
+        Matcher matcher = INDIAN_PIN.matcher(branch.getAddress());
+        String pin = "";
+        while (matcher.find()) {
+            pin = matcher.group(1);
+        }
+        return pin;
+    }
+
+    public static boolean isNearMeKeyword(String keyword) {
+        return keyword != null && keyword.toLowerCase(Locale.ROOT).contains(" near me");
+    }
+
+    /**
+     * SERP cache key: shared by PIN for geo keywords; per-branch for "near me" (location-biased).
+     */
+    public static String serpCacheKey(Branch branch, String keyword) {
+        if (isNearMeKeyword(keyword)) {
+            return "BRANCH:" + branch.getId() + "|" + keyword.trim().toLowerCase(Locale.ROOT);
+        }
+        String pin = resolvePinCode(branch);
+        return "PIN:" + pin + "|" + keyword.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** City suffix for keyword templates such as "hair salon 560087 Bangalore". */
     public static String resolveCity(Branch branch) {
         String fromAddress = extractCityFromAddress(branch.getAddress());
         if (!fromAddress.isBlank()) {
@@ -70,39 +102,81 @@ public final class LocalSpotlightKeywords {
     }
 
     public static List<String> searchKeywords(Branch branch) {
-        String locality = resolveLocality(branch);
-        if (locality.isBlank()) {
+        String pin = resolvePinCode(branch);
+        if (pin.isBlank()) {
             return List.of();
         }
         String city = resolveCity(branch);
         BranchBusinessType type = effectiveType(branch);
         Set<String> keywords = new LinkedHashSet<>();
+        addPinKeywords(keywords, pin, city, type);
+        addNearMeKeywords(keywords, type);
+        return new ArrayList<>(keywords);
+    }
 
+    private static void addPinKeywords(Set<String> keywords, String pin, String city, BranchBusinessType type) {
         switch (type) {
             case SALON -> {
-                keywords.add("salon near " + locality);
-                keywords.add("hair salon " + locality + " " + city);
-                keywords.add("best salon " + locality);
-                keywords.add("unisex salon " + locality);
+                keywords.add("beauty salons in " + pin);
+                keywords.add("Hair Salon in " + pin);
+                keywords.add("premium salon in " + pin);
+                keywords.add("Luxury Salon in " + pin);
+                keywords.add("Grooming salon in " + pin);
+                keywords.add("salon near " + pin);
+                keywords.add("hair salon " + pin + " " + city);
+                keywords.add("best salon " + pin);
+                keywords.add("unisex salon " + pin);
+                keywords.add("Waxing salon in " + pin);
+                keywords.add("advanced hair coloring in " + pin);
             }
             case SPA -> {
-                keywords.add("spa near " + locality);
-                keywords.add("body spa " + locality + " " + city);
-                keywords.add("best spa " + locality);
-                keywords.add("wellness spa " + locality);
+                keywords.add("spa in " + pin);
+                keywords.add("Luxury spa in " + pin);
+                keywords.add("Spa near " + pin);
+                keywords.add("Premium spa in " + pin);
+                keywords.add("Body Spa near " + pin);
+                keywords.add("Body Massage in " + pin);
+                keywords.add("body spa " + pin + " " + city);
+                keywords.add("best spa " + pin);
+                keywords.add("wellness spa " + pin);
             }
             case SALON_AND_SPA -> {
-                keywords.add("salon near " + locality);
-                keywords.add("spa near " + locality);
-                keywords.add("salon and spa " + locality);
-                keywords.add("salon spa " + locality + " " + city);
-                keywords.add("hair salon " + locality + " " + city);
-                keywords.add("best salon " + locality);
-                keywords.add("best spa " + locality);
-                keywords.add("unisex salon " + locality);
+                keywords.add("beauty salons in " + pin);
+                keywords.add("Hair Salon in " + pin);
+                keywords.add("premium salon in " + pin);
+                keywords.add("Luxury Salon in " + pin);
+                keywords.add("Grooming salon in " + pin);
+                keywords.add("salon near " + pin);
+                keywords.add("spa near " + pin);
+                keywords.add("spa in " + pin);
+                keywords.add("Luxury spa in " + pin);
+                keywords.add("Spa near " + pin);
+                keywords.add("Premium spa in " + pin);
+                keywords.add("Spa and salon in " + pin);
+                keywords.add("Body Spa near " + pin);
+                keywords.add("Body Massage in " + pin);
+                keywords.add("salon and spa " + pin);
+                keywords.add("salon spa " + pin + " " + city);
+                keywords.add("hair salon " + pin + " " + city);
+                keywords.add("best salon " + pin);
+                keywords.add("best spa " + pin);
+                keywords.add("unisex salon " + pin);
+                keywords.add("Waxing salon in " + pin);
+                keywords.add("Skin care salon in " + pin);
+                keywords.add("advanced hair coloring in " + pin);
             }
         }
-        return new ArrayList<>(keywords);
+    }
+
+    private static void addNearMeKeywords(Set<String> keywords, BranchBusinessType type) {
+        switch (type) {
+            case SALON -> keywords.add("Hair Salon near me");
+            case SPA -> keywords.add("Spa near me");
+            case SALON_AND_SPA -> {
+                keywords.add("Hair Salon near me");
+                keywords.add("Spa near me");
+            }
+        }
     }
 
     public static List<String> nearbyPlaceTypes(Branch branch) {

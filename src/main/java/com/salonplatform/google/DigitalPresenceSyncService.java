@@ -35,6 +35,7 @@ public class DigitalPresenceSyncService {
     private final LocalCompetitorRepository localCompetitorRepository;
     private final TenantRepository tenantRepository;
     private final ObjectMapper objectMapper;
+    private final com.salonplatform.service.LocalSpotlightDailyRankService localSpotlightDailyRankService;
 
     public boolean isConfigured() {
         return properties.isConfigured();
@@ -104,24 +105,12 @@ public class DigitalPresenceSyncService {
         }
 
         Map<String, Integer> ranks = new LinkedHashMap<>();
-        List<GoogleSearchRankEntry> rankEntries = new ArrayList<>();
-        List<String> searchKeywords = LocalSpotlightKeywords.searchKeywords(branch);
-        for (String keyword : searchKeywords) {
-            GooglePlacesClient.TextSearchInsight insight = googlePlacesClient.analyzeTextSearch(
-                    keyword,
-                    ownPlaceId,
-                    branch.getLatitude(),
-                    branch.getLongitude(),
-                    radiusM);
-            if (insight.rank() > 0) {
-                ranks.put(keyword, insight.rank());
+        List<GoogleSearchRankEntry> rankEntries =
+                localSpotlightDailyRankService.syncAndRecordDailyRanks(tenantId, branch, radiusKm, force);
+        for (GoogleSearchRankEntry entry : rankEntries) {
+            if (entry.getYourRank() != null && entry.getYourRank() > 0) {
+                ranks.put(entry.getKeyword(), entry.getYourRank());
             }
-            rankEntries.add(GoogleSearchRankEntry.builder()
-                    .keyword(keyword)
-                    .yourRank(insight.rank() > 0 ? insight.rank() : null)
-                    .yourRankBeyondTop20(insight.rank() <= 0)
-                    .topThreePlaces(insight.topPlaces())
-                    .build());
         }
         Integer bestRank = ranks.values().stream().min(Integer::compareTo).orElse(null);
         if (bestRank != null && bestRank > 0) {
