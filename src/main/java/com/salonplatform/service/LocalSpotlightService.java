@@ -40,6 +40,7 @@ public class LocalSpotlightService {
     private final TenantRepository tenantRepository;
     private final LocalSpotlightDailyRankService localSpotlightDailyRankService;
     private final LocalSpotlightSyncProgressService syncProgressService;
+    private final LocalSpotlightSyncAsyncRunner localSpotlightSyncAsyncRunner;
 
     public LocalSpotlightResponse getLocalSpotlight(
             List<UUID> branchIds, int radiusKm, boolean refresh, LocalDate rankCompareDate) {
@@ -257,35 +258,27 @@ public class LocalSpotlightService {
     public LocalSpotlightSyncResponse syncFromGoogle(int radiusKm, boolean force, boolean forceKeywords) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
-        if (syncProgressService.isActive(tenantId)) {
+        if (!syncProgressService.tryAcquire(tenantId)) {
             throw new BadRequestException(
                     "Google sync is already running for this brand. Wait for it to finish before refreshing again.");
         }
         if (tenantRepository.findById(tenantId).map(Tenant::isDemo).orElse(false)) {
+            syncProgressService.clear(tenantId);
             return LocalSpotlightSyncResponse.builder()
                     .skipped(true)
                     .message("Demo brand — showing a stored Google snapshot")
                     .build();
         }
-        DigitalPresenceSyncService.SyncResult result;
         try {
-            result = digitalPresenceSyncService.syncPilotBranch(tenantId, radiusKm, force, forceKeywords);
+            localSpotlightSyncAsyncRunner.run(tenantId, radiusKm, force, forceKeywords);
         } catch (RuntimeException e) {
             syncProgressService.clear(tenantId);
             throw e;
         }
         return LocalSpotlightSyncResponse.builder()
-                .skipped(result.isSkipped())
-                .branchId(result.getBranchId())
-                .branchName(result.getBranchName())
-                .ownListingMatched(result.isOwnListingMatched())
-                .ownListingName(result.getOwnListingName())
-                .googleMapsUrl(result.getGoogleMapsUrl())
-                .googleFormattedAddress(result.getGoogleFormattedAddress())
-                .rivalsSynced(result.getRivalsSynced())
-                .searchRanks(result.getSearchRanks())
-                .message(result.getMessage())
-                .syncedAt(result.getSyncedAt())
+                .started(true)
+                .skipped(false)
+                .message("Google sync started — track progress on this page.")
                 .build();
     }
 

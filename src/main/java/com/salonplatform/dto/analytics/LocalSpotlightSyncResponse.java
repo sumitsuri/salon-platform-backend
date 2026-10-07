@@ -10,6 +10,8 @@ import java.util.UUID;
 @Data
 @Builder
 public class LocalSpotlightSyncResponse {
+    /** True when sync was accepted and runs in the background (poll {@code /sync/progress}). */
+    private boolean started;
     private boolean skipped;
     private UUID branchId;
     private String branchName;

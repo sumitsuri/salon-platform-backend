@@ -12,4 +12,8 @@ public class LocalSpotlightSyncProgressResponse {
     private int totalSteps;
     private String detail;
     private int percent;
+    /** Set when {@link #active} is false after the most recent sync finished. */
+    private String lastSyncMessage;
+    private String lastSyncError;
+    private Boolean lastSyncSkipped;
 }

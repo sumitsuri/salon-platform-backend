@@ -41,6 +41,7 @@ class LocalSpotlightSearchRankDisplayTest {
                 new GooglePlacesProperties(),
                 null,
                 localSpotlightDailyRankService,
+                null,
                 null);
     }
 
