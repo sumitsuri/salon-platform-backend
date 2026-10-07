@@ -70,6 +70,13 @@ public class StaffController {
         return ApiResponse.ok(staffAccountService.provisionLogin(id, request));
     }
 
+    @PutMapping("/{id}/login")
+    public ApiResponse<StaffResponse> updateLogin(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateStaffLoginRequest request) {
+        return ApiResponse.ok(staffAccountService.updateLogin(id, request));
+    }
+
     @GetMapping("/{id}/goals")
     public ApiResponse<List<StaffGoalResponse>> listGoals(@PathVariable UUID id) {
         return ApiResponse.ok(staffGrowthManagementService.listGoals(id));

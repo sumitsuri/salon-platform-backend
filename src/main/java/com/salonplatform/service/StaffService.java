@@ -4,6 +4,8 @@ import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.Staff;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.StaffRepository;
+import com.salonplatform.domain.repository.UserRepository;
+import com.salonplatform.domain.entity.User;
 import com.salonplatform.dto.staff.CreateStaffRequest;
 import com.salonplatform.dto.staff.StaffResponse;
 import com.salonplatform.dto.staff.UpdateStaffRequest;
@@ -25,6 +27,7 @@ public class StaffService {
 
     private final StaffRepository staffRepository;
     private final BranchRepository branchRepository;
+    private final UserRepository userRepository;
 
     @Transactional
     public StaffResponse create(CreateStaffRequest request) {
@@ -163,6 +166,7 @@ public class StaffService {
                 .biometricId(s.getBiometricId())
                 .designation(s.getDesignation())
                 .hasStaffLogin(s.getUserId() != null)
+                .staffLoginEmail(resolveStaffLoginEmail(s))
                 .active(s.isActive())
                 .deactivatedAt(s.getDeactivatedAt());
 
@@ -175,5 +179,12 @@ public class StaffService {
                     .incentivePercent(s.getIncentivePercent());
         }
         return builder.build();
+    }
+
+    private String resolveStaffLoginEmail(Staff staff) {
+        if (staff.getUserId() == null) {
+            return null;
+        }
+        return userRepository.findById(staff.getUserId()).map(User::getEmail).orElse(null);
     }
 }

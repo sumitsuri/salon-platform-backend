@@ -22,6 +22,8 @@ public class StaffResponse {
     private String biometricId;
     private String designation;
     private boolean hasStaffLogin;
+    /** Login email when {@link #hasStaffLogin}; passwords are never returned. */
+    private String staffLoginEmail;
     private boolean active;
     /** Set once the employee is soft-deactivated; their earlier data is retained. */
     private Instant deactivatedAt;

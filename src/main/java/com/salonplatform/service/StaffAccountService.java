@@ -6,6 +6,7 @@ import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.domain.repository.StaffRepository;
 import com.salonplatform.domain.repository.UserRepository;
 import com.salonplatform.dto.staff.ProvisionStaffLoginRequest;
+import com.salonplatform.dto.staff.UpdateStaffLoginRequest;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.dto.staff.StaffResponse;
@@ -70,6 +71,48 @@ public class StaffAccountService {
         return toResponse(staff);
     }
 
+    @Transactional
+    public StaffResponse updateLogin(UUID staffId, UpdateStaffLoginRequest request) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Staff staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new BadRequestException("Staff not found"));
+        if (!staff.getTenantId().equals(tenantId)) {
+            throw new BadRequestException("Staff not found");
+        }
+        if (staff.getUserId() == null) {
+            throw new BadRequestException("Staff has no login — create one first");
+        }
+        User user = userRepository.findById(staff.getUserId())
+                .orElseThrow(() -> new BadRequestException("Login user not found"));
+
+        boolean changed = false;
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+            if (!email.equals(user.getEmail())) {
+                if (userRepository.findByEmail(email).filter(u -> !u.getId().equals(user.getId())).isPresent()) {
+                    throw new BadRequestException("Email already in use");
+                }
+                user.setEmail(email);
+                changed = true;
+            }
+        }
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
+            changed = true;
+        }
+        if (request.getDesignation() != null && !request.getDesignation().isBlank()) {
+            staff.setDesignation(request.getDesignation().trim());
+            changed = true;
+        }
+        if (!changed) {
+            throw new BadRequestException("Nothing to update — set a new password, email, or designation");
+        }
+        userRepository.save(user);
+        staff = staffRepository.save(staff);
+        return toResponse(staff);
+    }
+
     private StaffResponse toResponse(Staff staff) {
         String branchName = branchRepository.findById(staff.getBranchId()).map(Branch::getName).orElse(null);
         return StaffResponse.builder()
@@ -85,7 +128,15 @@ public class StaffAccountService {
                 .deactivatedAt(staff.getDeactivatedAt())
                 .designation(staff.getDesignation())
                 .hasStaffLogin(staff.getUserId() != null)
+                .staffLoginEmail(resolveLoginEmail(staff))
                 .build();
+    }
+
+    private String resolveLoginEmail(Staff staff) {
+        if (staff.getUserId() == null) {
+            return null;
+        }
+        return userRepository.findById(staff.getUserId()).map(User::getEmail).orElse(null);
     }
 
     @Transactional
