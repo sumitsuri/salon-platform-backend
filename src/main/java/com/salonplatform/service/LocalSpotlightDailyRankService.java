@@ -75,13 +75,13 @@ public class LocalSpotlightDailyRankService {
                         serpCacheService.resolveSerp(branch, keyword, radiusM, snapshotDate, forceRefresh);
                 if (LocalSpotlightKeywords.isNearMeKeyword(keyword)) {
                     GooglePlacesClient.TextSearchInsight insight =
-                            serpCacheService.insightForBranch(serp, ownPlaceId);
+                            LocalSpotlightSerpCacheService.insightForBranch(serp, ownPlaceId);
                     entries.add(toRankEntry(keyword, insight));
                     persistDailyRow(tenantId, branch, pin, keyword, snapshotDate, insight);
                 } else {
                     recordPinKeywordRanksForAllBranches(pin, keyword, serp, snapshotDate);
                     GooglePlacesClient.TextSearchInsight insight =
-                            serpCacheService.insightForBranch(serp, ownPlaceId);
+                            LocalSpotlightSerpCacheService.insightForBranch(serp, ownPlaceId);
                     entries.add(toRankEntry(keyword, insight));
                 }
             } catch (Exception ex) {
@@ -111,7 +111,7 @@ public class LocalSpotlightDailyRankService {
                 continue;
             }
             GooglePlacesClient.TextSearchInsight insight =
-                    serpCacheService.insightForBranch(serp, peer.getGooglePlaceId());
+                    LocalSpotlightSerpCacheService.insightForBranch(serp, peer.getGooglePlaceId());
             persistDailyRow(peer.getTenantId(), peer, pin, keyword, snapshotDate, insight);
         }
     }

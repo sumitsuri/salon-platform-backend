@@ -155,7 +155,8 @@ public class GooglePlacesDirectGateway {
 
     public GooglePlacesClient.TextSearchInsight analyzeTextSearch(
             String keyword, String placeId, double lat, double lng, int radiusMeters) {
-        List<GooglePlaceSnapshot> results = searchText(keyword, lat, lng, radiusMeters, 20);
+        List<GooglePlaceSnapshot> results = searchTextAllPages(
+                keyword, lat, lng, radiusMeters, LocalSpotlightSearchConfig.TEXT_SEARCH_MAX_PAGES);
         List<GoogleRankedPlace> topPlaces = new ArrayList<>();
         int rank = -1;
         String target = placeId != null && !placeId.isBlank() ? GooglePlacesClient.normalizePlaceId(placeId) : "";

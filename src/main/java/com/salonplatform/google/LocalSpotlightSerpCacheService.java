@@ -45,8 +45,8 @@ public class LocalSpotlightSerpCacheService {
 
         double lat = branch.getLatitude();
         double lng = branch.getLongitude();
-        List<GooglePlaceSnapshot> results =
-                googlePlacesClient.searchText(keyword, lat, lng, radiusMeters, 20);
+        List<GooglePlaceSnapshot> results = googlePlacesClient.searchTextAllPages(
+                keyword, lat, lng, radiusMeters, LocalSpotlightSearchConfig.TEXT_SEARCH_MAX_PAGES);
         List<GoogleRankedPlace> ranked = new ArrayList<>();
         for (int i = 0; i < results.size(); i++) {
             GooglePlaceSnapshot snap = results.get(i);
@@ -71,7 +71,7 @@ public class LocalSpotlightSerpCacheService {
         return new CachedSerp(ranked);
     }
 
-    public GooglePlacesClient.TextSearchInsight insightForBranch(CachedSerp serp, String ownPlaceId) {
+    public static GooglePlacesClient.TextSearchInsight insightForBranch(CachedSerp serp, String ownPlaceId) {
         String target = ownPlaceId != null && !ownPlaceId.isBlank()
                 ? GooglePlacesClient.normalizePlaceId(ownPlaceId)
                 : "";

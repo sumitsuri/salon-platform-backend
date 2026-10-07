@@ -17,6 +17,7 @@ import com.salonplatform.google.DigitalPresenceSyncService;
 import com.salonplatform.google.GooglePlacesProperties;
 import com.salonplatform.google.GoogleRankedPlace;
 import com.salonplatform.google.GoogleSearchRankEntry;
+import com.salonplatform.google.LocalSpotlightSearchConfig;
 import com.salonplatform.google.LocalSpotlightKeywords;
 import com.salonplatform.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -485,7 +486,8 @@ public class LocalSpotlightService {
         if (currentRank == null && currentBeyond && compareRank == null && compareBeyond) {
             return 0;
         }
-        int baseline = compareRank != null ? compareRank : (compareBeyond ? 21 : 0);
+        int beyondFloor = LocalSpotlightSearchConfig.maxRankResults() + 1;
+        int baseline = compareRank != null ? compareRank : (compareBeyond ? beyondFloor : 0);
         if (baseline <= 0) {
             return null;
         }
@@ -493,7 +495,7 @@ public class LocalSpotlightService {
             return baseline - currentRank;
         }
         if (currentBeyond) {
-            return baseline - 21;
+            return baseline - beyondFloor;
         }
         return null;
     }
@@ -610,7 +612,7 @@ public class LocalSpotlightService {
             return "#" + entry.getYourRank();
         }
         if (Boolean.TRUE.equals(entry.getYourRankBeyondTop20())) {
-            return "Not in top 20";
+            return "Not in top " + LocalSpotlightSearchConfig.maxRankResults();
         }
         return "—";
     }
