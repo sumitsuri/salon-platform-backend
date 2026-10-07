@@ -96,8 +96,9 @@ public class StaffPortalSalesInsightsService {
                 : gap;
 
         StaffSalesBoostCatalog.Track track = StaffSalesBoostCatalog.trackForDesignation(staff.getDesignation());
+        BigDecimal incentivePct = staff.getIncentivePercent() != null ? staff.getIncentivePercent() : BigDecimal.ZERO;
         List<StaffSalesBoostSuggestion> suggestions =
-                buildSuggestions(track, gap, rawLines, staff.getDesignation(), contributions);
+                buildSuggestions(track, gap, rawLines, staff.getDesignation(), contributions, incentivePct);
 
         String periodLabel = rangeFrom.format(RANGE) + " – " + rangeTo.format(RANGE);
 
@@ -116,6 +117,7 @@ public class StaffPortalSalesInsightsService {
                         .daysRemaining(daysRemaining)
                         .dailyNeeded(dailyNeeded)
                         .trackLabel(trackLabel(track))
+                        .incentivePercent(incentivePct)
                         .suggestions(suggestions)
                         .build())
                 .build();
@@ -192,15 +194,21 @@ public class StaffPortalSalesInsightsService {
             BigDecimal gap,
             List<InvoiceSalesAggregationService.StaffSaleLineDetail> historyLines,
             String designation,
-            List<ServiceContribution> contributions) {
+            List<ServiceContribution> contributions,
+            BigDecimal incentivePercent) {
+        List<StaffSalesBoostSuggestion> packages = buildPackageSuggestions(gap, incentivePercent);
+
         if (gap.compareTo(BigDecimal.ZERO) <= 0) {
-            return List.of(StaffSalesBoostSuggestion.builder()
+            List<StaffSalesBoostSuggestion> onTarget = new ArrayList<>(packages);
+            onTarget.add(StaffSalesBoostSuggestion.builder()
                     .serviceName("On target")
                     .typicalAmount(BigDecimal.ZERO)
                     .suggestedCount(0)
                     .estimatedRevenue(BigDecimal.ZERO)
-                    .rationale("You’ve hit your monthly target — keep upselling your top services.")
+                    .packageOffer(false)
+                    .rationale("You’ve hit your monthly target — keep upselling packages and add-ons.")
                     .build());
+            return onTarget;
         }
 
         Map<String, Long> counts = new HashMap<>();
@@ -234,11 +242,52 @@ public class StaffPortalSalesInsightsService {
                     .typicalAmount(typical)
                     .suggestedCount(suggested)
                     .estimatedRevenue(est)
+                    .packageOffer(false)
                     .rationale(rationale)
                     .build());
         }
         ranked.sort(Comparator.comparing(StaffSalesBoostSuggestion::getEstimatedRevenue).reversed());
-        return ranked.stream().limit(5).toList();
+
+        List<StaffSalesBoostSuggestion> combined = new ArrayList<>(packages);
+        combined.addAll(ranked.stream().limit(4).toList());
+        return combined;
+    }
+
+    private static List<StaffSalesBoostSuggestion> buildPackageSuggestions(BigDecimal gap, BigDecimal incentivePercent) {
+        List<StaffSalesBoostSuggestion> out = new ArrayList<>();
+        for (StaffSalesBoostCatalog.CatalogEntry entry : StaffSalesBoostCatalog.packageEntries()) {
+            BigDecimal typical = entry.typicalAmount();
+            int suggested = 1;
+            if (gap.compareTo(BigDecimal.ZERO) > 0 && typical.signum() > 0) {
+                suggested = Math.min(Math.max(gap.divide(typical, 0, RoundingMode.CEILING).intValue(), 1), 3);
+            }
+            BigDecimal est = typical.multiply(BigDecimal.valueOf(suggested));
+            out.add(StaffSalesBoostSuggestion.builder()
+                    .serviceName(entry.serviceName())
+                    .typicalAmount(typical)
+                    .suggestedCount(suggested)
+                    .estimatedRevenue(est)
+                    .packageOffer(true)
+                    .rationale(packageRationale(typical, incentivePercent))
+                    .build());
+        }
+        return out;
+    }
+
+    private static String packageRationale(BigDecimal packageAmount, BigDecimal incentivePercent) {
+        if (incentivePercent == null || incentivePercent.compareTo(BigDecimal.ZERO) <= 0) {
+            return "Packages boost your billed sales fast — one sale can equal several single services toward target.";
+        }
+        BigDecimal exampleBonus = packageAmount
+                .multiply(incentivePercent)
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+        return "Counts toward target and incentive — e.g. one ₹"
+                + packageAmount.setScale(0, RoundingMode.HALF_UP).toPlainString()
+                + " package at "
+                + incentivePercent.stripTrailingZeros().toPlainString()
+                + "% adds about ₹"
+                + exampleBonus.toPlainString()
+                + " to your payout when you meet target.";
     }
 
     private static String buildRationale(

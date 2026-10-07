@@ -65,6 +65,16 @@ public final class StaffSalesBoostCatalog {
         };
     }
 
+    /** Combo / membership packages — recommended for every staff member. */
+    private static final List<CatalogEntry> PACKAGES = List.of(
+            new CatalogEntry("Monthly Care Package", bd(4500)),
+            new CatalogEntry("Hair + Spa Combo Package", bd(5500)),
+            new CatalogEntry("Bridal / Occasion Package", bd(12000)));
+
+    public static List<CatalogEntry> packageEntries() {
+        return PACKAGES;
+    }
+
     private static BigDecimal bd(long rupees) {
         return BigDecimal.valueOf(rupees);
     }

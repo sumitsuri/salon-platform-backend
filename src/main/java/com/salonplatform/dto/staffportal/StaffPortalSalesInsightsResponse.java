@@ -54,6 +54,7 @@ public class StaffPortalSalesInsightsResponse {
         private int daysRemaining;
         private BigDecimal dailyNeeded;
         private String trackLabel;
+        private BigDecimal incentivePercent;
         private List<StaffSalesBoostSuggestion> suggestions;
     }
 
@@ -65,5 +66,7 @@ public class StaffPortalSalesInsightsResponse {
         private int suggestedCount;
         private BigDecimal estimatedRevenue;
         private String rationale;
+        /** Salon combo / membership package (same for all staff). */
+        private boolean packageOffer;
     }
 }
