@@ -57,6 +57,13 @@ app:
       storage-dir: ${FACE_SCAN_PHOTO_DIR:data/face-scan-photos}
       aws-region: ${AWS_REGION:ap-south-1}
       max-bytes: 2097152
+  scan:
+    llm:
+      enabled: ${SCAN_LLM_ENABLED:false}
+      api-key: ${OPENAI_API_KEY:}
+      model: ${SCAN_LLM_MODEL:gpt-4o-mini}
+      max-images: ${SCAN_LLM_MAX_IMAGES:3}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
   msg91:
     auth-key: ${MSG91_AUTH_KEY:}
     whatsapp-integrated-number: ${MSG91_WHATSAPP_NUMBER:}

@@ -11,9 +11,16 @@ import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.dto.scan.ScanAnalysisMetaDto;
+import com.salonplatform.service.scan.ScanAnalysisSupport;
+import com.salonplatform.service.scan.ScanCaptureQuality;
+import com.salonplatform.service.scan.ScanLlmReportMapper;
+import com.salonplatform.service.scan.ScanVisionLlmService;
+import com.salonplatform.service.facescan.FaceScanImageAnalysis;
 import com.salonplatform.service.facescan.FaceScanImageAnalyzer;
 import com.salonplatform.service.facescan.FaceScanImageMetrics;
 import com.salonplatform.service.facescan.FaceScanRecommendationPlanner;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -37,6 +44,7 @@ public class FaceScanService {
     private final FaceScanPhotoStorageService photoStorage;
     private final FaceScanImageAnalyzer imageAnalyzer;
     private final FaceScanRecommendationPlanner recommendationPlanner;
+    private final ScanVisionLlmService scanVisionLlmService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -99,20 +107,33 @@ public class FaceScanService {
         }
 
         Set<String> staffConfirmed = parseConcernCodes(request != null ? request.getStaffConfirmedConcerns() : null);
+        String staffNotes = request != null ? request.getStaffNotes() : null;
 
         double redness = 0;
         double texture = 0;
         double brightness = 0;
         double uv = 0;
-        int n = captures.size();
+        double weightSum = 0;
+        List<ScanCaptureQuality> qualities = new ArrayList<>();
+        List<byte[]> llmImages = new ArrayList<>();
+        List<String> zoneLabels = new ArrayList<>();
         for (FaceScanCapture capture : captures) {
             byte[] bytes = photoStorage.load(capture.getImageKey());
-            FaceScanImageMetrics m = imageAnalyzer.analyze(bytes, capture.getLightMode());
-            redness += m.rednessIndex();
-            texture += m.textureVariance();
-            brightness += m.meanBrightness();
-            uv += m.uvFluorescenceScore();
+            llmImages.add(bytes);
+            zoneLabels.add(capture.getZone().name());
+            FaceScanImageAnalysis analysis = imageAnalyzer.analyze(bytes, capture.getLightMode(), capture.getZone());
+            qualities.add(analysis.quality());
+            FaceScanImageMetrics m = analysis.metrics();
+            double w = faceZoneWeight(capture.getZone());
+            redness += m.rednessIndex() * w;
+            texture += m.textureVariance() * w;
+            brightness += m.meanBrightness() * w;
+            uv += m.uvFluorescenceScore() * w;
+            weightSum += w;
         }
+        double n = Math.max(1, weightSum);
+        ScanAnalysisSupport.assertPhotoQuality(staffConfirmed, qualities);
+
         List<FaceScanConcernDto> concerns = recommendationPlanner.scoreConcerns(
                 redness / n, texture / n, brightness / n, uv / n, staffConfirmed);
         if (concerns.isEmpty()) {
@@ -126,8 +147,22 @@ public class FaceScanService {
         }
         FaceScanMetricsDto metrics = recommendationPlanner.aggregateMetrics(
                 redness / n, texture / n, brightness / n, concerns);
-        FaceScanReportDto report = recommendationPlanner.buildReport(
-                metrics, concerns, loadCatalogRefs(session.getBranchId(), session.getTenantId()));
+        List<FaceScanRecommendationPlanner.CatalogServiceRef> catalog =
+                loadCatalogRefs(session.getBranchId(), session.getTenantId());
+        FaceScanReportDto report = recommendationPlanner.buildReport(metrics, concerns, catalog);
+
+        Optional<JsonNode> llm = scanVisionLlmService.analyzeFace(
+                llmImages,
+                zoneLabels,
+                staffConfirmed,
+                staffNotes,
+                catalog.stream().map(FaceScanRecommendationPlanner.CatalogServiceRef::name).toList());
+        boolean llmUsed = llm.isPresent();
+        llm.ifPresent(node -> ScanLlmReportMapper.mergeFace(report, node));
+
+        ScanAnalysisMetaDto meta = ScanAnalysisSupport.buildMeta(qualities, !staffConfirmed.isEmpty(), llmUsed);
+        report.setAnalysisMeta(meta);
+        recommendationPlanner.trimForConfidence(report, meta.getConfidence());
 
         session.setStatus(FaceScanStatus.COMPLETE);
         session.setAnalyzedAt(Instant.now());
@@ -316,6 +351,10 @@ public class FaceScanService {
         } catch (JsonProcessingException e) {
             return null;
         }
+    }
+
+    private static double faceZoneWeight(FaceCaptureZone zone) {
+        return zone == FaceCaptureZone.FULL_FACE ? 1.0 : 1.2;
     }
 
     private static Set<String> parseConcernCodes(String raw) {

@@ -13,9 +13,16 @@ import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.dto.scan.ScanAnalysisMetaDto;
+import com.salonplatform.service.scan.ScanAnalysisSupport;
+import com.salonplatform.service.scan.ScanLlmReportMapper;
+import com.salonplatform.service.scan.ScanCaptureQuality;
+import com.salonplatform.service.scan.ScanVisionLlmService;
+import com.salonplatform.service.scalpscan.ScalpScanImageAnalysis;
 import com.salonplatform.service.scalpscan.ScalpScanImageAnalyzer;
 import com.salonplatform.service.scalpscan.ScalpScanImageMetrics;
 import com.salonplatform.service.scalpscan.ScalpScanRecommendationPlanner;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -39,6 +46,7 @@ public class ScalpScanService {
     private final ScalpScanPhotoStorageService photoStorage;
     private final ScalpScanImageAnalyzer imageAnalyzer;
     private final ScalpScanRecommendationPlanner recommendationPlanner;
+    private final ScanVisionLlmService scanVisionLlmService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -101,24 +109,35 @@ public class ScalpScanService {
         }
 
         Set<String> staffConfirmed = parseConcernCodes(request != null ? request.getStaffConfirmedConcerns() : null);
+        String staffNotes = request != null ? request.getStaffNotes() : null;
 
         double redness = 0;
         double texture = 0;
         double brightness = 0;
         double uv = 0;
         double edges = 0;
-        int metricSamples = 0;
+        double weightSum = 0;
+        List<ScanCaptureQuality> qualities = new ArrayList<>();
+        List<byte[]> llmImages = new ArrayList<>();
+        List<String> zoneLabels = new ArrayList<>();
         for (ScalpScanCapture capture : captures) {
             byte[] bytes = photoStorage.load(capture.getImageKey());
-            ScalpScanImageMetrics m = imageAnalyzer.analyze(bytes, capture.getLightMode());
-            redness += m.rednessIndex();
-            texture += m.textureVariance();
-            brightness += m.meanBrightness();
-            uv += m.uvFluorescenceScore();
-            edges += m.edgeDensity();
-            metricSamples++;
+            llmImages.add(bytes);
+            zoneLabels.add(capture.getZone().name());
+            ScalpScanImageAnalysis analysis = imageAnalyzer.analyze(bytes, capture.getLightMode(), capture.getZone());
+            qualities.add(analysis.quality());
+            ScalpScanImageMetrics m = analysis.metrics();
+            double w = scalpZoneWeight(capture.getZone());
+            redness += m.rednessIndex() * w;
+            texture += m.textureVariance() * w;
+            brightness += m.meanBrightness() * w;
+            uv += m.uvFluorescenceScore() * w;
+            edges += m.edgeDensity() * w;
+            weightSum += w;
         }
-        double n = Math.max(1, metricSamples);
+        double n = Math.max(1, weightSum);
+        ScanAnalysisSupport.assertPhotoQuality(staffConfirmed, qualities);
+
         List<ScalpScanConcernDto> concerns = recommendationPlanner.scoreConcerns(
                 redness / n, texture / n, brightness / n, uv / n, edges / n, staffConfirmed);
         if (concerns.isEmpty()) {
@@ -132,8 +151,22 @@ public class ScalpScanService {
         }
         ScalpScanMetricsDto metrics = recommendationPlanner.aggregateMetrics(
                 redness / n, texture / n, brightness / n, uv / n, edges / n, concerns);
-        ScalpScanReportDto report = recommendationPlanner.buildReport(
-                metrics, concerns, loadCatalogRefs(session.getBranchId(), session.getTenantId()));
+        List<ScalpScanRecommendationPlanner.CatalogServiceRef> catalog =
+                loadCatalogRefs(session.getBranchId(), session.getTenantId());
+        ScalpScanReportDto report = recommendationPlanner.buildReport(metrics, concerns, catalog);
+
+        Optional<JsonNode> llm = scanVisionLlmService.analyzeScalp(
+                llmImages,
+                zoneLabels,
+                staffConfirmed,
+                staffNotes,
+                catalog.stream().map(ScalpScanRecommendationPlanner.CatalogServiceRef::name).toList());
+        boolean llmUsed = llm.isPresent();
+        llm.ifPresent(node -> ScanLlmReportMapper.mergeScalp(report, node));
+
+        ScanAnalysisMetaDto meta = ScanAnalysisSupport.buildMeta(qualities, !staffConfirmed.isEmpty(), llmUsed);
+        report.setAnalysisMeta(meta);
+        recommendationPlanner.trimForConfidence(report, meta.getConfidence());
 
         session.setStatus(ScalpScanStatus.COMPLETE);
         session.setAnalyzedAt(Instant.now());
@@ -343,6 +376,13 @@ public class ScalpScanService {
         } catch (JsonProcessingException e) {
             return null;
         }
+    }
+
+    private static double scalpZoneWeight(ScalpCaptureZone zone) {
+        return switch (zone) {
+            case CROWN, PARTING -> 1.25;
+            default -> 1.0;
+        };
     }
 
     private static Set<String> parseConcernCodes(String raw) {
