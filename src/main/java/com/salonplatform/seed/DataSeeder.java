@@ -11,6 +11,7 @@ import com.salonplatform.seed.SeedCatalog.BranchSeed;
 import com.salonplatform.seed.SeedCatalog.StaffSeed;
 import com.salonplatform.seed.SeedCatalog.TenantSeed;
 import com.salonplatform.service.ProductionTenantGuard;
+import com.salonplatform.service.StaffAccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
@@ -43,6 +44,7 @@ public class DataSeeder implements CommandLineRunner {
     private final RateCardCatalogSync rateCardCatalogSync;
     private final ProductionTenantGuard productionTenantGuard;
     private final Environment environment;
+    private final StaffAccountService staffAccountService;
 
     @Override
     @Transactional
@@ -198,7 +200,14 @@ public class DataSeeder implements CommandLineRunner {
             if (staff.idProofReference() != null) {
                 builder.idProofReference(staff.idProofReference());
             }
-            staffRepository.save(builder.build());
+            Staff saved = staffRepository.save(builder.build());
+            if ("FP-AMIT-LITHOS".equals(staff.biometricId())) {
+                staffAccountService.ensureDemoLogin(
+                        saved,
+                        "amit.lithos@demo-brand.local",
+                        "staff123",
+                        "Gents Hair Dresser");
+            }
         }
 
         // Branch service pricing is applied by RateCardCatalogSync after all branches exist.

@@ -27,10 +27,12 @@ public class SalesSchemaPatch implements ApplicationRunner {
                             'SALES_EXECUTIVE',
                             'BRAND_ADMIN',
                             'BRANCH_MANAGER',
-                            'SALON_MANAGER'
+                            'SALON_MANAGER',
+                            'SALON_STAFF'
                         )
                     )
                     """);
+            log.info("User role constraint patch applied (includes SALON_STAFF)");
         } catch (Exception e) {
             log.warn("User role constraint patch failed: {}", e.getMessage());
         }

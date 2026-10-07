@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -51,13 +52,28 @@ public class LeaveService {
         if (!staff.getTenantId().equals(tenantId)) {
             throw new BadRequestException("Staff not in tenant");
         }
-        SecurityUtils.assertBranchAccess(staff.getBranchId());
+        if (SecurityUtils.isSalonStaff()) {
+            Staff self = staffRepository.findByTenantIdAndUserId(tenantId, user.getId())
+                    .orElseThrow(() -> new BadRequestException("No employee profile linked to this login"));
+            if (!self.getId().equals(staff.getId())) {
+                throw new com.salonplatform.exception.ForbiddenException("You can only apply leave for yourself");
+            }
+        } else {
+            SecurityUtils.assertBranchAccess(staff.getBranchId());
+        }
 
         if (request.getEndDate().isBefore(request.getStartDate())) {
             throw new BadRequestException("End date must be on or after start date");
         }
 
-        LeaveStatus initialStatus = SecurityUtils.isManagerRole() ? LeaveStatus.PENDING : LeaveStatus.APPROVED;
+        LeaveStatus initialStatus;
+        if (SecurityUtils.isSalonStaff()) {
+            initialStatus = LeaveStatus.PENDING;
+        } else if (SecurityUtils.isManagerRole()) {
+            initialStatus = LeaveStatus.PENDING;
+        } else {
+            initialStatus = LeaveStatus.APPROVED;
+        }
 
         LeaveRecord record = leaveRepository.save(LeaveRecord.builder()
                 .tenantId(tenantId)
@@ -86,14 +102,19 @@ public class LeaveService {
     }
 
     private LeaveResponse updateStatus(UUID leaveId, LeaveStatus status) {
-        SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
         UserPrincipal user = SecurityUtils.currentUser();
+        if (!SecurityUtils.isManagerRole() && !SecurityUtils.isBrandAdmin()) {
+            throw new com.salonplatform.exception.ForbiddenException("Manager or brand admin access required");
+        }
 
         LeaveRecord record = leaveRepository.findById(leaveId)
                 .orElseThrow(() -> new ResourceNotFoundException("Leave record not found"));
         if (!record.getTenantId().equals(tenantId)) {
             throw new BadRequestException("Leave not in tenant");
+        }
+        if (SecurityUtils.isManagerRole()) {
+            SecurityUtils.assertBranchAccess(record.getBranchId());
         }
         record.setStatus(status);
         record.setApprovedByUserId(user.getId());
@@ -103,11 +124,55 @@ public class LeaveService {
         return toResponse(record, staff);
     }
 
+    public List<LeaveResponse> listForStaff(UUID staffId) {
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Staff staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+        if (!staff.getTenantId().equals(tenantId)) {
+            throw new ResourceNotFoundException("Staff not found");
+        }
+        if (SecurityUtils.isSalonStaff()) {
+            Staff self = staffRepository.findByTenantIdAndUserId(tenantId, SecurityUtils.currentUserId())
+                    .orElseThrow(() -> new BadRequestException("No employee profile linked to this login"));
+            if (!self.getId().equals(staffId)) {
+                throw new com.salonplatform.exception.ForbiddenException("Access denied");
+            }
+        } else if (SecurityUtils.isManagerRole()) {
+            SecurityUtils.assertBranchAccess(staff.getBranchId());
+        } else {
+            SecurityUtils.assertBrandAdminOrAbove();
+        }
+        LocalDate start = LocalDate.now(ZONE).minusMonths(6);
+        LocalDate end = LocalDate.now(ZONE).plusMonths(3);
+        return leaveRepository.findByStaffIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+                        staffId, end, start).stream()
+                .sorted(Comparator.comparing(LeaveRecord::getStartDate).reversed())
+                .map(r -> toResponse(r, staff))
+                .collect(Collectors.toList());
+    }
+
     public PageResponse<LeaveResponse> listPaged(LeaveListFilter filter) {
         UUID tenantId = SecurityUtils.requireTenantId();
 
-        if (filter.getBranchId() != null) {
+        if (filter.getStaffId() != null) {
+            Staff staff = staffRepository.findById(filter.getStaffId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+            if (!staff.getTenantId().equals(tenantId)) {
+                throw new ResourceNotFoundException("Staff not found");
+            }
+            if (SecurityUtils.isSalonStaff()) {
+                Staff self = staffRepository.findByTenantIdAndUserId(tenantId, SecurityUtils.currentUserId())
+                        .orElseThrow(() -> new BadRequestException("No employee profile linked to this login"));
+                if (!self.getId().equals(filter.getStaffId())) {
+                    throw new com.salonplatform.exception.ForbiddenException("Access denied");
+                }
+            } else if (SecurityUtils.isManagerRole()) {
+                SecurityUtils.assertBranchAccess(staff.getBranchId());
+            }
+        } else if (filter.getBranchId() != null) {
             SecurityUtils.assertBranchAccess(filter.getBranchId());
+        } else if (SecurityUtils.isSalonStaff()) {
+            throw new com.salonplatform.exception.ForbiddenException("Staff id required");
         } else {
             SecurityUtils.assertBrandAdminOrAbove();
         }
@@ -116,6 +181,7 @@ public class LeaveService {
         LocalDate end = filter.getDateTo() != null ? filter.getDateTo() : LocalDate.now(ZONE).plusDays(30);
         LeaveListFilter effective = LeaveListFilter.builder()
                 .branchId(filter.getBranchId())
+                .staffId(filter.getStaffId())
                 .staff(filter.getStaff())
                 .branch(filter.getBranch())
                 .status(filter.getStatus())

@@ -34,6 +34,12 @@ public class Staff {
     @Column(nullable = false)
     private String name;
 
+    /** Linked login for the staff mobile app */
+    private UUID userId;
+
+    /** Display title e.g. Gents Hair Dresser */
+    private String designation;
+
     private String phone;
 
     @Enumerated(EnumType.STRING)
@@ -56,6 +62,12 @@ public class Staff {
 
     /** Masked reference e.g. "Aadhaar XXXX1234" — CEO-only */
     private String idProofReference;
+
+    /** Storage key for profile photo (staff app) */
+    private String profilePhotoKey;
+
+    /** Storage key for uploaded Aadhaar / ID document */
+    private String aadharDocumentKey;
 
     /** Monthly sales target in INR */
     private BigDecimal monthlySalesTarget;

@@ -5,5 +5,7 @@ public enum UserRole {
     SALES_EXECUTIVE,
     BRAND_ADMIN,
     BRANCH_MANAGER,
-    SALON_MANAGER
+    SALON_MANAGER,
+    /** Salon employee app — attendance, leaves, growth tracker, profile documents */
+    SALON_STAFF
 }

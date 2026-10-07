@@ -18,6 +18,9 @@ public final class LeaveSpecifications {
         if (filter.getBranchId() != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("branchId"), filter.getBranchId()));
         }
+        if (filter.getStaffId() != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("staffId"), filter.getStaffId()));
+        }
         if (filter.getStatus() != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), filter.getStatus()));
         }

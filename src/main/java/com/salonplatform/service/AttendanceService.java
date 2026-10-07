@@ -258,8 +258,25 @@ public class AttendanceService {
     public PageResponse<AttendanceResponse> listPaged(AttendanceListFilter filter) {
         UUID tenantId = SecurityUtils.requireTenantId();
 
-        if (filter.getBranchId() != null) {
+        if (filter.getStaffId() != null) {
+            Staff staff = staffRepository.findById(filter.getStaffId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+            if (!staff.getTenantId().equals(tenantId)) {
+                throw new ResourceNotFoundException("Staff not found");
+            }
+            if (SecurityUtils.isSalonStaff()) {
+                Staff self = staffRepository.findByTenantIdAndUserId(tenantId, SecurityUtils.currentUserId())
+                        .orElseThrow(() -> new BadRequestException("No employee profile linked to this login"));
+                if (!self.getId().equals(filter.getStaffId())) {
+                    throw new com.salonplatform.exception.ForbiddenException("Access denied");
+                }
+            } else if (SecurityUtils.isManagerRole()) {
+                SecurityUtils.assertBranchAccess(staff.getBranchId());
+            }
+        } else if (filter.getBranchId() != null) {
             SecurityUtils.assertBranchAccess(filter.getBranchId());
+        } else if (SecurityUtils.isSalonStaff()) {
+            throw new com.salonplatform.exception.ForbiddenException("Staff id required");
         } else {
             SecurityUtils.assertBrandAdminOrAbove();
         }
@@ -268,6 +285,7 @@ public class AttendanceService {
         LocalDate end = filter.getDateTo() != null ? filter.getDateTo() : LocalDate.now(ZONE);
         AttendanceListFilter effective = AttendanceListFilter.builder()
                 .branchId(filter.getBranchId())
+                .staffId(filter.getStaffId())
                 .staff(filter.getStaff())
                 .branch(filter.getBranch())
                 .status(filter.getStatus())

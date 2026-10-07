@@ -23,4 +23,7 @@ public interface LeaveRecordRepository extends JpaRepository<LeaveRecord, UUID>,
 
     boolean existsByStaffIdAndStatusAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
             UUID staffId, LeaveStatus status, LocalDate end, LocalDate start);
+
+    List<LeaveRecord> findByStaffIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+            UUID staffId, LocalDate end, LocalDate start);
 }

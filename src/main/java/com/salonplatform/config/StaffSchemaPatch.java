@@ -32,6 +32,10 @@ public class StaffSchemaPatch implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS monthly_sales_target NUMERIC(19, 2)");
             jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS incentive_percent NUMERIC(19, 2)");
             jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMP WITH TIME ZONE");
+            jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS user_id UUID");
+            jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS designation VARCHAR(255)");
+            jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS profile_photo_key VARCHAR(512)");
+            jdbcTemplate.execute("ALTER TABLE staff ADD COLUMN IF NOT EXISTS aadhar_document_key VARCHAR(512)");
             jdbcTemplate.update(
                     "UPDATE staff SET deactivated_at = COALESCE(updated_at, NOW()) "
                             + "WHERE active = FALSE AND deactivated_at IS NULL");

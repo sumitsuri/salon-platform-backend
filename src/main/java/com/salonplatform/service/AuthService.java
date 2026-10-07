@@ -7,7 +7,9 @@ import com.salonplatform.domain.entity.User;
 import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.RefreshTokenRepository;
 import com.salonplatform.domain.repository.TenantRepository;
+import com.salonplatform.domain.repository.StaffRepository;
 import com.salonplatform.domain.repository.UserRepository;
+import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.dto.auth.AuthResponse;
 import com.salonplatform.dto.auth.LoginRequest;
 import com.salonplatform.exception.BadRequestException;
@@ -34,6 +36,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
     private final BranchRepository branchRepository;
+    private final StaffRepository staffRepository;
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
@@ -112,6 +115,12 @@ public class AuthService {
             }
             builder.preferredLocale(user.getPreferredLocale());
         });
+
+        if (principal.getRole() == UserRole.SALON_STAFF && principal.getTenantId() != null) {
+            staffRepository.findByTenantIdAndUserId(principal.getTenantId(), principal.getId())
+                    .map(com.salonplatform.domain.entity.Staff::getId)
+                    .ifPresent(builder::staffId);
+        }
 
         return builder.build();
     }

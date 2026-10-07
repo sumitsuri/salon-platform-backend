@@ -12,6 +12,9 @@ import java.util.UUID;
 public interface AttendanceRecordRepository extends JpaRepository<AttendanceRecord, UUID>, JpaSpecificationExecutor<AttendanceRecord> {
     Optional<AttendanceRecord> findByStaffIdAndWorkDate(UUID staffId, LocalDate workDate);
 
+    List<AttendanceRecord> findByStaffIdAndWorkDateBetweenOrderByWorkDateDesc(
+            UUID staffId, LocalDate start, LocalDate end);
+
     List<AttendanceRecord> findByTenantIdAndBranchIdAndWorkDateBetweenOrderByEntryTimeDesc(
             UUID tenantId, UUID branchId, LocalDate start, LocalDate end);
 

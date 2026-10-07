@@ -17,6 +17,8 @@ public class AuthResponse {
     private UserRole role;
     private UUID tenantId;
     private UUID branchId;
+    /** Set when role is SALON_STAFF */
+    private UUID staffId;
     private String tenantName;
     private String branchName;
     private String primaryColor;

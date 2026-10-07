@@ -70,6 +70,16 @@ public final class SecurityUtils {
         return role == UserRole.BRANCH_MANAGER || role == UserRole.SALON_MANAGER;
     }
 
+    public static boolean isSalonStaff() {
+        return currentUser().getRole() == UserRole.SALON_STAFF;
+    }
+
+    public static void assertManagerOrBrandAdmin() {
+        if (!isManagerRole() && !isBrandAdmin()) {
+            throw new ForbiddenException("Manager or brand admin access required");
+        }
+    }
+
     public static boolean isBrandAdmin() {
         return currentUser().getRole() == UserRole.BRAND_ADMIN;
     }

@@ -12,4 +12,8 @@ public interface StaffRepository extends JpaRepository<Staff, UUID> {
     List<Staff> findByTenantId(UUID tenantId);
     List<Staff> findByTenantIdAndBranchId(UUID tenantId, UUID branchId);
     Optional<Staff> findByTenantIdAndBiometricId(UUID tenantId, String biometricId);
+
+    Optional<Staff> findByUserId(UUID userId);
+
+    Optional<Staff> findByTenantIdAndUserId(UUID tenantId, UUID userId);
 }

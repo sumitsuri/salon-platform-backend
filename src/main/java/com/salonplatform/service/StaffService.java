@@ -161,6 +161,8 @@ public class StaffService {
                 .role(s.getRole())
                 .skills(s.getSkills())
                 .biometricId(s.getBiometricId())
+                .designation(s.getDesignation())
+                .hasStaffLogin(s.getUserId() != null)
                 .active(s.isActive())
                 .deactivatedAt(s.getDeactivatedAt());
 

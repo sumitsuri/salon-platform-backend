@@ -20,6 +20,8 @@ public class StaffResponse {
     private StaffRole role;
     private String skills;
     private String biometricId;
+    private String designation;
+    private boolean hasStaffLogin;
     private boolean active;
     /** Set once the employee is soft-deactivated; their earlier data is retained. */
     private Instant deactivatedAt;

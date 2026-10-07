@@ -1,11 +1,11 @@
 package com.salonplatform.controller;
 
 import com.salonplatform.dto.ApiResponse;
-import com.salonplatform.dto.staff.CreateStaffRequest;
-import com.salonplatform.dto.staff.StaffResponse;
-import com.salonplatform.dto.staff.StaffTargetPerformanceResponse;
-import com.salonplatform.dto.staff.StaffTargetTrendsResponse;
-import com.salonplatform.dto.staff.UpdateStaffRequest;
+import com.salonplatform.dto.staff.*;
+import com.salonplatform.dto.staffportal.StaffGoalResponse;
+import com.salonplatform.dto.staffportal.StaffPerformanceReviewResponse;
+import com.salonplatform.service.StaffAccountService;
+import com.salonplatform.service.StaffGrowthManagementService;
 import com.salonplatform.service.StaffPerformanceService;
 import com.salonplatform.service.StaffService;
 import jakarta.validation.Valid;
@@ -24,6 +24,8 @@ public class StaffController {
 
     private final StaffService staffService;
     private final StaffPerformanceService staffPerformanceService;
+    private final StaffAccountService staffAccountService;
+    private final StaffGrowthManagementService staffGrowthManagementService;
 
     @PostMapping
     public ApiResponse<StaffResponse> create(@Valid @RequestBody CreateStaffRequest request) {
@@ -59,6 +61,37 @@ public class StaffController {
     @PostMapping("/{id}/reactivate")
     public ApiResponse<StaffResponse> reactivate(@PathVariable UUID id) {
         return ApiResponse.ok(staffService.reactivate(id));
+    }
+
+    @PostMapping("/{id}/login")
+    public ApiResponse<StaffResponse> provisionLogin(
+            @PathVariable UUID id,
+            @Valid @RequestBody ProvisionStaffLoginRequest request) {
+        return ApiResponse.ok(staffAccountService.provisionLogin(id, request));
+    }
+
+    @GetMapping("/{id}/goals")
+    public ApiResponse<List<StaffGoalResponse>> listGoals(@PathVariable UUID id) {
+        return ApiResponse.ok(staffGrowthManagementService.listGoals(id));
+    }
+
+    @PostMapping("/{id}/goals")
+    public ApiResponse<StaffGoalResponse> createGoal(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateStaffGoalRequest request) {
+        return ApiResponse.ok(staffGrowthManagementService.createGoal(id, request));
+    }
+
+    @GetMapping("/{id}/reviews")
+    public ApiResponse<List<StaffPerformanceReviewResponse>> listReviews(@PathVariable UUID id) {
+        return ApiResponse.ok(staffGrowthManagementService.listReviews(id, false));
+    }
+
+    @PostMapping("/{id}/reviews")
+    public ApiResponse<StaffPerformanceReviewResponse> createReview(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateStaffPerformanceReviewRequest request) {
+        return ApiResponse.ok(staffGrowthManagementService.createReview(id, request));
     }
 
     @GetMapping("/performance/targets")
