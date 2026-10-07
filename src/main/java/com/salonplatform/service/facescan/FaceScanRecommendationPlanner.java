@@ -16,13 +16,11 @@ public class FaceScanRecommendationPlanner {
     private record StageTemplate(String stageKey, String titleSuffix, String goal, String rationaleTemplate) {}
 
     private static final String DISCLAIMER =
-            "Face scan supports skincare consultation and treatment planning. It is not medical diagnosis. "
-                    + "Refer persistent rash, swelling, or sudden changes to a dermatologist. "
-                    + "Plans are generated from your branch menu and scan signals; a stylist should confirm before booking.";
+            "Consultation aid only — not medical diagnosis. Stylist should confirm skin concerns in chair. "
+                    + "Refer persistent rash, swelling, or sudden changes to a dermatologist.";
 
     private static final String APPROACH_NOTE =
-            "This program is built from your scan metrics and branch facial menu. "
-                    + "Smarter vision models (e.g. OpenAI) can refine plans in a future release.";
+            "Plan uses your photos, stylist input, and branch menu. Enable vision LLM in settings for richer drafts.";
 
     public FaceScanReportDto buildReport(
             FaceScanMetricsDto metrics,
@@ -58,6 +56,21 @@ public class FaceScanRecommendationPlanner {
                 .build();
     }
 
+    public void trimForConfidence(FaceScanReportDto report, String confidence) {
+        if (report == null || !"LOW".equals(confidence)) {
+            return;
+        }
+        if (report.getConcerns() != null && report.getConcerns().size() > 2) {
+            report.setConcerns(report.getConcerns().subList(0, 2));
+        }
+        if (report.getCarePlanPhases() != null && report.getCarePlanPhases().size() > 1) {
+            report.setCarePlanPhases(report.getCarePlanPhases().subList(0, 1));
+        }
+        if (report.getInSalonServices() != null && report.getInSalonServices().size() > 1) {
+            report.setInSalonServices(report.getInSalonServices().subList(0, 1));
+        }
+    }
+
     public List<FaceScanConcernDto> scoreConcerns(
             double avgRedness,
             double avgTexture,
@@ -74,7 +87,7 @@ public class FaceScanRecommendationPlanner {
         scores.put("COMBINATION_SKIN", clamp(Math.abs(avgBrightness - 0.52) * 60 + avgTexture * 40));
 
         for (String code : staffConfirmed) {
-            scores.merge(code.toUpperCase(Locale.ROOT), 25, Integer::sum);
+            scores.merge(code.toUpperCase(Locale.ROOT), 55, Integer::sum);
         }
 
         return scores.entrySet().stream()

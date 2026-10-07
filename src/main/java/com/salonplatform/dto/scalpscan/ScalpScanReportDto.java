@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.salonplatform.dto.scan.ScanAnalysisMetaDto;
 
 import java.util.List;
 
@@ -16,5 +17,6 @@ public class ScalpScanReportDto {
     private List<ScalpScanConcernDto> concerns;
     private List<ScalpScanRoutineStepDto> routineSteps;
     private List<ScalpScanServiceSuggestionDto> inSalonServices;
+    private ScanAnalysisMetaDto analysisMeta;
     private String disclaimer;
 }

@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.salonplatform.dto.scan.ScanAnalysisMetaDto;
 
 import java.util.List;
 
@@ -20,5 +21,6 @@ public class FaceScanReportDto {
     private List<FaceScanServiceSuggestionDto> inSalonServices;
     private FaceScanCarePlanSummaryDto carePlanSummary;
     private List<FaceScanCarePlanPhaseDto> carePlanPhases;
+    private ScanAnalysisMetaDto analysisMeta;
     private String disclaimer;
 }

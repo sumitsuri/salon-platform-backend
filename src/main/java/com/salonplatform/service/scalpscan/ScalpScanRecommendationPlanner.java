@@ -12,8 +12,8 @@ public class ScalpScanRecommendationPlanner {
     public record CatalogServiceRef(UUID branchServiceId, String name) {}
 
     private static final String DISCLAIMER =
-            "This scalp scan supports professional hair and scalp care planning. It is not a medical diagnosis. "
-                    + "For persistent itching, bleeding, or sudden hair loss, refer the guest to a dermatologist or trichologist.";
+            "Consultation aid only — not medical diagnosis. Stylist should confirm concerns in chair. "
+                    + "Refer itching, bleeding, or sudden hair loss to a dermatologist or trichologist.";
 
     public ScalpScanReportDto buildReport(
             ScalpScanMetricsDto metrics,
@@ -36,6 +36,21 @@ public class ScalpScanRecommendationPlanner {
                 .build();
     }
 
+    public void trimForConfidence(ScalpScanReportDto report, String confidence) {
+        if (report == null || !"LOW".equals(confidence)) {
+            return;
+        }
+        if (report.getConcerns() != null && report.getConcerns().size() > 2) {
+            report.setConcerns(report.getConcerns().subList(0, 2));
+        }
+        if (report.getInSalonServices() != null && report.getInSalonServices().size() > 2) {
+            report.setInSalonServices(report.getInSalonServices().subList(0, 2));
+        }
+        if (report.getRoutineSteps() != null && report.getRoutineSteps().size() > 4) {
+            report.setRoutineSteps(report.getRoutineSteps().subList(0, 4));
+        }
+    }
+
     public List<ScalpScanConcernDto> scoreConcerns(
             double avgRedness,
             double avgTexture,
@@ -53,7 +68,7 @@ public class ScalpScanRecommendationPlanner {
         scores.put("PRODUCT_BUILDUP", clampScore((0.6 - avgBrightness) * 80 + avgTexture * 25));
 
         for (String code : staffConfirmed) {
-            scores.merge(code.toUpperCase(Locale.ROOT), 25, Integer::sum);
+            scores.merge(code.toUpperCase(Locale.ROOT), 55, Integer::sum);
         }
 
         return scores.entrySet().stream()
