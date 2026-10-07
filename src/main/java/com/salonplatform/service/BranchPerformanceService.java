@@ -38,7 +38,7 @@ public class BranchPerformanceService {
 
     @Transactional(readOnly = true)
     public BranchTargetPerformanceResponse getTargetPerformance(
-            LocalDate startDate, LocalDate endDate, List<UUID> branchIds) {
+            LocalDate startDate, LocalDate endDate, List<UUID> branchIds, boolean activeOnly) {
         UserPrincipal user = SecurityUtils.currentUser();
         UUID tenantId = SecurityUtils.requireTenantId();
         final List<UUID> resolvedBranchIds = resolveBranchIds(user, branchIds);
@@ -52,6 +52,9 @@ public class BranchPerformanceService {
                 .filter(b -> resolvedBranchIds == null || resolvedBranchIds.isEmpty() || resolvedBranchIds.contains(b.getId()))
                 .collect(Collectors.toList());
         branches = BranchReporting.filterForReporting(branches, start, end);
+        if (activeOnly) {
+            branches = BranchReporting.filterOperationallyActive(branches);
+        }
 
         List<Invoice> invoices = invoiceRepository.findByTenantAndDateRange(tenantId, rangeStart, rangeEnd);
         Map<UUID, BigDecimal> salesByBranch = aggregateBranchSales(invoices);

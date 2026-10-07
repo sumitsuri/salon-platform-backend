@@ -50,4 +50,11 @@ public final class BranchReporting {
                 .filter(b -> overlapsReportingRange(b, from, to))
                 .toList();
     }
+
+    /** Branches currently open for operations (excludes soft-deactivated). */
+    public static java.util.List<Branch> filterOperationallyActive(java.util.List<Branch> branches) {
+        return branches.stream()
+                .filter(b -> b.getStatus() == BranchStatus.ACTIVE)
+                .toList();
+    }
 }

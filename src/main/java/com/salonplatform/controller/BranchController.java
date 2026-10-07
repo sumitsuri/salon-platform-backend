@@ -75,8 +75,9 @@ public class BranchController {
     public ApiResponse<BranchTargetPerformanceResponse> targetPerformance(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @RequestParam(required = false) List<UUID> branchIds) {
-        return ApiResponse.ok(branchPerformanceService.getTargetPerformance(startDate, endDate, branchIds));
+            @RequestParam(required = false) List<UUID> branchIds,
+            @RequestParam(defaultValue = "false") boolean activeOnly) {
+        return ApiResponse.ok(branchPerformanceService.getTargetPerformance(startDate, endDate, branchIds, activeOnly));
     }
 
     @GetMapping("/performance/trends")
