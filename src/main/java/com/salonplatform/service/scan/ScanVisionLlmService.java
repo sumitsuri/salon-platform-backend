@@ -125,6 +125,7 @@ public class ScanVisionLlmService {
                   "carePlanPhases": [{"month":1,"title":"...","goal":"...","rationale":"...","inSalonVisit":{"name":"...","reason":"..."},"homeRoutine":[{"step":1,"phase":"...","title":"...","description":"..."}]}]
                 }
                 Rules: max 3 concerns; max 2 inSalonServices for scalp, for face use carePlanPhases with 3 months each with ONE inSalonVisit; no medical diagnosis; if unsure, lower severity and say what stylist should verify.
+                For scalp/hair scans NEVER recommend facials, pedicure, manicure, or nails. For face/skin scans NEVER recommend hair colour, haircut, hair spa, keratin, or pedicure — only items from the list that are clearly face/skin services.
                 """
                 .formatted(
                         domain,

@@ -15,6 +15,8 @@ import com.salonplatform.dto.scan.ScanAnalysisMetaDto;
 import com.salonplatform.service.scan.ScanAnalysisSupport;
 import com.salonplatform.service.scan.ScanCaptureQuality;
 import com.salonplatform.service.scan.ScanLlmReportMapper;
+import com.salonplatform.service.scan.ScanBranchCatalogService;
+import com.salonplatform.service.scan.ScanReportCatalogGuard;
 import com.salonplatform.service.scan.ScanVisionLlmService;
 import com.salonplatform.service.facescan.FaceScanImageAnalysis;
 import com.salonplatform.service.facescan.FaceScanImageAnalyzer;
@@ -39,12 +41,11 @@ public class FaceScanService {
     private final FaceScanSessionRepository sessionRepository;
     private final FaceScanCaptureRepository captureRepository;
     private final CustomerRepository customerRepository;
-    private final BranchServiceRepository branchServiceRepository;
-    private final SalonServiceRepository salonServiceRepository;
     private final FaceScanPhotoStorageService photoStorage;
     private final FaceScanImageAnalyzer imageAnalyzer;
     private final FaceScanRecommendationPlanner recommendationPlanner;
     private final ScanVisionLlmService scanVisionLlmService;
+    private final ScanBranchCatalogService scanBranchCatalogService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -148,7 +149,7 @@ public class FaceScanService {
         FaceScanMetricsDto metrics = recommendationPlanner.aggregateMetrics(
                 redness / n, texture / n, brightness / n, concerns);
         List<FaceScanRecommendationPlanner.CatalogServiceRef> catalog =
-                loadCatalogRefs(session.getBranchId(), session.getTenantId());
+                scanBranchCatalogService.loadFaceCatalog(session.getBranchId(), session.getTenantId());
         FaceScanReportDto report = recommendationPlanner.buildReport(metrics, concerns, catalog);
 
         Optional<JsonNode> llm = scanVisionLlmService.analyzeFace(
@@ -159,6 +160,10 @@ public class FaceScanService {
                 catalog.stream().map(FaceScanRecommendationPlanner.CatalogServiceRef::name).toList());
         boolean llmUsed = llm.isPresent();
         llm.ifPresent(node -> ScanLlmReportMapper.mergeFace(report, node));
+        ScanReportCatalogGuard.enforceFace(
+                report,
+                ScanReportCatalogGuard.namesLowerFromStrings(
+                        catalog.stream().map(FaceScanRecommendationPlanner.CatalogServiceRef::name).toList()));
 
         ScanAnalysisMetaDto meta = ScanAnalysisSupport.buildMeta(qualities, !staffConfirmed.isEmpty(), llmUsed);
         report.setAnalysisMeta(meta);
@@ -253,25 +258,6 @@ public class FaceScanService {
         if (session.getStatus() != FaceScanStatus.DRAFT) {
             throw new BadRequestException("Scan is already complete");
         }
-    }
-
-    private List<FaceScanRecommendationPlanner.CatalogServiceRef> loadCatalogRefs(UUID branchId, UUID tenantId) {
-        List<BranchService> branchServices = branchServiceRepository.findByBranchIdAndActiveTrue(branchId);
-        if (branchServices.isEmpty()) return List.of();
-        Set<UUID> serviceIds = branchServices.stream().map(BranchService::getServiceId).collect(Collectors.toSet());
-        Map<UUID, SalonService> salonById = salonServiceRepository.findAllById(serviceIds).stream()
-                .filter(s -> tenantId.equals(s.getTenantId()))
-                .collect(Collectors.toMap(SalonService::getId, s -> s));
-        List<FaceScanRecommendationPlanner.CatalogServiceRef> refs = new ArrayList<>();
-        for (BranchService bs : branchServices) {
-            SalonService salon = salonById.get(bs.getServiceId());
-            if (salon == null || !salon.isActive()) continue;
-            String name = bs.getDisplayNameOverride() != null && !bs.getDisplayNameOverride().isBlank()
-                    ? bs.getDisplayNameOverride()
-                    : salon.getName();
-            refs.add(new FaceScanRecommendationPlanner.CatalogServiceRef(bs.getId(), name));
-        }
-        return refs;
     }
 
     private Map<UUID, Customer> loadCustomers(List<FaceScanSession> sessions) {

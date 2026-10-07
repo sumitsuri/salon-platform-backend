@@ -201,7 +201,8 @@ public class ScalpScanRecommendationPlanner {
             }
         }
         if (k.isEmpty()) {
-            k.add("spa");
+            k.add("hair");
+            k.add("scalp");
         }
         return new ArrayList<>(k);
     }
