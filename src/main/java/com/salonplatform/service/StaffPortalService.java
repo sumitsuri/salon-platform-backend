@@ -49,6 +49,7 @@ public class StaffPortalService {
     private final StaffGrowthManagementService growthManagementService;
     private final InvoiceRepository invoiceRepository;
     private final InvoiceSalesAggregationService invoiceSalesAggregationService;
+    private final StaffPortalSalesInsightsService staffPortalSalesInsightsService;
 
     @Transactional(readOnly = true)
     public StaffPortalProfileResponse getProfile() {
@@ -322,6 +323,12 @@ public class StaffPortalService {
     public List<StaffPerformanceReviewResponse> myReviews() {
         Staff staff = staffAccessService.requireCurrentStaff();
         return growthManagementService.listReviews(staff.getId(), true);
+    }
+
+    @Transactional(readOnly = true)
+    public StaffPortalSalesInsightsResponse salesInsights(int historyMonths) {
+        Staff staff = staffAccessService.requireCurrentStaff();
+        return staffPortalSalesInsightsService.insights(staff, historyMonths);
     }
 
     private long countLeaveDays(UUID staffId, LocalDate start, LocalDate end) {

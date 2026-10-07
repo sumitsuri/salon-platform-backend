@@ -94,6 +94,12 @@ public class StaffPortalController {
         return ApiResponse.ok(staffPortalService.growthSnapshot());
     }
 
+    @GetMapping("/sales/insights")
+    public ApiResponse<StaffPortalSalesInsightsResponse> salesInsights(
+            @RequestParam(defaultValue = "2") int historyMonths) {
+        return ApiResponse.ok(staffPortalService.salesInsights(historyMonths));
+    }
+
     @GetMapping("/leaves")
     public ApiResponse<List<LeaveResponse>> leaves() {
         return ApiResponse.ok(staffPortalService.myLeaves());

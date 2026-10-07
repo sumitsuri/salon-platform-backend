@@ -16,6 +16,11 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,6 +93,54 @@ public class InvoiceSalesAggregationService {
         Map<UUID, StaffLineAggregate> result = new HashMap<>();
         byStaff.forEach((staffId, acc) -> result.put(staffId, acc.toStaffAggregate()));
         return result;
+    }
+
+    public record StaffSaleLineDetail(
+            LocalDate serviceDate, String serviceName, int quantity, BigDecimal amount) {}
+
+    /**
+     * Individual credited service lines for one staff member (newest invoice first).
+     */
+    public List<StaffSaleLineDetail> listSaleLinesForStaff(List<Invoice> invoices, UUID staffId, ZoneId zone) {
+        Map<UUID, List<BookingLineItem>> linesByBooking = fetchLinesByBooking(invoices);
+        Map<UUID, Booking> bookingsById = fetchBookingsById(invoices);
+        List<StaffSaleLineDetail> rows = new ArrayList<>();
+        for (Invoice invoice : invoices) {
+            List<BookingLineItem> lines = linesByBooking.getOrDefault(invoice.getBookingId(), List.of());
+            if (lines.isEmpty()) {
+                continue;
+            }
+            BillPreviewResponse bill = billPreviewForInvoice(invoice, bookingsById.get(invoice.getBookingId()), lines);
+            Map<UUID, BillLinePreview> previewByLineId = previewIndex(bill);
+            BigDecimal paidShare = paidShareAfterBillDiscount(bill);
+            Instant when = invoice.getIssuedAt() != null ? invoice.getIssuedAt() : Instant.now();
+            LocalDate serviceDate = when.atZone(zone).toLocalDate();
+            for (BookingLineItem line : lines) {
+                if (line.getStaffId() == null || !line.getStaffId().equals(staffId)) {
+                    continue;
+                }
+                if (line.getServiceName() == null || line.getServiceName().isBlank()) {
+                    continue;
+                }
+                int qty = line.getQuantity() != null ? line.getQuantity() : 1;
+                BillLinePreview preview = previewByLineId.get(line.getId());
+                BigDecimal finalAmount;
+                PackageStaffSaleImputationService.ImputedLineAmounts imputed =
+                        packageStaffSaleImputationService.imputeForStaffSale(line, preview);
+                if (imputed != null) {
+                    finalAmount = imputed.finalAmount();
+                } else {
+                    BigDecimal listAmount = line.getUnitPrice().multiply(BigDecimal.valueOf(qty));
+                    finalAmount = (preview != null && preview.getLineTotal() != null
+                            ? preview.getLineTotal()
+                            : listAmount)
+                            .multiply(paidShare).setScale(2, RoundingMode.HALF_UP);
+                }
+                rows.add(new StaffSaleLineDetail(serviceDate, line.getServiceName().trim(), qty, finalAmount));
+            }
+        }
+        rows.sort(Comparator.comparing(StaffSaleLineDetail::serviceDate).reversed());
+        return rows;
     }
 
     public Map<String, ServiceLineAggregate> aggregateByServiceName(List<Invoice> invoices) {

@@ -28,6 +28,7 @@ public class StaffAccountService {
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
+    private final StaffSuggestedPasswordService suggestedPasswordService;
 
     @Transactional
     public StaffResponse provisionLogin(UUID staffId, ProvisionStaffLoginRequest request) {
@@ -43,6 +44,7 @@ public class StaffAccountService {
         }
 
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
+        suggestedPasswordService.assertPasswordNotReused(tenantId, request.getPassword(), null);
         if (userRepository.findByEmail(email).isPresent()) {
             throw new BadRequestException("Email already in use");
         }
@@ -98,6 +100,7 @@ public class StaffAccountService {
             }
         }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            suggestedPasswordService.assertPasswordNotReused(tenantId, request.getPassword(), user.getId());
             user.setPassword(passwordEncoder.encode(request.getPassword()));
             changed = true;
         }

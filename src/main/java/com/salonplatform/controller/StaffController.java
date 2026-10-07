@@ -4,7 +4,10 @@ import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.staff.*;
 import com.salonplatform.dto.staffportal.StaffGoalResponse;
 import com.salonplatform.dto.staffportal.StaffPerformanceReviewResponse;
+import com.salonplatform.dto.staff.SuggestedStaffPasswordResponse;
 import com.salonplatform.service.StaffAccountService;
+import com.salonplatform.service.StaffSuggestedPasswordService;
+import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.service.StaffGrowthManagementService;
 import com.salonplatform.service.StaffPerformanceService;
 import com.salonplatform.service.StaffService;
@@ -26,6 +29,7 @@ public class StaffController {
     private final StaffPerformanceService staffPerformanceService;
     private final StaffAccountService staffAccountService;
     private final StaffGrowthManagementService staffGrowthManagementService;
+    private final StaffSuggestedPasswordService staffSuggestedPasswordService;
 
     @PostMapping
     public ApiResponse<StaffResponse> create(@Valid @RequestBody CreateStaffRequest request) {
@@ -61,6 +65,14 @@ public class StaffController {
     @PostMapping("/{id}/reactivate")
     public ApiResponse<StaffResponse> reactivate(@PathVariable UUID id) {
         return ApiResponse.ok(staffService.reactivate(id));
+    }
+
+    @GetMapping("/suggested-password")
+    public ApiResponse<SuggestedStaffPasswordResponse> suggestedPassword() {
+        UUID tenantId = SecurityUtils.requireTenantId();
+        return ApiResponse.ok(SuggestedStaffPasswordResponse.builder()
+                .password(staffSuggestedPasswordService.generateUniqueForTenant(tenantId))
+                .build());
     }
 
     @PostMapping("/{id}/login")
