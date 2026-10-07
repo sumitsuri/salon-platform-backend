@@ -473,7 +473,7 @@ public class FaceScanRecommendationPlanner {
             case "REDNESS_SENSITIVITY" -> List.of("calm", "sooth", "sensitive", "redness");
             case "UNEVEN_TEXTURE", "DULLNESS" -> List.of("bright", "glow", "light", "detan", "polish", "fruit");
             case "COMBINATION_SKIN" -> List.of("balance", "combo", "facial");
-            default -> List.of("facial", "signature", "fruit", "lotus", "skin");
+            default -> List.of("facial", "fruit", "lotus", "skin");
         };
     }
 

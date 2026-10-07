@@ -17,6 +17,8 @@ import com.salonplatform.dto.scan.ScanAnalysisMetaDto;
 import com.salonplatform.service.scan.ScanAnalysisSupport;
 import com.salonplatform.service.scan.ScanLlmReportMapper;
 import com.salonplatform.service.scan.ScanCaptureQuality;
+import com.salonplatform.service.scan.ScanBranchCatalogService;
+import com.salonplatform.service.scan.ScanReportCatalogGuard;
 import com.salonplatform.service.scan.ScanVisionLlmService;
 import com.salonplatform.service.scalpscan.ScalpScanImageAnalysis;
 import com.salonplatform.service.scalpscan.ScalpScanImageAnalyzer;
@@ -41,12 +43,11 @@ public class ScalpScanService {
     private final ScalpScanSessionRepository sessionRepository;
     private final ScalpScanCaptureRepository captureRepository;
     private final CustomerRepository customerRepository;
-    private final BranchServiceRepository branchServiceRepository;
-    private final SalonServiceRepository salonServiceRepository;
     private final ScalpScanPhotoStorageService photoStorage;
     private final ScalpScanImageAnalyzer imageAnalyzer;
     private final ScalpScanRecommendationPlanner recommendationPlanner;
     private final ScanVisionLlmService scanVisionLlmService;
+    private final ScanBranchCatalogService scanBranchCatalogService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -152,7 +153,7 @@ public class ScalpScanService {
         ScalpScanMetricsDto metrics = recommendationPlanner.aggregateMetrics(
                 redness / n, texture / n, brightness / n, uv / n, edges / n, concerns);
         List<ScalpScanRecommendationPlanner.CatalogServiceRef> catalog =
-                loadCatalogRefs(session.getBranchId(), session.getTenantId());
+                scanBranchCatalogService.loadScalpCatalog(session.getBranchId(), session.getTenantId());
         ScalpScanReportDto report = recommendationPlanner.buildReport(metrics, concerns, catalog);
 
         Optional<JsonNode> llm = scanVisionLlmService.analyzeScalp(
@@ -163,6 +164,10 @@ public class ScalpScanService {
                 catalog.stream().map(ScalpScanRecommendationPlanner.CatalogServiceRef::name).toList());
         boolean llmUsed = llm.isPresent();
         llm.ifPresent(node -> ScanLlmReportMapper.mergeScalp(report, node));
+        ScanReportCatalogGuard.enforceScalp(
+                report,
+                ScanReportCatalogGuard.namesLowerFromStrings(
+                        catalog.stream().map(ScalpScanRecommendationPlanner.CatalogServiceRef::name).toList()));
 
         ScanAnalysisMetaDto meta = ScanAnalysisSupport.buildMeta(qualities, !staffConfirmed.isEmpty(), llmUsed);
         report.setAnalysisMeta(meta);
@@ -270,29 +275,6 @@ public class ScalpScanService {
         if (session.getStatus() != ScalpScanStatus.DRAFT) {
             throw new BadRequestException("Scan is already complete");
         }
-    }
-
-    private List<ScalpScanRecommendationPlanner.CatalogServiceRef> loadCatalogRefs(UUID branchId, UUID tenantId) {
-        List<BranchService> branchServices = branchServiceRepository.findByBranchIdAndActiveTrue(branchId);
-        if (branchServices.isEmpty()) {
-            return List.of();
-        }
-        Set<UUID> serviceIds = branchServices.stream().map(BranchService::getServiceId).collect(Collectors.toSet());
-        Map<UUID, SalonService> salonById = salonServiceRepository.findAllById(serviceIds).stream()
-                .filter(s -> tenantId.equals(s.getTenantId()))
-                .collect(Collectors.toMap(SalonService::getId, s -> s));
-        List<ScalpScanRecommendationPlanner.CatalogServiceRef> refs = new ArrayList<>();
-        for (BranchService bs : branchServices) {
-            SalonService salon = salonById.get(bs.getServiceId());
-            if (salon == null || !salon.isActive()) {
-                continue;
-            }
-            String name = bs.getDisplayNameOverride() != null && !bs.getDisplayNameOverride().isBlank()
-                    ? bs.getDisplayNameOverride()
-                    : salon.getName();
-            refs.add(new ScalpScanRecommendationPlanner.CatalogServiceRef(bs.getId(), name));
-        }
-        return refs;
     }
 
     private Map<UUID, Customer> loadCustomers(List<ScalpScanSession> sessions) {
