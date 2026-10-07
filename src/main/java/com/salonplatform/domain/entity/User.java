@@ -37,6 +37,10 @@ public class User {
     @Column(nullable = false)
     private String password;
 
+    /** AES-GCM encrypted plaintext for brand-admin recovery (staff logins only). */
+    @Column(name = "login_password_vault")
+    private String loginPasswordVault;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserRole role;

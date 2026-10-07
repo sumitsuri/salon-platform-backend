@@ -326,9 +326,9 @@ public class StaffPortalService {
     }
 
     @Transactional(readOnly = true)
-    public StaffPortalSalesInsightsResponse salesInsights(int historyMonths) {
+    public StaffPortalSalesInsightsResponse salesInsights(java.time.LocalDate from, java.time.LocalDate to) {
         Staff staff = staffAccessService.requireCurrentStaff();
-        return staffPortalSalesInsightsService.insights(staff, historyMonths);
+        return staffPortalSalesInsightsService.insights(staff, from, to);
     }
 
     private long countLeaveDays(UUID staffId, LocalDate start, LocalDate end) {

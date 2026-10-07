@@ -4,9 +4,12 @@ import com.salonplatform.domain.entity.Invoice;
 import com.salonplatform.domain.entity.Staff;
 import com.salonplatform.domain.repository.InvoiceRepository;
 import com.salonplatform.dto.staffportal.StaffPortalSalesInsightsResponse;
+import com.salonplatform.dto.staffportal.StaffPortalSalesInsightsResponse.PeriodSummary;
+import com.salonplatform.dto.staffportal.StaffPortalSalesInsightsResponse.ServiceContribution;
 import com.salonplatform.dto.staffportal.StaffPortalSalesInsightsResponse.StaffSaleHistoryLine;
 import com.salonplatform.dto.staffportal.StaffPortalSalesInsightsResponse.StaffSalesBoostSection;
 import com.salonplatform.dto.staffportal.StaffPortalSalesInsightsResponse.StaffSalesBoostSuggestion;
+import com.salonplatform.exception.BadRequestException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,20 +33,29 @@ public class StaffPortalSalesInsightsService {
 
     private static final ZoneId ZONE = ZoneId.of("Asia/Kolkata");
     private static final DateTimeFormatter RANGE = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
+    private static final int MAX_LOOKBACK_MONTHS = 2;
 
     private final InvoiceRepository invoiceRepository;
     private final InvoiceSalesAggregationService invoiceSalesAggregationService;
 
     @Transactional(readOnly = true)
-    public StaffPortalSalesInsightsResponse insights(Staff staff, int historyMonths) {
-        int months = Math.max(1, Math.min(historyMonths, 6));
+    public StaffPortalSalesInsightsResponse insights(Staff staff, LocalDate from, LocalDate to) {
         LocalDate today = LocalDate.now(ZONE);
-        LocalDate historyFrom = today.minusMonths(months).withDayOfMonth(1);
-        LocalDate historyTo = today;
-        LocalDate mtdStart = today.withDayOfMonth(1);
+        LocalDate earliest = today.minusMonths(MAX_LOOKBACK_MONTHS).withDayOfMonth(1);
+        LocalDate rangeFrom = from != null ? from : earliest;
+        LocalDate rangeTo = to != null ? to : today;
+        if (rangeFrom.isBefore(earliest)) {
+            rangeFrom = earliest;
+        }
+        if (rangeTo.isAfter(today)) {
+            rangeTo = today;
+        }
+        if (rangeTo.isBefore(rangeFrom)) {
+            throw new BadRequestException("Invalid date range");
+        }
 
-        var historyRangeStart = historyFrom.atStartOfDay(ZONE).toInstant();
-        var historyRangeEnd = historyTo.plusDays(1).atStartOfDay(ZONE).toInstant();
+        var historyRangeStart = rangeFrom.atStartOfDay(ZONE).toInstant();
+        var historyRangeEnd = rangeTo.plusDays(1).atStartOfDay(ZONE).toInstant();
         List<Invoice> historyInvoices = invoiceRepository
                 .findByTenantAndDateRange(staff.getTenantId(), historyRangeStart, historyRangeEnd)
                 .stream()
@@ -61,6 +73,11 @@ public class StaffPortalSalesInsightsService {
                         .build())
                 .toList();
 
+        PeriodSummary periodSummary = buildPeriodSummary(rawLines);
+        List<ServiceContribution> contributions = buildContributions(rawLines);
+        String focusSummary = buildFocusSummary(contributions);
+
+        LocalDate mtdStart = today.withDayOfMonth(1);
         var mtdRangeStart = mtdStart.atStartOfDay(ZONE).toInstant();
         var mtdRangeEnd = today.plusDays(1).atStartOfDay(ZONE).toInstant();
         List<Invoice> mtdInvoices = invoiceRepository
@@ -73,23 +90,25 @@ public class StaffPortalSalesInsightsService {
         BigDecimal target = staff.getMonthlySalesTarget() != null ? staff.getMonthlySalesTarget() : BigDecimal.ZERO;
         BigDecimal gap = target.subtract(actualMtd).max(BigDecimal.ZERO);
 
-        int daysInMonth = today.lengthOfMonth();
-        int daysRemaining = Math.max(0, daysInMonth - today.getDayOfMonth());
+        int daysRemaining = Math.max(0, today.lengthOfMonth() - today.getDayOfMonth());
         BigDecimal dailyNeeded = daysRemaining > 0
                 ? gap.divide(BigDecimal.valueOf(daysRemaining), 0, RoundingMode.CEILING)
                 : gap;
 
         StaffSalesBoostCatalog.Track track = StaffSalesBoostCatalog.trackForDesignation(staff.getDesignation());
-        List<StaffSalesBoostSuggestion> suggestions = buildSuggestions(track, gap, rawLines, staff.getDesignation());
+        List<StaffSalesBoostSuggestion> suggestions =
+                buildSuggestions(track, gap, rawLines, staff.getDesignation(), contributions);
 
-        String historyLabel = "Last " + months + " months";
-        String periodLabel = historyFrom.format(RANGE) + " – " + historyTo.format(RANGE);
+        String periodLabel = rangeFrom.format(RANGE) + " – " + rangeTo.format(RANGE);
 
         return StaffPortalSalesInsightsResponse.builder()
-                .historyFilterLabel(historyLabel + " · " + periodLabel)
-                .historyFrom(historyFrom)
-                .historyTo(historyTo)
+                .historyFilterLabel(periodLabel)
+                .historyFrom(rangeFrom)
+                .historyTo(rangeTo)
                 .history(history)
+                .periodSummary(periodSummary)
+                .serviceContributions(contributions)
+                .focusSummary(focusSummary)
                 .boost(StaffSalesBoostSection.builder()
                         .monthlyTarget(target)
                         .actualSalesMtd(actualMtd)
@@ -100,6 +119,64 @@ public class StaffPortalSalesInsightsService {
                         .suggestions(suggestions)
                         .build())
                 .build();
+    }
+
+    private static PeriodSummary buildPeriodSummary(List<InvoiceSalesAggregationService.StaffSaleLineDetail> lines) {
+        long count = 0;
+        BigDecimal total = BigDecimal.ZERO;
+        for (var line : lines) {
+            count += line.quantity();
+            total = total.add(line.amount());
+        }
+        BigDecimal avg = count > 0
+                ? total.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        return PeriodSummary.builder()
+                .serviceCount(count)
+                .totalSales(total)
+                .avgTicket(avg)
+                .build();
+    }
+
+    private static List<ServiceContribution> buildContributions(
+            List<InvoiceSalesAggregationService.StaffSaleLineDetail> lines) {
+        Map<String, BigDecimal> revenue = new HashMap<>();
+        Map<String, Long> counts = new HashMap<>();
+        BigDecimal total = BigDecimal.ZERO;
+        for (var line : lines) {
+            revenue.merge(line.serviceName(), line.amount(), BigDecimal::add);
+            counts.merge(line.serviceName(), (long) line.quantity(), Long::sum);
+            total = total.add(line.amount());
+        }
+        BigDecimal totalFinal = total;
+        return revenue.entrySet().stream()
+                .map(e -> {
+                    BigDecimal rev = e.getValue();
+                    BigDecimal share = totalFinal.signum() > 0
+                            ? rev.multiply(BigDecimal.valueOf(100)).divide(totalFinal, 1, RoundingMode.HALF_UP)
+                            : BigDecimal.ZERO;
+                    return ServiceContribution.builder()
+                            .serviceName(e.getKey())
+                            .count(counts.getOrDefault(e.getKey(), 0L))
+                            .revenue(rev)
+                            .sharePercent(share)
+                            .build();
+                })
+                .sorted(Comparator.comparing(ServiceContribution::getRevenue).reversed())
+                .limit(8)
+                .toList();
+    }
+
+    private static String buildFocusSummary(List<ServiceContribution> contributions) {
+        if (contributions.isEmpty()) {
+            return "No billed services in this period yet.";
+        }
+        String top = contributions.stream()
+                .limit(3)
+                .map(c -> c.getServiceName() + " (" + c.getSharePercent().stripTrailingZeros().toPlainString() + "%)")
+                .reduce((a, b) -> a + ", " + b)
+                .orElse("");
+        return "Most of your sales in this period: " + top + ".";
     }
 
     private static String trackLabel(StaffSalesBoostCatalog.Track track) {
@@ -114,14 +191,15 @@ public class StaffPortalSalesInsightsService {
             StaffSalesBoostCatalog.Track track,
             BigDecimal gap,
             List<InvoiceSalesAggregationService.StaffSaleLineDetail> historyLines,
-            String designation) {
+            String designation,
+            List<ServiceContribution> contributions) {
         if (gap.compareTo(BigDecimal.ZERO) <= 0) {
             return List.of(StaffSalesBoostSuggestion.builder()
                     .serviceName("On target")
                     .typicalAmount(BigDecimal.ZERO)
                     .suggestedCount(0)
                     .estimatedRevenue(BigDecimal.ZERO)
-                    .rationale("You’ve hit your monthly target — keep your ticket size up with add-on services.")
+                    .rationale("You’ve hit your monthly target — keep upselling your top services.")
                     .build());
         }
 
@@ -150,11 +228,7 @@ public class StaffPortalSalesInsightsService {
                     : 1;
             suggested = Math.min(Math.max(suggested, 1), 8);
             BigDecimal est = typical.multiply(BigDecimal.valueOf(suggested));
-            String rationale = done == 0
-                    ? "You haven’t logged this in the last 2 months — strong add-on for " + roleHint(designation) + "."
-                    : done <= 2
-                            ? "Only " + done + " in your recent history — room to grow this service."
-                            : "Repeat winners — push " + suggested + " more to close your gap.";
+            String rationale = buildRationale(entry.serviceName(), done, suggested, contributions, designation);
             ranked.add(StaffSalesBoostSuggestion.builder()
                     .serviceName(entry.serviceName())
                     .typicalAmount(typical)
@@ -167,12 +241,33 @@ public class StaffPortalSalesInsightsService {
         return ranked.stream().limit(5).toList();
     }
 
+    private static String buildRationale(
+            String serviceName,
+            long done,
+            int suggested,
+            List<ServiceContribution> contributions,
+            String designation) {
+        boolean isTop = contributions.stream()
+                .limit(3)
+                .anyMatch(c -> c.getServiceName().equalsIgnoreCase(serviceName));
+        if (isTop) {
+            return "Already a focus service — do " + suggested + " more this month to close your target gap.";
+        }
+        if (done == 0) {
+            return "Not in your recent mix — strong " + roleHint(designation) + " add-on to diversify revenue.";
+        }
+        if (done <= 2) {
+            return "Low volume recently — pushing this can balance your mix vs top sellers.";
+        }
+        return "Good fit for your role — repeat " + suggested + " times to move toward target.";
+    }
+
     private static String roleHint(String designation) {
         StaffSalesBoostCatalog.Track track = StaffSalesBoostCatalog.trackForDesignation(designation);
         return switch (track) {
-            case HAIR -> "hair clients";
-            case BEAUTY_SPA -> "beauty & spa guests";
-            case GENERAL -> "your guests";
+            case HAIR -> "hair";
+            case BEAUTY_SPA -> "beauty & spa";
+            case GENERAL -> "salon";
         };
     }
 }

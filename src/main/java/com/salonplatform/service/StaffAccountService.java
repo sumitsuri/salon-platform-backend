@@ -9,6 +9,7 @@ import com.salonplatform.dto.staff.ProvisionStaffLoginRequest;
 import com.salonplatform.dto.staff.UpdateStaffLoginRequest;
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.repository.BranchRepository;
+import com.salonplatform.dto.staff.StaffLoginVaultPasswordResponse;
 import com.salonplatform.dto.staff.StaffResponse;
 import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.security.SecurityUtils;
@@ -29,6 +30,7 @@ public class StaffAccountService {
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
     private final StaffSuggestedPasswordService suggestedPasswordService;
+    private final StaffLoginPasswordVaultService loginPasswordVaultService;
 
     @Transactional
     public StaffResponse provisionLogin(UUID staffId, ProvisionStaffLoginRequest request) {
@@ -52,7 +54,7 @@ public class StaffAccountService {
             throw new BadRequestException("Staff already has a login — reset password via admin user tools");
         }
 
-        User user = userRepository.save(User.builder()
+        User user = User.builder()
                 .tenantId(tenantId)
                 .branchId(staff.getBranchId())
                 .name(staff.getName())
@@ -60,7 +62,9 @@ public class StaffAccountService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(UserRole.SALON_STAFF)
                 .active(true)
-                .build());
+                .build();
+        loginPasswordVaultService.storePlaintext(user, request.getPassword());
+        user = userRepository.save(user);
 
         staff.setUserId(user.getId());
         if (request.getDesignation() != null && !request.getDesignation().isBlank()) {
@@ -102,6 +106,7 @@ public class StaffAccountService {
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             suggestedPasswordService.assertPasswordNotReused(tenantId, request.getPassword(), user.getId());
             user.setPassword(passwordEncoder.encode(request.getPassword()));
+            loginPasswordVaultService.storePlaintext(user, request.getPassword());
             changed = true;
         }
         if (request.getDesignation() != null && !request.getDesignation().isBlank()) {
@@ -151,7 +156,7 @@ public class StaffAccountService {
         if (userRepository.findByEmail(normalized).isPresent()) {
             return;
         }
-        User user = userRepository.save(User.builder()
+        User user = User.builder()
                 .tenantId(staff.getTenantId())
                 .branchId(staff.getBranchId())
                 .name(staff.getName())
@@ -159,10 +164,27 @@ public class StaffAccountService {
                 .password(passwordEncoder.encode(rawPassword))
                 .role(UserRole.SALON_STAFF)
                 .active(true)
-                .build());
+                .build();
+        loginPasswordVaultService.storePlaintext(user, rawPassword);
+        user = userRepository.save(user);
         staff.setUserId(user.getId());
         staff.setDesignation(designation);
         staffRepository.save(staff);
+    }
+
+    public StaffLoginVaultPasswordResponse revealVaultPassword(UUID staffId) {
+        SecurityUtils.assertBrandAdminOrAbove();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        Staff staff = staffRepository.findById(staffId)
+                .orElseThrow(() -> new BadRequestException("Staff not found"));
+        if (!staff.getTenantId().equals(tenantId) || staff.getUserId() == null) {
+            throw new BadRequestException("Staff has no login");
+        }
+        User user = userRepository.findById(staff.getUserId())
+                .orElseThrow(() -> new BadRequestException("Login user not found"));
+        return loginPasswordVaultService.revealPlaintext(user)
+                .map(pwd -> StaffLoginVaultPasswordResponse.builder().available(true).password(pwd).build())
+                .orElseGet(() -> StaffLoginVaultPasswordResponse.builder().available(false).build());
     }
 
     private static String formatDesignation(String roleName) {

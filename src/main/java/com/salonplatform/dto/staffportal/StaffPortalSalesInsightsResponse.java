@@ -14,7 +14,27 @@ public class StaffPortalSalesInsightsResponse {
     private LocalDate historyFrom;
     private LocalDate historyTo;
     private List<StaffSaleHistoryLine> history;
+    private PeriodSummary periodSummary;
+    private List<ServiceContribution> serviceContributions;
+    private String focusSummary;
     private StaffSalesBoostSection boost;
+
+    @Data
+    @Builder
+    public static class PeriodSummary {
+        private long serviceCount;
+        private BigDecimal totalSales;
+        private BigDecimal avgTicket;
+    }
+
+    @Data
+    @Builder
+    public static class ServiceContribution {
+        private String serviceName;
+        private long count;
+        private BigDecimal revenue;
+        private BigDecimal sharePercent;
+    }
 
     @Data
     @Builder

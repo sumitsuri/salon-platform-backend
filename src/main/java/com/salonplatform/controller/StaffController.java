@@ -4,6 +4,7 @@ import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.staff.*;
 import com.salonplatform.dto.staffportal.StaffGoalResponse;
 import com.salonplatform.dto.staffportal.StaffPerformanceReviewResponse;
+import com.salonplatform.dto.staff.StaffLoginVaultPasswordResponse;
 import com.salonplatform.dto.staff.SuggestedStaffPasswordResponse;
 import com.salonplatform.service.StaffAccountService;
 import com.salonplatform.service.StaffSuggestedPasswordService;
@@ -87,6 +88,11 @@ public class StaffController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateStaffLoginRequest request) {
         return ApiResponse.ok(staffAccountService.updateLogin(id, request));
+    }
+
+    @GetMapping("/{id}/login/vault-password")
+    public ApiResponse<StaffLoginVaultPasswordResponse> revealLoginVaultPassword(@PathVariable UUID id) {
+        return ApiResponse.ok(staffAccountService.revealVaultPassword(id));
     }
 
     @GetMapping("/{id}/goals")
