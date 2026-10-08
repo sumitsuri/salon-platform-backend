@@ -10,4 +10,6 @@ public class LoginRequest {
     private String email;
     @NotBlank
     private String password;
+    /** Optional: employee | manager | admin — rejects tokens for the wrong portal when set. */
+    private String portal;
 }

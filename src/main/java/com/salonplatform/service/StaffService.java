@@ -82,6 +82,7 @@ public class StaffService {
         if (request.getBiometricId() != null) staff.setBiometricId(request.getBiometricId());
         if (request.getSalary() != null) staff.setSalary(request.getSalary());
         if (request.getJoiningDate() != null) staff.setJoiningDate(request.getJoiningDate());
+        if (request.getExitDate() != null) staff.setExitDate(request.getExitDate());
         if (request.getIdProofCollected() != null) staff.setIdProofCollected(request.getIdProofCollected());
         if (request.getIdProofReference() != null) staff.setIdProofReference(request.getIdProofReference());
         if (request.getMonthlySalesTarget() != null) staff.setMonthlySalesTarget(request.getMonthlySalesTarget());
@@ -173,6 +174,7 @@ public class StaffService {
         if (SecurityUtils.isBrandAdmin()) {
             builder.salary(s.getSalary())
                     .joiningDate(s.getJoiningDate())
+                    .exitDate(s.getExitDate())
                     .idProofCollected(Boolean.TRUE.equals(s.getIdProofCollected()))
                     .idProofReference(s.getIdProofReference())
                     .monthlySalesTarget(s.getMonthlySalesTarget())

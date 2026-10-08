@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -48,6 +49,7 @@ public class AuthService {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(email, password));
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
+        assertPortalMatchesRole(request.getPortal(), principal.getRole());
         String accessToken = jwtTokenProvider.generateAccessToken(authentication);
         String refreshTokenValue = jwtTokenProvider.generateRefreshTokenValue();
 
@@ -79,6 +81,31 @@ public class AuthService {
 
     public AuthResponse me(UserPrincipal principal) {
         return buildAuthResponse(principal, null, null);
+    }
+
+    private void assertPortalMatchesRole(String portal, UserRole role) {
+        if (portal == null || portal.isBlank()) {
+            return;
+        }
+        String p = portal.trim().toLowerCase(Locale.ROOT);
+        switch (p) {
+            case "employee" -> {
+                if (role != UserRole.SALON_STAFF) {
+                    throw new BadRequestException("error.auth.wrongPortal.employee");
+                }
+            }
+            case "manager" -> {
+                if (role == UserRole.SALON_STAFF) {
+                    throw new BadRequestException("error.auth.wrongPortal.manager");
+                }
+            }
+            case "admin" -> {
+                if (role != UserRole.PLATFORM_SUPER_ADMIN && role != UserRole.SALES_EXECUTIVE) {
+                    throw new BadRequestException("error.auth.wrongPortal.admin");
+                }
+            }
+            default -> throw new BadRequestException("error.auth.portalInvalid");
+        }
     }
 
     private AuthResponse buildAuthResponse(UserPrincipal principal, String accessToken, String refreshToken) {

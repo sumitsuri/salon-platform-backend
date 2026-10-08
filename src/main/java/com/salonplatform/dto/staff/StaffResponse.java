@@ -30,6 +30,7 @@ public class StaffResponse {
     /** Populated only for BRAND_ADMIN (CEO) */
     private BigDecimal salary;
     private LocalDate joiningDate;
+    private LocalDate exitDate;
     private Boolean idProofCollected;
     private String idProofReference;
     private BigDecimal monthlySalesTarget;

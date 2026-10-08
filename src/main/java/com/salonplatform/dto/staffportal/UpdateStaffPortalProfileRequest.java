@@ -5,5 +5,7 @@ import lombok.Data;
 @Data
 public class UpdateStaffPortalProfileRequest {
     private String phone;
-    private String designation;
+    private String bankAccountNumber;
+    private String bankName;
+    private String bankIfscCode;
 }

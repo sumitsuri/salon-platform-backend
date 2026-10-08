@@ -22,6 +22,10 @@ public class StaffPortalProfileResponse {
     private UUID branchId;
     private String branchName;
     private LocalDate joiningDate;
+    private LocalDate exitDate;
+    private String bankAccountNumber;
+    private String bankName;
+    private String bankIfscCode;
     private boolean hasProfilePhoto;
     private boolean hasAadharDocument;
     private String idProofReference;

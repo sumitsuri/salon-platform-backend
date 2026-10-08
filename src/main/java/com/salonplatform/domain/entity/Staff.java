@@ -56,6 +56,14 @@ public class Staff {
 
     private LocalDate joiningDate;
 
+    /** Last working day — HR/admin only; shown read-only in employee app. */
+    private LocalDate exitDate;
+
+    private String bankAccountNumber;
+    private String bankName;
+    /** Indian Financial System Code */
+    private String bankIfscCode;
+
     @Builder.Default
     @Column(columnDefinition = "boolean default false")
     private Boolean idProofCollected = false;

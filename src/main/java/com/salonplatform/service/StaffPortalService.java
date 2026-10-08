@@ -68,6 +68,10 @@ public class StaffPortalService {
                 .branchId(staff.getBranchId())
                 .branchName(branch != null ? branch.getName() : null)
                 .joiningDate(staff.getJoiningDate())
+                .exitDate(staff.getExitDate())
+                .bankAccountNumber(staff.getBankAccountNumber())
+                .bankName(staff.getBankName())
+                .bankIfscCode(staff.getBankIfscCode())
                 .hasProfilePhoto(staff.getProfilePhotoKey() != null)
                 .hasAadharDocument(staff.getAadharDocumentKey() != null)
                 .idProofReference(staff.getIdProofReference())
@@ -82,11 +86,39 @@ public class StaffPortalService {
         if (request.getPhone() != null) {
             staff.setPhone(request.getPhone().trim());
         }
-        if (request.getDesignation() != null && !request.getDesignation().isBlank()) {
-            staff.setDesignation(request.getDesignation().trim());
+        if (request.getBankAccountNumber() != null) {
+            staff.setBankAccountNumber(normalizeBankAccount(request.getBankAccountNumber()));
+        }
+        if (request.getBankName() != null) {
+            staff.setBankName(request.getBankName().trim());
+        }
+        if (request.getBankIfscCode() != null) {
+            staff.setBankIfscCode(normalizeIfsc(request.getBankIfscCode()));
         }
         staffRepository.save(staff);
         return getProfile();
+    }
+
+    private static String normalizeBankAccount(String raw) {
+        String digits = raw.replaceAll("\\s", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+        if (!digits.matches("\\d{9,18}")) {
+            throw new com.salonplatform.exception.BadRequestException("error.staffPortal.bankAccountInvalid");
+        }
+        return digits;
+    }
+
+    private static String normalizeIfsc(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String code = raw.trim().toUpperCase(Locale.ROOT);
+        if (!code.matches("[A-Z]{4}0[A-Z0-9]{6}")) {
+            throw new com.salonplatform.exception.BadRequestException("error.staffPortal.ifscInvalid");
+        }
+        return code;
     }
 
     @Transactional
