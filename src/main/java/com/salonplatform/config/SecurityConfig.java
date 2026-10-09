@@ -23,7 +23,10 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Configuration
 @EnableWebSecurity
@@ -60,17 +63,23 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /** Employee portal host — always allowed even if runtime env lags SSM after infra changes. */
+    private static final String EMPLOYEE_PORTAL_ORIGIN = "https://employee.antrahq.com";
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        // Allow any local dev port; explicit origins from config cover staging/production.
-        config.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        Set<String> patterns = new LinkedHashSet<>();
+        patterns.add("http://localhost:*");
+        patterns.add("http://127.0.0.1:*");
+        patterns.add(EMPLOYEE_PORTAL_ORIGIN);
         for (String origin : allowedOrigins.split(",")) {
             String trimmed = origin.trim();
             if (!trimmed.isEmpty()) {
-                config.addAllowedOrigin(trimmed);
+                patterns.add(trimmed);
             }
         }
+        config.setAllowedOriginPatterns(new ArrayList<>(patterns));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
