@@ -532,34 +532,135 @@ public class PlatformUsageAnalyticsService {
         Map<UUID, Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .collect(Collectors.toMap(Branch::getId, b -> b, (a, b) -> a));
 
-        if (!telemetryReadiness.isEventsTableReady()) {
+        EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
+        long rawEvents = countEventsForFilter(filter, range);
+        if (!telemetryReadiness.isEventsTableReady() && rawEvents == 0) {
             return tenantFallback(tenant, range, branches, search, role, branchId);
         }
         try {
-            EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
-            UsageStats stats = loadUsageStats(filter, range);
-            return PlatformUsageAnalyticsResponse.builder()
-                    .from(range.from())
-                    .to(range.to())
-                    .telemetryReady(true)
-                    .tenantId(tenantId)
-                    .tenantName(tenant.getName())
-                    .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
-                            .provisionedUsers(countProvisionedUsers(tenantId))
-                            .wau(stats.wau())
-                            .mau(stats.mau())
-                            .activeUsersInRange(stats.activeUsersInRange())
-                            .totalEvents(stats.totalEvents())
-                            .distinctFeatures(stats.distinctFeatures())
-                            .build())
-                    .dailyActiveUsers(loadDailyTenant(filter, range))
-                    .featureUsage(loadFeatureUsage(filter, range))
-                    .branchUsage(loadBranchUsage(tenantId, range, branchId, userId, role, search, branches))
-                    .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId, true))
-                    .build();
+            return buildTenantAnalyticsResponse(tenant, tenantId, range, filter, branches, branchId, userId, role, search);
         } catch (Exception ex) {
             log.error("Platform usage tenant analytics failed for {}", tenantId, ex);
+            if (rawEvents > 0) {
+                return buildTenantAnalyticsResponseResilient(
+                        tenant, tenantId, range, filter, branches, branchId, userId, role, search);
+            }
             return tenantFallback(tenant, range, branches, search, role, branchId);
+        }
+    }
+
+    private PlatformUsageAnalyticsResponse buildTenantAnalyticsResponse(
+            Tenant tenant,
+            UUID tenantId,
+            InstantRange range,
+            EventFilter filter,
+            Map<UUID, Branch> branches,
+            UUID branchId,
+            UUID userId,
+            UserRole role,
+            String search) {
+        UsageStats stats = loadUsageStats(filter, range);
+        return PlatformUsageAnalyticsResponse.builder()
+                .from(range.from())
+                .to(range.to())
+                .telemetryReady(true)
+                .tenantId(tenantId)
+                .tenantName(tenant.getName())
+                .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
+                        .provisionedUsers(countProvisionedUsers(tenantId))
+                        .wau(stats.wau())
+                        .mau(stats.mau())
+                        .activeUsersInRange(stats.activeUsersInRange())
+                        .totalEvents(stats.totalEvents())
+                        .distinctFeatures(stats.distinctFeatures())
+                        .build())
+                .dailyActiveUsers(loadDailyTenant(filter, range))
+                .featureUsage(loadFeatureUsage(filter, range))
+                .branchUsage(loadBranchUsage(tenantId, range, branchId, userId, role, search, branches))
+                .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId, true))
+                .build();
+    }
+
+    private PlatformUsageAnalyticsResponse buildTenantAnalyticsResponseResilient(
+            Tenant tenant,
+            UUID tenantId,
+            InstantRange range,
+            EventFilter filter,
+            Map<UUID, Branch> branches,
+            UUID branchId,
+            UUID userId,
+            UserRole role,
+            String search) {
+        UsageStats stats = loadUsageStats(filter, range);
+        return PlatformUsageAnalyticsResponse.builder()
+                .from(range.from())
+                .to(range.to())
+                .telemetryReady(true)
+                .tenantId(tenantId)
+                .tenantName(tenant.getName())
+                .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
+                        .provisionedUsers(countProvisionedUsers(tenantId))
+                        .wau(stats.wau())
+                        .mau(stats.mau())
+                        .activeUsersInRange(stats.activeUsersInRange())
+                        .totalEvents(stats.totalEvents())
+                        .distinctFeatures(stats.distinctFeatures())
+                        .build())
+                .dailyActiveUsers(safeDailyTenant(filter, range))
+                .featureUsage(safeFeatureUsage(filter, range))
+                .branchUsage(safeBranchUsage(tenantId, range, branchId, userId, role, search, branches))
+                .users(safeUserRows(tenantId, filter, range, branches, search, role, branchId))
+                .build();
+    }
+
+    private List<PlatformUsageAnalyticsResponse.DailyPoint> safeDailyTenant(EventFilter filter, InstantRange range) {
+        try {
+            return loadDailyTenant(filter, range);
+        } catch (Exception e) {
+            log.warn("dailyActiveUsers query failed: {}", e.getMessage());
+            return zeroFillDays(range, Map.of());
+        }
+    }
+
+    private List<PlatformUsageAnalyticsResponse.FeatureUsageRow> safeFeatureUsage(
+            EventFilter filter, InstantRange range) {
+        try {
+            return loadFeatureUsage(filter, range);
+        } catch (Exception e) {
+            log.warn("featureUsage query failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageAnalyticsResponse.BranchUsageRow> safeBranchUsage(
+            UUID tenantId,
+            InstantRange range,
+            UUID branchId,
+            UUID userId,
+            UserRole role,
+            String search,
+            Map<UUID, Branch> branches) {
+        try {
+            return loadBranchUsage(tenantId, range, branchId, userId, role, search, branches);
+        } catch (Exception e) {
+            log.warn("branchUsage query failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageAnalyticsResponse.UserUsageRow> safeUserRows(
+            UUID tenantId,
+            EventFilter filter,
+            InstantRange range,
+            Map<UUID, Branch> branches,
+            String search,
+            UserRole roleFilter,
+            UUID branchFilter) {
+        try {
+            return loadUserRows(tenantId, filter, range, branches, search, roleFilter, branchFilter, true);
+        } catch (Exception e) {
+            log.warn("user usage rows failed: {}", e.getMessage());
+            return List.of();
         }
     }
 
@@ -715,7 +816,7 @@ public class PlatformUsageAnalyticsService {
         List<PlatformUsageAnalyticsResponse.BranchUsageRow> rows = new ArrayList<>();
         for (BranchAgg agg : aggs) {
             Branch branch = agg.branchId() != null ? branches.get(agg.branchId()) : null;
-            String topFeature = topFeatureForBranch(tenantId, agg.branchId(), range);
+            String topFeature = safeTopFeatureForBranch(tenantId, agg.branchId(), range);
             rows.add(PlatformUsageAnalyticsResponse.BranchUsageRow.builder()
                     .branchId(agg.branchId())
                     .branchName(branch != null ? branch.getName() : "Unassigned")
@@ -726,6 +827,15 @@ public class PlatformUsageAnalyticsService {
                     .build());
         }
         return rows;
+    }
+
+    private String safeTopFeatureForBranch(UUID tenantId, UUID branchId, InstantRange range) {
+        try {
+            return topFeatureForBranch(tenantId, branchId, range);
+        } catch (DataAccessException e) {
+            log.debug("topFeatureForBranch failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     private String topFeatureForBranch(UUID tenantId, UUID branchId, InstantRange range) {
@@ -779,10 +889,13 @@ public class PlatformUsageAnalyticsService {
                     if (!StringUtils.hasText(searchLower)) {
                         return true;
                     }
-                    return u.getName().toLowerCase().contains(searchLower)
-                            || u.getEmail().toLowerCase().contains(searchLower);
+                    String name = u.getName() != null ? u.getName().toLowerCase() : "";
+                    String email = u.getEmail() != null ? u.getEmail().toLowerCase() : "";
+                    return name.contains(searchLower) || email.contains(searchLower);
                 })
-                .sorted(Comparator.comparing(User::getName, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparing(
+                        u -> u.getName() != null ? u.getName() : "",
+                        String.CASE_INSENSITIVE_ORDER))
                 .toList();
 
         List<PlatformUsageAnalyticsResponse.UserUsageRow> rows = new ArrayList<>();
@@ -798,9 +911,9 @@ public class PlatformUsageAnalyticsService {
             boolean ever = loginCount > 0 || lastSeen != null || (agg != null && agg.eventCount() > 0);
             rows.add(PlatformUsageAnalyticsResponse.UserUsageRow.builder()
                     .userId(user.getId())
-                    .name(user.getName())
-                    .email(user.getEmail())
-                    .role(user.getRole().name())
+                    .name(user.getName() != null ? user.getName() : "—")
+                    .email(user.getEmail() != null ? user.getEmail() : "—")
+                    .role(user.getRole() != null ? user.getRole().name() : "UNKNOWN")
                     .branchId(user.getBranchId())
                     .branchName(branch != null ? branch.getName() : null)
                     .active(user.isActive())
