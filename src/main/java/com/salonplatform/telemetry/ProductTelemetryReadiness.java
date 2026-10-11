@@ -14,6 +14,15 @@ public class ProductTelemetryReadiness {
 
     private volatile Boolean eventsTableReady;
 
+    /** Called after schema patch creates or verifies {@code product_events}. */
+    public void markEventsTablePresent() {
+        eventsTableReady = true;
+    }
+
+    public void clearCache() {
+        eventsTableReady = null;
+    }
+
     public boolean isEventsTableReady() {
         if (eventsTableReady != null) {
             return eventsTableReady;
@@ -22,6 +31,16 @@ public class ProductTelemetryReadiness {
             if (eventsTableReady != null) {
                 return eventsTableReady;
             }
+            eventsTableReady = probeEventsTable();
+            return eventsTableReady;
+        }
+    }
+
+    private boolean probeEventsTable() {
+        try {
+            jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_events", Integer.class);
+            return true;
+        } catch (Exception catalogEx) {
             try {
                 Integer exists = jdbcTemplate.queryForObject(
                         """
@@ -30,15 +49,15 @@ public class ProductTelemetryReadiness {
                                 WHERE table_schema = 'public' AND table_name = 'product_events'
                                 """,
                         Integer.class);
-                eventsTableReady = exists != null && exists > 0;
-                if (!eventsTableReady) {
-                    log.warn("product_events table not found — usage analytics will return empty metrics");
+                boolean ready = exists != null && exists > 0;
+                if (!ready) {
+                    log.warn("product_events table not found — portfolio uses rollup metrics until created");
                 }
+                return ready;
             } catch (Exception e) {
                 log.warn("Could not verify product_events table: {}", e.getMessage());
-                eventsTableReady = false;
+                return false;
             }
-            return eventsTableReady;
         }
     }
 }

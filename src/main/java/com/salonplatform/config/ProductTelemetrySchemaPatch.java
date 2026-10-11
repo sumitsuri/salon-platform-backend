@@ -15,11 +15,11 @@ import org.springframework.stereotype.Component;
 public class ProductTelemetrySchemaPatch implements ApplicationRunner {
 
     private final JdbcTemplate jdbcTemplate;
+    private final com.salonplatform.telemetry.ProductTelemetryReadiness telemetryReadiness;
 
     @Override
     public void run(ApplicationArguments args) {
-        try {
-            jdbcTemplate.execute("""
+        if (runStatement("""
                     CREATE TABLE IF NOT EXISTS product_events (
                         id UUID PRIMARY KEY,
                         occurred_at TIMESTAMPTZ NOT NULL,
@@ -39,9 +39,13 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                         app_version VARCHAR(64),
                         client_event_id UUID
                     )
-                    """);
+                    """)) {
+            telemetryReadiness.markEventsTablePresent();
+        } else {
+            telemetryReadiness.clearCache();
+        }
 
-            jdbcTemplate.execute("""
+        runStatement("""
                     CREATE TABLE IF NOT EXISTS usage_daily_tenant (
                         tenant_id UUID NOT NULL,
                         usage_date DATE NOT NULL,
@@ -53,7 +57,7 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     )
                     """);
 
-            jdbcTemplate.execute("""
+        runStatement("""
                     CREATE TABLE IF NOT EXISTS usage_daily_tenant_feature (
                         tenant_id UUID NOT NULL,
                         usage_date DATE NOT NULL,
@@ -63,7 +67,7 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     )
                     """);
 
-            jdbcTemplate.execute("""
+        runStatement("""
                     CREATE TABLE IF NOT EXISTS usage_daily_user (
                         tenant_id UUID NOT NULL,
                         user_id UUID NOT NULL,
@@ -75,7 +79,7 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     )
                     """);
 
-            jdbcTemplate.execute("""
+        runStatement("""
                     CREATE TABLE IF NOT EXISTS user_usage_snapshot (
                         tenant_id UUID NOT NULL,
                         user_id UUID NOT NULL,
@@ -90,23 +94,30 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     )
                     """);
 
-            jdbcTemplate.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_occurred ON product_events (tenant_id, occurred_at DESC)");
-            jdbcTemplate.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_product_events_user_occurred ON product_events (user_id, occurred_at DESC)");
-            jdbcTemplate.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_name_occurred ON product_events (tenant_id, event_name, occurred_at DESC)");
-            jdbcTemplate.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_branch_occurred ON product_events (tenant_id, branch_id, occurred_at DESC)");
-            jdbcTemplate.execute("""
+        runStatement(
+                "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_occurred ON product_events (tenant_id, occurred_at DESC)");
+        runStatement(
+                "CREATE INDEX IF NOT EXISTS idx_product_events_user_occurred ON product_events (user_id, occurred_at DESC)");
+        runStatement(
+                "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_name_occurred ON product_events (tenant_id, event_name, occurred_at DESC)");
+        runStatement(
+                "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_branch_occurred ON product_events (tenant_id, branch_id, occurred_at DESC)");
+        runStatement("""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_product_events_client_dedupe
                     ON product_events (user_id, client_event_id)
                     WHERE client_event_id IS NOT NULL
                     """);
 
-            log.info("Product telemetry schema patch applied");
+        log.info("Product telemetry schema patch applied");
+    }
+
+    private boolean runStatement(String sql) {
+        try {
+            jdbcTemplate.execute(sql);
+            return true;
         } catch (Exception e) {
-            log.warn("Product telemetry schema patch skipped or partial: {}", e.getMessage());
+            log.warn("Product telemetry DDL skipped: {} — {}", e.getMessage(), sql.lines().findFirst().orElse("sql"));
+            return false;
         }
     }
 }

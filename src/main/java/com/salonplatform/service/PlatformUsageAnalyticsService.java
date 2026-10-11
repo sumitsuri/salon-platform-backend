@@ -51,13 +51,13 @@ public class PlatformUsageAnalyticsService {
         InstantRange range = normalizeRange(from, to);
         List<Tenant> tenants = listTenants(includeDemo, tenantIdFilter);
         if (!telemetryReadiness.isEventsTableReady()) {
-            return portfolioFallback(range, tenants, false);
+            return portfolioFromRollups(range, tenants);
         }
         try {
             return portfolioWithEvents(range, tenants, includeDemo, tenantIdFilter, branchIdFilter);
         } catch (Exception ex) {
             log.error("Platform usage portfolio query failed", ex);
-            return portfolioFallback(range, tenants, false);
+            return portfolioFromRollups(range, tenants);
         }
     }
 
@@ -109,42 +109,286 @@ public class PlatformUsageAnalyticsService {
                 .build();
     }
 
-    private PlatformUsagePortfolioResponse portfolioFallback(
-            InstantRange range, List<Tenant> tenants, boolean telemetryReady) {
-        List<PlatformUsagePortfolioResponse.TenantRow> rows = tenants.stream()
-                .map(t -> PlatformUsagePortfolioResponse.TenantRow.builder()
-                        .tenantId(t.getId())
-                        .tenantName(t.getName())
-                        .tenantSlug(t.getSlug())
-                        .demoTenant(t.isDemo())
-                        .provisionedUsers(countProvisionedUsers(t.getId()))
-                        .wau(0)
-                        .mau(0)
-                        .activeUsersInRange(0)
-                        .totalEvents(0)
-                        .lastActivityAt(null)
-                        .topFeatures(List.of())
-                        .build())
-                .toList();
+    /**
+     * Serves portfolio metrics from hourly rollup tables ({@code usage_daily_*}) when live
+     * {@code product_events} queries are unavailable. Same source as legacy {@code /usage/summary}.
+     */
+    private PlatformUsagePortfolioResponse portfolioFromRollups(InstantRange range, List<Tenant> tenants) {
+        LocalDate fromDate = range.fromDate();
+        LocalDate toDate = range.toDate();
+        LocalDate wauStart = toDate.minusDays(6);
+        LocalDate mauStart = toDate.minusDays(27);
 
-        int provisioned = rows.stream().mapToInt(PlatformUsagePortfolioResponse.TenantRow::getProvisionedUsers).sum();
+        Map<UUID, Integer> wauByTenant = rollupDistinctUsersByTenant(wauStart, toDate);
+        Map<UUID, Integer> mauByTenant = rollupDistinctUsersByTenant(mauStart, toDate);
+        Map<UUID, Integer> activeInRange = rollupDistinctUsersByTenant(fromDate, toDate);
+        Map<UUID, Integer> eventTotals = rollupEventTotalsByTenant(fromDate, toDate);
+        Map<UUID, Instant> lastActivity = rollupLastActivityByTenant(fromDate, toDate);
+        Map<UUID, List<PlatformUsageSummaryResponse.FeatureHit>> topByTenant =
+                rollupTopFeaturesByTenant(fromDate, toDate, 5);
+
+        List<PlatformUsagePortfolioResponse.TenantRow> rows = new ArrayList<>();
+        for (Tenant tenant : tenants) {
+            UUID id = tenant.getId();
+            rows.add(PlatformUsagePortfolioResponse.TenantRow.builder()
+                    .tenantId(id)
+                    .tenantName(tenant.getName())
+                    .tenantSlug(tenant.getSlug())
+                    .demoTenant(tenant.isDemo())
+                    .provisionedUsers(countProvisionedUsers(id))
+                    .wau(wauByTenant.getOrDefault(id, 0))
+                    .mau(mauByTenant.getOrDefault(id, 0))
+                    .activeUsersInRange(activeInRange.getOrDefault(id, 0))
+                    .totalEvents(eventTotals.getOrDefault(id, 0))
+                    .lastActivityAt(lastActivity.get(id))
+                    .topFeatures(topByTenant.getOrDefault(id, List.of()))
+                    .build());
+        }
+
+        int platformWau = rollupDistinctUsersPlatform(wauStart, toDate);
+        int platformMau = rollupDistinctUsersPlatform(mauStart, toDate);
+        int platformActive = rollupDistinctUsersPlatform(fromDate, toDate);
+        int platformEvents = rollupEventTotalPlatform(fromDate, toDate);
+        int distinctFeatures = rollupDistinctFeaturesPlatform(fromDate, toDate);
+
         return PlatformUsagePortfolioResponse.builder()
                 .from(range.from())
                 .to(range.to())
-                .telemetryReady(telemetryReady)
+                .telemetryReady(true)
                 .platformSummary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
-                        .provisionedUsers(provisioned)
-                        .wau(0)
-                        .mau(0)
-                        .activeUsersInRange(0)
-                        .totalEvents(0)
-                        .distinctFeatures(0)
+                        .provisionedUsers(rows.stream().mapToInt(PlatformUsagePortfolioResponse.TenantRow::getProvisionedUsers).sum())
+                        .wau(platformWau)
+                        .mau(platformMau)
+                        .activeUsersInRange(platformActive)
+                        .totalEvents(platformEvents)
+                        .distinctFeatures(distinctFeatures)
                         .build())
-                .dailyActiveUsers(List.of())
-                .topFeatures(List.of())
+                .dailyActiveUsers(rollupPlatformDailySeries(range))
+                .topFeatures(rollupPlatformTopFeatures(fromDate, toDate, 12))
                 .tenants(rows)
                 .build();
     }
+
+    private Map<UUID, Integer> rollupDistinctUsersByTenant(LocalDate fromDate, LocalDate toDate) {
+        try {
+            return jdbcTemplate.query(
+                    """
+                            SELECT tenant_id, COUNT(DISTINCT user_id) AS cnt
+                            FROM usage_daily_user
+                            WHERE usage_date >= ? AND usage_date <= ? AND event_count > 0
+                            GROUP BY tenant_id
+                            """,
+                    rs -> {
+                        Map<UUID, Integer> map = new HashMap<>();
+                        while (rs.next()) {
+                            map.put((UUID) rs.getObject("tenant_id"), rs.getInt("cnt"));
+                        }
+                        return map;
+                    },
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+        } catch (DataAccessException ex) {
+            log.debug("rollupDistinctUsersByTenant unavailable: {}", ex.getMessage());
+            return Map.of();
+        }
+    }
+
+    private int rollupDistinctUsersPlatform(LocalDate fromDate, LocalDate toDate) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(DISTINCT user_id)
+                            FROM usage_daily_user
+                            WHERE usage_date >= ? AND usage_date <= ? AND event_count > 0
+                            """,
+                    Integer.class,
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+            return count != null ? count : 0;
+        } catch (DataAccessException ex) {
+            return 0;
+        }
+    }
+
+    private Map<UUID, Integer> rollupEventTotalsByTenant(LocalDate fromDate, LocalDate toDate) {
+        try {
+            return jdbcTemplate.query(
+                    """
+                            SELECT tenant_id, COALESCE(SUM(event_count), 0) AS total
+                            FROM usage_daily_user
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            GROUP BY tenant_id
+                            """,
+                    rs -> {
+                        Map<UUID, Integer> map = new HashMap<>();
+                        while (rs.next()) {
+                            map.put((UUID) rs.getObject("tenant_id"), rs.getInt("total"));
+                        }
+                        return map;
+                    },
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+        } catch (DataAccessException ex) {
+            return Map.of();
+        }
+    }
+
+    private int rollupEventTotalPlatform(LocalDate fromDate, LocalDate toDate) {
+        try {
+            Integer total = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COALESCE(SUM(event_count), 0)
+                            FROM usage_daily_user
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            """,
+                    Integer.class,
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+            return total != null ? total : 0;
+        } catch (DataAccessException ex) {
+            return 0;
+        }
+    }
+
+    private int rollupDistinctFeaturesPlatform(LocalDate fromDate, LocalDate toDate) {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(DISTINCT feature_key)
+                            FROM usage_daily_tenant_feature
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            """,
+                    Integer.class,
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+            return count != null ? count : 0;
+        } catch (DataAccessException ex) {
+            return 0;
+        }
+    }
+
+    private Map<UUID, Instant> rollupLastActivityByTenant(LocalDate fromDate, LocalDate toDate) {
+        try {
+            return jdbcTemplate.query(
+                    """
+                            SELECT tenant_id, MAX(last_event_at) AS last_at
+                            FROM usage_daily_user
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            GROUP BY tenant_id
+                            """,
+                    rs -> {
+                        Map<UUID, Instant> map = new HashMap<>();
+                        while (rs.next()) {
+                            Timestamp ts = rs.getTimestamp("last_at");
+                            if (ts != null) {
+                                map.put((UUID) rs.getObject("tenant_id"), ts.toInstant());
+                            }
+                        }
+                        return map;
+                    },
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+        } catch (DataAccessException ex) {
+            return Map.of();
+        }
+    }
+
+    private Map<UUID, List<PlatformUsageSummaryResponse.FeatureHit>> rollupTopFeaturesByTenant(
+            LocalDate fromDate, LocalDate toDate, int limitPerTenant) {
+        try {
+            List<FeatureAggregate> aggregates = jdbcTemplate.query(
+                    """
+                            SELECT tenant_id, feature_key, SUM(hit_count) AS hits
+                            FROM usage_daily_tenant_feature
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            GROUP BY tenant_id, feature_key
+                            """,
+                    (rs, rowNum) -> new FeatureAggregate(
+                            (UUID) rs.getObject("tenant_id"),
+                            rs.getString("feature_key"),
+                            rs.getInt("hits")),
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+
+            Map<UUID, List<FeatureAggregate>> grouped =
+                    aggregates.stream().collect(Collectors.groupingBy(FeatureAggregate::tenantId));
+            Map<UUID, List<PlatformUsageSummaryResponse.FeatureHit>> result = new HashMap<>();
+            for (Map.Entry<UUID, List<FeatureAggregate>> entry : grouped.entrySet()) {
+                List<PlatformUsageSummaryResponse.FeatureHit> hits = entry.getValue().stream()
+                        .sorted(Comparator.comparingInt(FeatureAggregate::hits).reversed())
+                        .limit(limitPerTenant)
+                        .map(a -> PlatformUsageSummaryResponse.FeatureHit.builder()
+                                .featureKey(a.featureKey())
+                                .hitCount(a.hits())
+                                .build())
+                        .toList();
+                result.put(entry.getKey(), hits);
+            }
+            return result;
+        } catch (DataAccessException ex) {
+            return Map.of();
+        }
+    }
+
+    private List<PlatformUsagePortfolioResponse.DailyPoint> rollupPlatformDailySeries(InstantRange range) {
+        Map<LocalDate, DailyAgg> map = new HashMap<>();
+        try {
+            jdbcTemplate.query(
+                    """
+                            SELECT usage_date,
+                                   COUNT(DISTINCT user_id) AS active_users,
+                                   COALESCE(SUM(event_count), 0) AS event_count
+                            FROM usage_daily_user
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            GROUP BY usage_date
+                            """,
+                    rs -> {
+                        map.put(
+                                rs.getDate("usage_date").toLocalDate(),
+                                new DailyAgg(rs.getInt("active_users"), rs.getInt("event_count")));
+                    },
+                    java.sql.Date.valueOf(range.fromDate()),
+                    java.sql.Date.valueOf(range.toDate()));
+        } catch (DataAccessException ex) {
+            log.debug("rollupPlatformDailySeries unavailable: {}", ex.getMessage());
+        }
+        List<PlatformUsagePortfolioResponse.DailyPoint> out = new ArrayList<>();
+        for (LocalDate day = range.fromDate(); !day.isAfter(range.toDate()); day = day.plusDays(1)) {
+            DailyAgg agg = map.getOrDefault(day, DailyAgg.EMPTY);
+            out.add(PlatformUsagePortfolioResponse.DailyPoint.builder()
+                    .date(day)
+                    .activeUsers(agg.activeUsers())
+                    .eventCount(agg.eventCount())
+                    .build());
+        }
+        return out;
+    }
+
+    private List<PlatformUsageSummaryResponse.FeatureHit> rollupPlatformTopFeatures(
+            LocalDate fromDate, LocalDate toDate, int limit) {
+        try {
+            return jdbcTemplate.query(
+                    """
+                            SELECT feature_key, SUM(hit_count) AS hits
+                            FROM usage_daily_tenant_feature
+                            WHERE usage_date >= ? AND usage_date <= ?
+                            GROUP BY feature_key
+                            ORDER BY hits DESC
+                            LIMIT
+                            """
+                            + Math.max(1, Math.min(limit, 100)),
+                    (rs, rowNum) -> PlatformUsageSummaryResponse.FeatureHit.builder()
+                            .featureKey(rs.getString("feature_key"))
+                            .hitCount(rs.getInt("hits"))
+                            .build(),
+                    java.sql.Date.valueOf(fromDate),
+                    java.sql.Date.valueOf(toDate));
+        } catch (DataAccessException ex) {
+            return List.of();
+        }
+    }
+
+    private record FeatureAggregate(UUID tenantId, String featureKey, int hits) {}
 
     private List<Tenant> listTenants(boolean includeDemo, UUID tenantIdFilter) {
         return tenantRepository.findAll().stream()
@@ -211,7 +455,7 @@ public class PlatformUsageAnalyticsService {
         return PlatformUsageAnalyticsResponse.builder()
                 .from(range.from())
                 .to(range.to())
-                .telemetryReady(false)
+                .telemetryReady(true)
                 .tenantId(tenant.getId())
                 .tenantName(tenant.getName())
                 .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()

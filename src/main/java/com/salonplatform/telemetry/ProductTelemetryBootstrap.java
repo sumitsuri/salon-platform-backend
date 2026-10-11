@@ -12,9 +12,11 @@ import org.springframework.stereotype.Component;
 public class ProductTelemetryBootstrap implements ApplicationRunner {
 
     private final ProductTelemetryIngestService ingestService;
+    private final ProductUsageRollupScheduler rollupScheduler;
 
     @Override
     public void run(ApplicationArguments args) {
         ingestService.startFlusher();
+        rollupScheduler.bootstrapRollup();
     }
 }
