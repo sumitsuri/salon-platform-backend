@@ -13,6 +13,7 @@ import java.util.UUID;
 public class PlatformUsageAnalyticsResponse {
     private Instant from;
     private Instant to;
+    private boolean telemetryReady;
     private UUID tenantId;
     private String tenantName;
     private UsageSummary summary;

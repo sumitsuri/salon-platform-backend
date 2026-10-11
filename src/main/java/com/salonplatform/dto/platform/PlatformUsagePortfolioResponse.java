@@ -13,6 +13,8 @@ import java.util.UUID;
 public class PlatformUsagePortfolioResponse {
     private Instant from;
     private Instant to;
+    /** False when product_events is missing or telemetry queries failed — tenants still listed. */
+    private boolean telemetryReady;
     private PlatformUsageAnalyticsResponse.UsageSummary platformSummary;
     private List<DailyPoint> dailyActiveUsers;
     private List<PlatformUsageSummaryResponse.FeatureHit> topFeatures;

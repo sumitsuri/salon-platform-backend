@@ -12,7 +12,10 @@ import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
 import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
+import com.salonplatform.telemetry.ProductTelemetryReadiness;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,7 +28,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,29 +36,42 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PlatformUsageAnalyticsService {
 
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final ProductTelemetryReadiness telemetryReadiness;
 
     public PlatformUsagePortfolioResponse portfolio(
             Instant from, Instant to, boolean includeDemo, UUID tenantIdFilter, UUID branchIdFilter) {
         SecurityUtils.assertPlatformAdmin();
         InstantRange range = normalizeRange(from, to);
+        List<Tenant> tenants = listTenants(includeDemo, tenantIdFilter);
+        if (!telemetryReadiness.isEventsTableReady()) {
+            return portfolioFallback(range, tenants, false);
+        }
+        try {
+            return portfolioWithEvents(range, tenants, includeDemo, tenantIdFilter, branchIdFilter);
+        } catch (DataAccessException ex) {
+            log.error("Platform usage portfolio query failed", ex);
+            return portfolioFallback(range, tenants, false);
+        }
+    }
+
+    private PlatformUsagePortfolioResponse portfolioWithEvents(
+            InstantRange range,
+            List<Tenant> tenants,
+            boolean includeDemo,
+            UUID tenantIdFilter,
+            UUID branchIdFilter) {
         Set<UUID> demoIds = demoTenantIds();
-
-        List<Tenant> tenants = tenantRepository.findAll().stream()
-                .filter(t -> includeDemo || !t.isDemo())
-                .filter(t -> tenantIdFilter == null || t.getId().equals(tenantIdFilter))
-                .sorted(Comparator.comparing(Tenant::getName, String.CASE_INSENSITIVE_ORDER))
-                .toList();
-
         List<PlatformUsagePortfolioResponse.TenantRow> rows = new ArrayList<>();
         for (Tenant tenant : tenants) {
             EventFilter filter = EventFilter.forTenant(tenant.getId(), branchIdFilter, null, null, null);
-            UsageStats stats = loadUsageStats(filter, range, demoIds.contains(tenant.getId()));
+            UsageStats stats = loadUsageStats(filter, range);
             int provisioned = countProvisionedUsers(tenant.getId());
             rows.add(PlatformUsagePortfolioResponse.TenantRow.builder()
                     .tenantId(tenant.getId())
@@ -74,11 +89,12 @@ public class PlatformUsageAnalyticsService {
         }
 
         EventFilter platformFilter = EventFilter.platform(tenantIdFilter, branchIdFilter, demoIds, includeDemo);
-        UsageStats platformStats = loadUsageStats(platformFilter, range, false);
+        UsageStats platformStats = loadUsageStats(platformFilter, range);
 
         return PlatformUsagePortfolioResponse.builder()
                 .from(range.from())
                 .to(range.to())
+                .telemetryReady(true)
                 .platformSummary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
                         .provisionedUsers(rows.stream().mapToInt(PlatformUsagePortfolioResponse.TenantRow::getProvisionedUsers).sum())
                         .wau(platformStats.wau())
@@ -93,6 +109,51 @@ public class PlatformUsageAnalyticsService {
                 .build();
     }
 
+    private PlatformUsagePortfolioResponse portfolioFallback(
+            InstantRange range, List<Tenant> tenants, boolean telemetryReady) {
+        List<PlatformUsagePortfolioResponse.TenantRow> rows = tenants.stream()
+                .map(t -> PlatformUsagePortfolioResponse.TenantRow.builder()
+                        .tenantId(t.getId())
+                        .tenantName(t.getName())
+                        .tenantSlug(t.getSlug())
+                        .demoTenant(t.isDemo())
+                        .provisionedUsers(countProvisionedUsers(t.getId()))
+                        .wau(0)
+                        .mau(0)
+                        .activeUsersInRange(0)
+                        .totalEvents(0)
+                        .lastActivityAt(null)
+                        .topFeatures(List.of())
+                        .build())
+                .toList();
+
+        int provisioned = rows.stream().mapToInt(PlatformUsagePortfolioResponse.TenantRow::getProvisionedUsers).sum();
+        return PlatformUsagePortfolioResponse.builder()
+                .from(range.from())
+                .to(range.to())
+                .telemetryReady(telemetryReady)
+                .platformSummary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
+                        .provisionedUsers(provisioned)
+                        .wau(0)
+                        .mau(0)
+                        .activeUsersInRange(0)
+                        .totalEvents(0)
+                        .distinctFeatures(0)
+                        .build())
+                .dailyActiveUsers(List.of())
+                .topFeatures(List.of())
+                .tenants(rows)
+                .build();
+    }
+
+    private List<Tenant> listTenants(boolean includeDemo, UUID tenantIdFilter) {
+        return tenantRepository.findAll().stream()
+                .filter(t -> includeDemo || !t.isDemo())
+                .filter(t -> tenantIdFilter == null || t.getId().equals(tenantIdFilter))
+                .sorted(Comparator.comparing(Tenant::getName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
     public PlatformUsageAnalyticsResponse tenantAnalytics(
             UUID tenantId,
             Instant from,
@@ -105,29 +166,66 @@ public class PlatformUsageAnalyticsService {
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
         InstantRange range = normalizeRange(from, to);
-        EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
-        UsageStats stats = loadUsageStats(filter, range, tenant.isDemo());
-
         Map<UUID, Branch> branches = branchRepository.findByTenantId(tenantId).stream()
                 .collect(Collectors.toMap(Branch::getId, b -> b, (a, b) -> a));
 
+        if (!telemetryReadiness.isEventsTableReady()) {
+            return tenantFallback(tenant, range, branches, search, role, branchId);
+        }
+        try {
+            EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
+            UsageStats stats = loadUsageStats(filter, range);
+            return PlatformUsageAnalyticsResponse.builder()
+                    .from(range.from())
+                    .to(range.to())
+                    .telemetryReady(true)
+                    .tenantId(tenantId)
+                    .tenantName(tenant.getName())
+                    .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
+                            .provisionedUsers(countProvisionedUsers(tenantId))
+                            .wau(stats.wau())
+                            .mau(stats.mau())
+                            .activeUsersInRange(stats.activeUsersInRange())
+                            .totalEvents(stats.totalEvents())
+                            .distinctFeatures(stats.distinctFeatures())
+                            .build())
+                    .dailyActiveUsers(loadDailyTenant(filter, range))
+                    .featureUsage(loadFeatureUsage(filter, range))
+                    .branchUsage(loadBranchUsage(tenantId, range, branchId, userId, role, search, branches))
+                    .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId))
+                    .build();
+        } catch (DataAccessException ex) {
+            log.error("Platform usage tenant analytics failed for {}", tenantId, ex);
+            return tenantFallback(tenant, range, branches, search, role, branchId);
+        }
+    }
+
+    private PlatformUsageAnalyticsResponse tenantFallback(
+            Tenant tenant,
+            InstantRange range,
+            Map<UUID, Branch> branches,
+            String search,
+            UserRole roleFilter,
+            UUID branchFilter) {
+        EventFilter filter = EventFilter.forTenant(tenant.getId(), branchFilter, null, roleFilter, search);
         return PlatformUsageAnalyticsResponse.builder()
                 .from(range.from())
                 .to(range.to())
-                .tenantId(tenantId)
+                .telemetryReady(false)
+                .tenantId(tenant.getId())
                 .tenantName(tenant.getName())
                 .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
-                        .provisionedUsers(countProvisionedUsers(tenantId))
-                        .wau(stats.wau())
-                        .mau(stats.mau())
-                        .activeUsersInRange(stats.activeUsersInRange())
-                        .totalEvents(stats.totalEvents())
-                        .distinctFeatures(stats.distinctFeatures())
+                        .provisionedUsers(countProvisionedUsers(tenant.getId()))
+                        .wau(0)
+                        .mau(0)
+                        .activeUsersInRange(0)
+                        .totalEvents(0)
+                        .distinctFeatures(0)
                         .build())
-                .dailyActiveUsers(loadDailyTenant(filter, range))
-                .featureUsage(loadFeatureUsage(filter, range))
-                .branchUsage(loadBranchUsage(tenantId, range, branchId, userId, role, search, branches))
-                .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId))
+                .dailyActiveUsers(zeroFillDays(range, Map.of()))
+                .featureUsage(List.of())
+                .branchUsage(List.of())
+                .users(loadUserRows(tenant.getId(), filter, range, branches, search, roleFilter, branchFilter))
                 .build();
     }
 
@@ -268,24 +366,30 @@ public class PlatformUsageAnalyticsService {
     }
 
     private String topFeatureForBranch(UUID tenantId, UUID branchId, InstantRange range) {
+        String branchClause = branchId == null
+                ? " AND branch_id IS NULL"
+                : " AND branch_id = ?";
         String query = """
                 SELECT feature_key, COUNT(*) AS hits
                 FROM product_events
                 WHERE tenant_id = ? AND occurred_at >= ? AND occurred_at < ?
                   AND feature_key IS NOT NULL
-                  AND ((?::uuid IS NULL AND branch_id IS NULL) OR branch_id = ?)
+                """ + branchClause + """
                 GROUP BY feature_key
                 ORDER BY hits DESC
                 LIMIT 1
                 """;
+        List<Object> args = new ArrayList<>();
+        args.add(tenantId);
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        if (branchId != null) {
+            args.add(branchId);
+        }
         List<String> keys = jdbcTemplate.query(
                 query,
                 (rs, rowNum) -> rs.getString("feature_key"),
-                tenantId,
-                Timestamp.from(range.from()),
-                Timestamp.from(range.toExclusive()),
-                branchId,
-                branchId);
+                args.toArray());
         return keys.isEmpty() ? null : keys.get(0);
     }
 
@@ -353,7 +457,7 @@ public class PlatformUsageAnalyticsService {
         String query = """
                 SELECT user_id,
                        COUNT(*) AS event_count,
-                       COUNT(DISTINCT feature_key) FILTER (WHERE feature_key IS NOT NULL) AS distinct_features,
+                       COUNT(DISTINCT feature_key) AS distinct_features,
                        MAX(occurred_at) AS last_event_at
                 FROM product_events
                 WHERE occurred_at >= ? AND occurred_at < ?
@@ -379,15 +483,12 @@ public class PlatformUsageAnalyticsService {
         return map;
     }
 
-    private UsageStats loadUsageStats(EventFilter filter, InstantRange range, boolean skip) {
-        if (skip) {
-            return UsageStats.EMPTY;
-        }
+    private UsageStats loadUsageStats(EventFilter filter, InstantRange range) {
         FilterSql sql = filter.toSql();
         String query = """
                 SELECT COUNT(*) AS total_events,
                        COUNT(DISTINCT user_id) AS active_users,
-                       COUNT(DISTINCT feature_key) FILTER (WHERE feature_key IS NOT NULL) AS distinct_features,
+                       COUNT(DISTINCT feature_key) AS distinct_features,
                        MAX(occurred_at) AS last_at
                 FROM product_events
                 WHERE occurred_at >= ? AND occurred_at < ?
@@ -429,6 +530,7 @@ public class PlatformUsageAnalyticsService {
 
     private List<PlatformUsageSummaryResponse.FeatureHit> loadTopFeatures(
             EventFilter filter, InstantRange range, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
         FilterSql sql = filter.toSql();
         String query = """
                 SELECT feature_key, COUNT(*) AS hits
@@ -438,13 +540,12 @@ public class PlatformUsageAnalyticsService {
                 """ + sql.whereClause + """
                 GROUP BY feature_key
                 ORDER BY hits DESC
-                LIMIT ?
-                """;
+                LIMIT
+                """ + safeLimit;
         List<Object> args = new ArrayList<>();
         args.add(Timestamp.from(range.from()));
         args.add(Timestamp.from(range.toExclusive()));
         args.addAll(sql.args());
-        args.add(limit);
 
         return jdbcTemplate.query(
                 query,
@@ -469,6 +570,15 @@ public class PlatformUsageAnalyticsService {
     }
 
     private Map<UUID, SnapshotRow> loadSnapshots(UUID tenantId) {
+        try {
+            return loadSnapshotsUnchecked(tenantId);
+        } catch (DataAccessException ex) {
+            log.debug("user_usage_snapshot unavailable for tenant {}: {}", tenantId, ex.getMessage());
+            return Map.of();
+        }
+    }
+
+    private Map<UUID, SnapshotRow> loadSnapshotsUnchecked(UUID tenantId) {
         return jdbcTemplate.query(
                 """
                         SELECT user_id, last_seen_at, last_portal, last_feature_key, login_count, days_active_28d
