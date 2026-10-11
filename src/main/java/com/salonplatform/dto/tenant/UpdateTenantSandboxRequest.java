@@ -8,4 +8,8 @@ import lombok.Data;
 public class UpdateTenantSandboxRequest {
     private Boolean demoTenant;
     private OutboundMessagingMode outboundMessagingMode;
+    /** Platform license: Local Spotlight. */
+    private Boolean localSpotlightEnabled;
+    /** Platform license: Guest Voice / review routing. */
+    private Boolean guestReviewsEnabled;
 }

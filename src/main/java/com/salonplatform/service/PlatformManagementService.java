@@ -12,6 +12,7 @@ import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.domain.repository.UserRepository;
 import com.salonplatform.dto.branch.BranchResponse;
 import com.salonplatform.dto.branch.CreateBranchRequest;
+import com.salonplatform.dto.branch.UpdatePlatformBranchFeaturesRequest;
 import com.salonplatform.dto.tenant.CreateTenantRequest;
 import com.salonplatform.dto.tenant.TenantResponse;
 import com.salonplatform.dto.tenant.UpdateTenantSandboxRequest;
@@ -209,7 +210,24 @@ public class PlatformManagementService {
         if (request.getOutboundMessagingMode() != null) {
             tenant.setOutboundMessagingMode(request.getOutboundMessagingMode());
         }
+        if (request.getLocalSpotlightEnabled() != null) {
+            tenant.setLocalSpotlightEnabled(request.getLocalSpotlightEnabled());
+        }
+        if (request.getGuestReviewsEnabled() != null) {
+            tenant.setGuestReviewsEnabled(request.getGuestReviewsEnabled());
+        }
         return toTenantResponse(tenantRepository.save(tenant));
+    }
+
+    @Transactional
+    public BranchResponse updateBranchFeatures(
+            UUID tenantId, UUID branchId, UpdatePlatformBranchFeaturesRequest request) {
+        SecurityUtils.assertPlatformAdmin();
+        Branch branch = requireBranch(tenantId, branchId);
+        if (request.getLocalSpotlightGoogleSyncEnabled() != null) {
+            branch.setLocalSpotlightGoogleSyncEnabled(request.getLocalSpotlightGoogleSyncEnabled());
+        }
+        return toBranchResponse(branchRepository.save(branch));
     }
 
     private Tenant requireTenant(UUID tenantId) {
@@ -238,6 +256,8 @@ public class PlatformManagementService {
                 .demoTenant(t.isDemo())
                 .outboundMessagingMode(t.getOutboundMessagingMode() != null
                         ? t.getOutboundMessagingMode() : OutboundMessagingMode.LIVE)
+                .localSpotlightEnabled(t.getLocalSpotlightEnabled())
+                .guestReviewsEnabled(t.getGuestReviewsEnabled())
                 .createdAt(t.getCreatedAt())
                 .build();
     }
@@ -258,6 +278,7 @@ public class PlatformManagementService {
                 .deactivatedAt(b.getDeactivatedAt())
                 .businessType(b.getBusinessType())
                 .phoneNumberRequired(b.getPhoneNumberRequired())
+                .localSpotlightGoogleSyncEnabled(b.getLocalSpotlightGoogleSyncEnabled())
                 .createdAt(b.getCreatedAt())
                 .build();
     }

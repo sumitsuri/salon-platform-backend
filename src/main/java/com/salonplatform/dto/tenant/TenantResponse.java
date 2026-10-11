@@ -21,5 +21,7 @@ public class TenantResponse {
     private Boolean onlineBookingEnabled;
     private Boolean demoTenant;
     private OutboundMessagingMode outboundMessagingMode;
+    private Boolean localSpotlightEnabled;
+    private Boolean guestReviewsEnabled;
     private Instant createdAt;
 }

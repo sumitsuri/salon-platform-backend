@@ -113,6 +113,10 @@ public class Branch {
     private String googleSearchRankData;
     private Instant digitalPresenceUpdatedAt;
 
+    /** When true (and brand has Local Spotlight license), branch receives live Google Places sync. */
+    @Builder.Default
+    private Boolean localSpotlightGoogleSyncEnabled = false;
+
     /** Tracks branch-scoped catalog migration patches (e.g. Varthur printed menu). */
     private String catalogPatchVersion;
 

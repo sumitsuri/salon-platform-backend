@@ -47,6 +47,10 @@ public class LocalSpotlightService {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
         Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        if (tenant != null && !tenant.isDemo() && !tenant.isLocalSpotlightLicensed()) {
+            throw new BadRequestException(
+                    "Local Spotlight is not included in your plan. Contact AntraHQ platform admin to enable it.");
+        }
 
         String syncMessage = null;
         // Demo brands show a stored snapshot of fictional listings; never call Google for them.
@@ -68,8 +72,9 @@ public class LocalSpotlightService {
                 .filter(b -> branchIds == null || branchIds.isEmpty() || branchIds.contains(b.getId()))
                 .toList();
 
-        Optional<Branch> pilotBranch = digitalPresenceSyncService.findPilotBranch(tenantId);
-        boolean pilotMode = pilotBranch.isPresent();
+        List<Branch> googleSyncBranches = digitalPresenceSyncService.findGoogleSyncBranches(tenantId);
+        Optional<Branch> pilotBranch = googleSyncBranches.stream().findFirst();
+        boolean pilotMode = !googleSyncBranches.isEmpty();
 
         List<LocalCompetitor> googleRivals = localCompetitorRepository.findByTenantIdAndActiveTrueOrderByNameAsc(tenantId).stream()
                 .filter(c -> Boolean.TRUE.equals(c.getGoogleAutoDiscovered()))
@@ -104,7 +109,7 @@ public class LocalSpotlightService {
         int scoredBranches = 0;
 
         for (Branch branch : branches) {
-            boolean isPilot = tenant != null && (demo || digitalPresenceSyncService.isPilotBranch(tenant, branch));
+            boolean isPilot = tenant != null && (demo || digitalPresenceSyncService.isGoogleSyncBranch(tenant, branch));
             boolean googleSynced = isPilot && branch.getDigitalPresenceUpdatedAt() != null
                     && notBlank(branch.getGooglePlaceId());
             List<LocalCompetitor> branchRivals = googleRivals.stream()
@@ -179,8 +184,10 @@ public class LocalSpotlightService {
         String dataSourceNote = demo
                 ? "Google Business Profile snapshot · ~" + radiusKm + " km radius"
                 : googlePlacesProperties.isConfigured()
-                ? "Live Google Places data · pilot branch "
-                        + googlePlacesProperties.getPilotBranchCode()
+                ? "Live Google Places data · "
+                        + (googleSyncBranches.size() == 1
+                                ? "branch " + googleSyncBranches.get(0).getCode()
+                                : googleSyncBranches.size() + " branches with Google sync")
                         + " · ~"
                         + radiusKm
                         + " km radius"
@@ -199,7 +206,7 @@ public class LocalSpotlightService {
                 .lastRefreshedAt(lastRefresh)
                 .googleApiConfigured(googlePlacesProperties.isConfigured())
                 .pilotMode(pilotMode)
-                .pilotBranchCode(googlePlacesProperties.getPilotBranchCode())
+                .pilotBranchCode(pilotBranch.map(Branch::getCode).orElse(null))
                 .pilotBranchName(pilotBranch.map(Branch::getName).orElse(null))
                 .syncStatusMessage(syncMessage)
                 .branches(branchRows)
@@ -258,6 +265,11 @@ public class LocalSpotlightService {
     public LocalSpotlightSyncResponse syncFromGoogle(int radiusKm, boolean force, boolean forceKeywords) {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        if (tenant != null && !tenant.isDemo() && !tenant.isLocalSpotlightLicensed()) {
+            throw new BadRequestException(
+                    "Local Spotlight is not included in your plan. Contact AntraHQ platform admin to enable it.");
+        }
         if (!syncProgressService.tryAcquire(tenantId)) {
             throw new BadRequestException(
                     "Google sync is already running for this brand. Wait for it to finish before refreshing again.");

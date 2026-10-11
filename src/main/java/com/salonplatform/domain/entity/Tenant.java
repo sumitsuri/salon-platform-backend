@@ -76,6 +76,14 @@ public class Tenant {
     @Builder.Default
     private OutboundMessagingMode outboundMessagingMode = OutboundMessagingMode.SIMULATE;
 
+    /** Platform license: Local Spotlight dashboard and Google presence tooling. */
+    @Builder.Default
+    private Boolean localSpotlightEnabled = false;
+
+    /** Platform license: Guest Voice / in-salon ratings and Google review routing. */
+    @Builder.Default
+    private Boolean guestReviewsEnabled = false;
+
     /** Tracks one-off catalog migration patches applied to this tenant. */
     private String catalogPatchVersion;
 
@@ -91,5 +99,13 @@ public class Tenant {
 
     public boolean isMessagingSimulated() {
         return outboundMessagingMode == OutboundMessagingMode.SIMULATE;
+    }
+
+    public boolean isLocalSpotlightLicensed() {
+        return Boolean.TRUE.equals(localSpotlightEnabled);
+    }
+
+    public boolean isGuestReviewsLicensed() {
+        return Boolean.TRUE.equals(guestReviewsEnabled);
     }
 }

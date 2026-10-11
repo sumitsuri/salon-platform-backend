@@ -3,6 +3,7 @@ package com.salonplatform.controller;
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.branch.BranchResponse;
 import com.salonplatform.dto.branch.CreateBranchRequest;
+import com.salonplatform.dto.branch.UpdatePlatformBranchFeaturesRequest;
 import com.salonplatform.dto.tenant.CreateTenantRequest;
 import com.salonplatform.dto.tenant.TenantResponse;
 import com.salonplatform.dto.tenant.UpdateTenantSandboxRequest;
@@ -64,6 +65,14 @@ public class PlatformController {
             @PathVariable UUID branchId) {
         platformService.deactivateBranch(tenantId, branchId);
         return ApiResponse.ok("Branch deactivated", null);
+    }
+
+    @PatchMapping("/tenants/{tenantId}/branches/{branchId}/features")
+    public ApiResponse<BranchResponse> updateBranchFeatures(
+            @PathVariable UUID tenantId,
+            @PathVariable UUID branchId,
+            @RequestBody UpdatePlatformBranchFeaturesRequest request) {
+        return ApiResponse.ok(platformService.updateBranchFeatures(tenantId, branchId, request));
     }
 
     @GetMapping("/tenants/{tenantId}/users")

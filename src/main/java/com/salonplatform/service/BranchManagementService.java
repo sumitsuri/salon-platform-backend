@@ -262,6 +262,7 @@ public class BranchManagementService {
                 .gbpServicesListedCount(b.getGbpServicesListedCount())
                 .estimatedSearchRank(b.getEstimatedSearchRank())
                 .digitalPresenceUpdatedAt(b.getDigitalPresenceUpdatedAt())
+                .localSpotlightGoogleSyncEnabled(b.getLocalSpotlightGoogleSyncEnabled())
                 .createdAt(b.getCreatedAt())
                 .tenantSlug(tenantRepository.findById(b.getTenantId()).map(t -> t.getSlug()).orElse(null))
                 .onlineBookingEnabled(branchOnlineBooking)

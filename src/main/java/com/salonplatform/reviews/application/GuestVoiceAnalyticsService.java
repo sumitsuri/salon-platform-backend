@@ -9,6 +9,9 @@ import com.salonplatform.reviews.domain.enums.ReviewCategory;
 import com.salonplatform.reviews.domain.repository.ReviewInvitationRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRecoveryRepository;
 import com.salonplatform.reviews.domain.repository.ReviewRepository;
+import com.salonplatform.domain.entity.Tenant;
+import com.salonplatform.domain.repository.TenantRepository;
+import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.reviews.dto.GuestVoiceReviewItemDto;
 import com.salonplatform.reviews.dto.GuestVoiceSummaryDto;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +29,7 @@ public class GuestVoiceAnalyticsService {
     private final ReviewRepository reviewRepository;
     private final ReviewRecoveryRepository recoveryRepository;
     private final ReviewInvitationRepository invitationRepository;
+    private final TenantRepository tenantRepository;
 
     @Transactional(readOnly = true)
     public GuestVoiceSummaryDto summarize(
@@ -33,6 +37,12 @@ public class GuestVoiceAnalyticsService {
             List<UUID> branchIds,
             Instant from,
             Instant to) {
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new BadRequestException("Brand not found"));
+        if (!tenant.isDemo() && !tenant.isGuestReviewsLicensed()) {
+            throw new BadRequestException(
+                    "Guest reviews are not included in your plan. Contact AntraHQ platform admin to enable them.");
+        }
 
         List<Review> reviews = branchIds == null || branchIds.isEmpty()
                 ? reviewRepository.findForAnalytics(tenantId, from, to)

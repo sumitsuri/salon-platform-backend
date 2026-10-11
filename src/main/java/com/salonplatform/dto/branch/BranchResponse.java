@@ -51,6 +51,7 @@ public class BranchResponse {
     private Integer gbpServicesListedCount;
     private Integer estimatedSearchRank;
     private Instant digitalPresenceUpdatedAt;
+    private Boolean localSpotlightGoogleSyncEnabled;
     private Instant createdAt;
     /** Public booking URL segment — book.antrahq.com/{tenantSlug}/{code}. */
     private String tenantSlug;

@@ -42,17 +42,46 @@ public class DigitalPresenceSyncService {
         return properties.isConfigured();
     }
 
+    /** @deprecated use {@link #isGoogleSyncBranch(Tenant, Branch)} */
+    @Deprecated
     public boolean isPilotBranch(Tenant tenant, Branch branch) {
-        return tenant != null
-                && branch != null
-                && properties.getPilotTenantSlug().equalsIgnoreCase(tenant.getSlug())
+        return isGoogleSyncBranch(tenant, branch);
+    }
+
+    public boolean isGoogleSyncBranch(Tenant tenant, Branch branch) {
+        if (tenant == null || branch == null) {
+            return false;
+        }
+        if (tenant.isDemo()) {
+            return legacyEnvPilot(tenant, branch);
+        }
+        if (!tenant.isLocalSpotlightLicensed()) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(branch.getLocalSpotlightGoogleSyncEnabled())) {
+            return true;
+        }
+        return legacyEnvPilot(tenant, branch);
+    }
+
+    private boolean legacyEnvPilot(Tenant tenant, Branch branch) {
+        return properties.getPilotTenantSlug().equalsIgnoreCase(tenant.getSlug())
                 && properties.getPilotBranchCode().equalsIgnoreCase(branch.getCode());
     }
 
-    public Optional<Branch> findPilotBranch(UUID tenantId) {
+    public List<Branch> findGoogleSyncBranches(UUID tenantId) {
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        if (tenant == null) {
+            return List.of();
+        }
         return branchRepository.findByTenantId(tenantId).stream()
-                .filter(b -> properties.getPilotBranchCode().equalsIgnoreCase(b.getCode()))
-                .findFirst();
+                .filter(b -> isGoogleSyncBranch(tenant, b))
+                .sorted(Comparator.comparing(Branch::getCode, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    public Optional<Branch> findPilotBranch(UUID tenantId) {
+        return findGoogleSyncBranches(tenantId).stream().findFirst();
     }
 
     @Transactional
@@ -68,21 +97,41 @@ public class DigitalPresenceSyncService {
         }
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
-        Branch branch = findPilotBranch(tenantId)
-                .orElseThrow(() -> new BadRequestException(
-                        "Pilot branch " + properties.getPilotBranchCode() + " not found for this tenant."));
-
-        if (!isPilotBranch(tenant, branch)) {
-            throw new BadRequestException("Branch is not enabled for Google pilot sync.");
+        if (!tenant.isDemo() && !tenant.isLocalSpotlightLicensed()) {
+            throw new BadRequestException(
+                    "Local Spotlight is not enabled for this brand. Enable it in platform tenant settings.");
         }
-        if (!force && isFresh(branch.getDigitalPresenceUpdatedAt())) {
-            return SyncResult.builder()
-                    .skipped(true)
-                    .message("Data is fresh — synced within last " + properties.getSyncCacheHours() + " hours.")
-                    .branchId(branch.getId())
-                    .build();
+        List<Branch> syncBranches = findGoogleSyncBranches(tenantId);
+        if (syncBranches.isEmpty()) {
+            throw new BadRequestException(
+                    "No branch is enabled for Google Local Spotlight sync. Enable it per branch in platform settings.");
+        }
+        if (!force && syncBranches.size() == 1) {
+            Branch only = syncBranches.get(0);
+            if (isFresh(only.getDigitalPresenceUpdatedAt()) && !rankKeywordsStale(only)) {
+                return SyncResult.builder()
+                        .skipped(true)
+                        .message("Data is fresh — synced within last " + properties.getSyncCacheHours() + " hours.")
+                        .branchId(only.getId())
+                        .build();
+            }
         }
 
+        SyncResult last = null;
+        for (Branch branch : syncBranches) {
+            if (!isGoogleSyncBranch(tenant, branch)) {
+                continue;
+            }
+            last = syncSingleBranchGooglePresence(tenant, branch, radiusKm, force, forceKeywords);
+        }
+        return last != null
+                ? last
+                : SyncResult.builder().skipped(true).message("Nothing to sync.").build();
+    }
+
+    private SyncResult syncSingleBranchGooglePresence(
+            Tenant tenant, Branch branch, int radiusKm, boolean force, boolean forceKeywords) {
+        UUID tenantId = tenant.getId();
         requireGeofence(branch);
         int radiusM = radiusKm > 0 ? radiusKm * 1000 : properties.getDefaultRadiusMeters();
         int keywordCount = LocalSpotlightKeywords.searchKeywords(branch).size();
@@ -269,16 +318,22 @@ public class DigitalPresenceSyncService {
                     .message("Google Places API key not configured.")
                     .build();
         }
-        Optional<Branch> pilot = findPilotBranch(tenantId);
-        if (pilot.isEmpty()) {
-            return SyncResult.builder().skipped(true).message("Pilot branch not found.").build();
+        Tenant tenant = tenantRepository.findById(tenantId).orElse(null);
+        if (tenant == null || (!tenant.isDemo() && !tenant.isLocalSpotlightLicensed())) {
+            return SyncResult.builder().skipped(true).message("Local Spotlight not licensed.").build();
         }
-        Branch pilotBranch = pilot.get();
-        if (isFresh(pilotBranch.getDigitalPresenceUpdatedAt()) && !rankKeywordsStale(pilotBranch)) {
+        List<Branch> syncBranches = findGoogleSyncBranches(tenantId);
+        if (syncBranches.isEmpty()) {
+            return SyncResult.builder().skipped(true).message("No Google sync branch configured.").build();
+        }
+        boolean allFresh = syncBranches.stream()
+                .allMatch(b -> isFresh(b.getDigitalPresenceUpdatedAt()) && !rankKeywordsStale(b));
+        if (allFresh) {
+            Branch first = syncBranches.get(0);
             return SyncResult.builder()
                     .skipped(true)
                     .message("Using cached Google data.")
-                    .syncedAt(pilotBranch.getDigitalPresenceUpdatedAt())
+                    .syncedAt(first.getDigitalPresenceUpdatedAt())
                     .build();
         }
         return syncPilotBranch(tenantId, radiusKm, false);
