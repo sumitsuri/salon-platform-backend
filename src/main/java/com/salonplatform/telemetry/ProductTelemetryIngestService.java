@@ -90,7 +90,17 @@ public class ProductTelemetryIngestService {
                 "server",
                 null,
                 UUID.randomUUID());
-        enqueue(buildStoredEvent(user, validated));
+        StoredEvent event = buildStoredEvent(user, validated);
+        if (!persistEventBatch(List.of(event))) {
+            enqueue(event);
+            return;
+        }
+        try {
+            upsertSnapshots(List.of(event));
+        } catch (Exception e) {
+            log.warn("Product telemetry snapshot upsert failed for login: {}", e.getMessage());
+        }
+        rollupAffectedDays(List.of(event));
     }
 
     private StoredEvent buildStoredEvent(UserPrincipal user, ProductTelemetryEventValidator.ValidatedClientEvent validated) {
@@ -148,14 +158,7 @@ public class ProductTelemetryIngestService {
         if (batch.isEmpty()) {
             return;
         }
-        try {
-            jdbcTemplate.batchUpdate(
-                    INSERT_EVENT_SQL,
-                    batch,
-                    batch.size(),
-                    (ps, event) -> bindEvent(ps, event));
-        } catch (Exception e) {
-            log.error("Product telemetry insert failed ({} events): {}", batch.size(), e.getMessage());
+        if (!persistEventBatch(batch)) {
             requeue(batch);
             return;
         }
@@ -167,6 +170,24 @@ public class ProductTelemetryIngestService {
         }
 
         rollupAffectedDays(batch);
+    }
+
+    /** @return true when all rows were inserted */
+    private boolean persistEventBatch(List<StoredEvent> batch) {
+        if (batch.isEmpty()) {
+            return true;
+        }
+        try {
+            jdbcTemplate.batchUpdate(
+                    INSERT_EVENT_SQL,
+                    batch,
+                    batch.size(),
+                    (ps, event) -> bindEvent(ps, event));
+            return true;
+        } catch (Exception e) {
+            log.error("Product telemetry insert failed ({} events): {}", batch.size(), e.getMessage());
+            return false;
+        }
     }
 
     private void bindEvent(java.sql.PreparedStatement ps, StoredEvent event) throws java.sql.SQLException {
@@ -182,7 +203,11 @@ public class ProductTelemetryIngestService {
         ps.setObject(10, event.sessionId());
         ps.setString(11, event.featureKey());
         ps.setString(12, event.route());
-        ps.setString(13, event.propertiesJson());
+        if (event.propertiesJson() == null) {
+            ps.setNull(13, java.sql.Types.OTHER);
+        } else {
+            ps.setString(13, event.propertiesJson());
+        }
         ps.setString(14, event.client());
         ps.setString(15, event.appVersion());
         ps.setObject(16, event.clientEventId());
