@@ -46,7 +46,7 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
             telemetryReadiness.clearCache();
         }
 
-        ensureProductEventsColumns();
+        ensureProductEventsColumnsPublic();
         ensureUsageDailyColumns();
 
         runStatement("""
@@ -150,6 +150,10 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                         PRIMARY KEY (tenant_id, user_id, usage_date)
                     )
                     """);
+    }
+
+    public void ensureProductEventsColumnsPublic() {
+        ensureProductEventsColumns();
     }
 
     private void ensureProductEventsColumns() {

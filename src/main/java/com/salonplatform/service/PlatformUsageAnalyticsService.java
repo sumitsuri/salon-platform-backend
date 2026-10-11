@@ -14,6 +14,7 @@ import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.telemetry.ProductTelemetryReadiness;
 import com.salonplatform.telemetry.ProductUsageRollupService;
+import com.salonplatform.telemetry.ProductUsageSqlSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -40,20 +41,22 @@ import java.util.stream.Collectors;
 @Slf4j
 public class PlatformUsageAnalyticsService {
 
-    /** Stable label for feature breakdown when {@code feature_key} was not persisted on older rows. */
-    private static final String FEATURE_DIMENSION =
-            "COALESCE(NULLIF(TRIM(feature_key), ''), event_name)";
-
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final JdbcTemplate jdbcTemplate;
     private final ProductTelemetryReadiness telemetryReadiness;
     private final ProductUsageRollupService rollupService;
+    private final ProductUsageSqlSupport usageSql;
+
+    private String featureDimSql() {
+        return usageSql.featureDimensionSql();
+    }
 
     public PlatformUsagePortfolioResponse portfolio(
             Instant from, Instant to, boolean includeDemo, UUID tenantIdFilter, UUID branchIdFilter) {
         SecurityUtils.assertPlatformAdmin();
+        usageSql.ensureTelemetrySchema();
         InstantRange range = normalizeRange(from, to);
         List<Tenant> tenants = listTenants(includeDemo, tenantIdFilter);
         Set<UUID> demoIds = demoTenantIds();
@@ -530,6 +533,7 @@ public class PlatformUsageAnalyticsService {
             UserRole role,
             String search) {
         SecurityUtils.assertPlatformAdmin();
+        usageSql.ensureTelemetrySchema();
         Tenant tenant = tenantRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
         InstantRange range = normalizeRange(from, to);
@@ -732,27 +736,62 @@ public class PlatformUsageAnalyticsService {
     }
 
     private Map<LocalDate, DailyAgg> queryDailyAgg(EventFilter filter, InstantRange range) {
+        try {
+            return queryDailyAggUtc(filter, range);
+        } catch (DataAccessException ex) {
+            log.warn("daily usage UTC bucket query failed ({}), using date cast fallback", ex.getMessage());
+            return queryDailyAggDateCast(filter, range);
+        }
+    }
+
+    private Map<LocalDate, DailyAgg> queryDailyAggUtc(EventFilter filter, InstantRange range) {
+        return runDailyAggQuery(
+                filter,
+                range,
+                """
+                        SELECT (occurred_at AT TIME ZONE 'UTC')::date AS usage_date,
+                               COUNT(DISTINCT user_id) AS active_users,
+                               COUNT(*) AS event_count
+                        FROM product_events
+                        WHERE occurred_at >= ? AND occurred_at < ?
+                        """,
+                " GROUP BY 1");
+    }
+
+    private Map<LocalDate, DailyAgg> queryDailyAggDateCast(EventFilter filter, InstantRange range) {
+        return runDailyAggQuery(
+                filter,
+                range,
+                """
+                        SELECT (occurred_at::date) AS usage_date,
+                               COUNT(DISTINCT user_id) AS active_users,
+                               COUNT(*) AS event_count
+                        FROM product_events
+                        WHERE occurred_at >= ? AND occurred_at < ?
+                        """,
+                " GROUP BY occurred_at::date");
+    }
+
+    private Map<LocalDate, DailyAgg> runDailyAggQuery(
+            EventFilter filter, InstantRange range, String selectFromWhere, String groupBy) {
         FilterSql sql = filter.toSql();
-        String query = """
-                SELECT (occurred_at AT TIME ZONE 'UTC')::date AS usage_date,
-                       COUNT(DISTINCT user_id) AS active_users,
-                       COUNT(*) AS event_count
-                FROM product_events
-                WHERE occurred_at >= ? AND occurred_at < ?
-                """ + sql.whereClause + """
-                GROUP BY 1
-                """;
+        String query = selectFromWhere + sql.whereClause + groupBy;
         List<Object> args = new ArrayList<>();
         args.add(Timestamp.from(range.from()));
         args.add(Timestamp.from(range.toExclusive()));
         args.addAll(sql.args());
 
         Map<LocalDate, DailyAgg> map = new HashMap<>();
-        jdbcTemplate.query(query, rs -> {
-            map.put(
-                    rs.getDate("usage_date").toLocalDate(),
-                    new DailyAgg(rs.getInt("active_users"), rs.getInt("event_count")));
-        }, args.toArray());
+        jdbcTemplate.query(
+                query,
+                rs -> {
+                    java.sql.Date day = rs.getDate("usage_date");
+                    if (day == null) {
+                        return;
+                    }
+                    map.put(day.toLocalDate(), new DailyAgg(rs.getInt("active_users"), rs.getInt("event_count")));
+                },
+                args.toArray());
         return map;
     }
 
@@ -768,22 +807,13 @@ public class PlatformUsageAnalyticsService {
     private List<PlatformUsageAnalyticsResponse.FeatureUsageRow> loadFeatureUsageUnchecked(
             EventFilter filter, InstantRange range) {
         FilterSql sql = filter.toSql();
-        String query = """
-                SELECT """
-                + FEATURE_DIMENSION
-                + """
-                 AS feature_key,
-                       COUNT(*) AS hits,
-                       COUNT(DISTINCT user_id) AS unique_users
-                FROM product_events
-                WHERE occurred_at >= ? AND occurred_at < ?
-                """
+        String dim = featureDimSql();
+        String query = "SELECT "
+                + dim
+                + " AS feature_key, COUNT(*) AS hits, COUNT(DISTINCT user_id) AS unique_users "
+                + "FROM product_events WHERE occurred_at >= ? AND occurred_at < ?"
                 + sql.whereClause
-                + """
-                GROUP BY 1
-                ORDER BY hits DESC
-                LIMIT 100
-                """;
+                + " GROUP BY 1 ORDER BY hits DESC LIMIT 100";
         List<Object> args = new ArrayList<>();
         args.add(Timestamp.from(range.from()));
         args.add(Timestamp.from(range.toExclusive()));
@@ -825,16 +855,16 @@ public class PlatformUsageAnalyticsService {
             Map<UUID, Branch> branches) {
         EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
         FilterSql sql = filter.toSql();
-        String query = """
+        String query =
+                """
                 SELECT branch_id,
                        COUNT(DISTINCT user_id) AS active_users,
                        COUNT(*) AS event_count
                 FROM product_events
                 WHERE occurred_at >= ? AND occurred_at < ?
-                """ + sql.whereClause + """
-                GROUP BY branch_id
-                ORDER BY event_count DESC
-                """;
+                """
+                        + sql.whereClause
+                        + " GROUP BY branch_id ORDER BY event_count DESC";
         List<Object> args = new ArrayList<>();
         args.add(Timestamp.from(range.from()));
         args.add(Timestamp.from(range.toExclusive()));
@@ -877,20 +907,13 @@ public class PlatformUsageAnalyticsService {
         String branchClause = branchId == null
                 ? " AND branch_id IS NULL"
                 : " AND branch_id = ?";
-        String query = """
-                SELECT """
-                + FEATURE_DIMENSION
-                + """
-                 AS feature_key, COUNT(*) AS hits
-                FROM product_events
-                WHERE tenant_id = ? AND occurred_at >= ? AND occurred_at < ?
-                """
+        String dim = featureDimSql();
+        String query = "SELECT "
+                + dim
+                + " AS feature_key, COUNT(*) AS hits FROM product_events "
+                + "WHERE tenant_id = ? AND occurred_at >= ? AND occurred_at < ?"
                 + branchClause
-                + """
-                GROUP BY 1
-                ORDER BY hits DESC
-                LIMIT 1
-                """;
+                + " GROUP BY 1 ORDER BY hits DESC LIMIT 1";
         List<Object> args = new ArrayList<>();
         args.add(tenantId);
         args.add(Timestamp.from(range.from()));
@@ -972,20 +995,14 @@ public class PlatformUsageAnalyticsService {
     private Map<UUID, UserEventAgg> loadUserEventAggs(EventFilter filter, InstantRange range) {
         try {
             FilterSql sql = filter.toSql();
-            String query = """
-                    SELECT user_id,
-                           COUNT(*) AS event_count,
-                           COUNT(DISTINCT """
-                           + FEATURE_DIMENSION
-                           + """
-                           ) AS distinct_features,
-                           MAX(occurred_at) AS last_event_at
-                    FROM product_events
-                    WHERE occurred_at >= ? AND occurred_at < ?
-                      AND user_id IS NOT NULL
-                    """ + sql.whereClause + """
-                    GROUP BY user_id
-                    """;
+            String dim = featureDimSql();
+            String query =
+                    "SELECT user_id, COUNT(*) AS event_count, COUNT(DISTINCT "
+                            + dim
+                            + ") AS distinct_features, MAX(occurred_at) AS last_event_at "
+                            + "FROM product_events WHERE occurred_at >= ? AND occurred_at < ? AND user_id IS NOT NULL "
+                            + sql.whereClause
+                            + " GROUP BY user_id";
             List<Object> args = new ArrayList<>();
             args.add(Timestamp.from(range.from()));
             args.add(Timestamp.from(range.toExclusive()));
@@ -1038,16 +1055,10 @@ public class PlatformUsageAnalyticsService {
 
         int distinctFeatures = 0;
         try {
+            String dim = featureDimSql();
             Integer df = jdbcTemplate.queryForObject(
-                    """
-                            SELECT COUNT(DISTINCT """
-                            + FEATURE_DIMENSION
-                            + """
-                            )
-                            FROM product_events
-                            WHERE occurred_at >= ? AND occurred_at < ?
-                            """
-                            + sql.whereClause,
+                    "SELECT COUNT(DISTINCT " + dim + ") FROM product_events "
+                            + "WHERE occurred_at >= ? AND occurred_at < ?" + sql.whereClause,
                     Integer.class,
                     args.toArray());
             distinctFeatures = df != null ? df : 0;
@@ -1094,19 +1105,13 @@ public class PlatformUsageAnalyticsService {
             EventFilter filter, InstantRange range, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         FilterSql sql = filter.toSql();
-        String query = """
-                SELECT """
-                + FEATURE_DIMENSION
-                + """
-                 AS feature_key, COUNT(*) AS hits
-                FROM product_events
-                WHERE occurred_at >= ? AND occurred_at < ?
-                """
+        String dim = featureDimSql();
+        String query = "SELECT "
+                + dim
+                + " AS feature_key, COUNT(*) AS hits FROM product_events "
+                + "WHERE occurred_at >= ? AND occurred_at < ?"
                 + sql.whereClause
-                + """
-                GROUP BY 1
-                ORDER BY hits DESC
-                LIMIT """
+                + " GROUP BY 1 ORDER BY hits DESC LIMIT "
                 + safeLimit;
         List<Object> args = new ArrayList<>();
         args.add(Timestamp.from(range.from()));
