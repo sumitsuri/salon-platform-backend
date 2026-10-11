@@ -40,6 +40,10 @@ import java.util.stream.Collectors;
 @Slf4j
 public class PlatformUsageAnalyticsService {
 
+    /** Stable label for feature breakdown when {@code feature_key} was not persisted on older rows. */
+    private static final String FEATURE_DIMENSION =
+            "COALESCE(NULLIF(TRIM(feature_key), ''), NULLIF(TRIM(route), ''), event_name)";
+
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
@@ -754,14 +758,18 @@ public class PlatformUsageAnalyticsService {
     private List<PlatformUsageAnalyticsResponse.FeatureUsageRow> loadFeatureUsage(EventFilter filter, InstantRange range) {
         FilterSql sql = filter.toSql();
         String query = """
-                SELECT feature_key,
+                SELECT """
+                + FEATURE_DIMENSION
+                + """
+                 AS feature_key,
                        COUNT(*) AS hits,
                        COUNT(DISTINCT user_id) AS unique_users
                 FROM product_events
                 WHERE occurred_at >= ? AND occurred_at < ?
-                  AND feature_key IS NOT NULL
-                """ + sql.whereClause + """
-                GROUP BY feature_key
+                """
+                + sql.whereClause
+                + """
+                GROUP BY 1
                 ORDER BY hits DESC
                 LIMIT 100
                 """;
@@ -843,12 +851,16 @@ public class PlatformUsageAnalyticsService {
                 ? " AND branch_id IS NULL"
                 : " AND branch_id = ?";
         String query = """
-                SELECT feature_key, COUNT(*) AS hits
+                SELECT """
+                + FEATURE_DIMENSION
+                + """
+                 AS feature_key, COUNT(*) AS hits
                 FROM product_events
                 WHERE tenant_id = ? AND occurred_at >= ? AND occurred_at < ?
-                  AND feature_key IS NOT NULL
-                """ + branchClause + """
-                GROUP BY feature_key
+                """
+                + branchClause
+                + """
+                GROUP BY 1
                 ORDER BY hits DESC
                 LIMIT 1
                 """;
@@ -936,7 +948,10 @@ public class PlatformUsageAnalyticsService {
             String query = """
                     SELECT user_id,
                            COUNT(*) AS event_count,
-                           COUNT(DISTINCT feature_key) AS distinct_features,
+                           COUNT(DISTINCT """
+                           + FEATURE_DIMENSION
+                           + """
+                           ) AS distinct_features,
                            MAX(occurred_at) AS last_event_at
                     FROM product_events
                     WHERE occurred_at >= ? AND occurred_at < ?
@@ -998,11 +1013,14 @@ public class PlatformUsageAnalyticsService {
         try {
             Integer df = jdbcTemplate.queryForObject(
                     """
-                            SELECT COUNT(DISTINCT feature_key)
+                            SELECT COUNT(DISTINCT """
+                            + FEATURE_DIMENSION
+                            + """
+                            )
                             FROM product_events
                             WHERE occurred_at >= ? AND occurred_at < ?
-                              AND feature_key IS NOT NULL
-                            """ + sql.whereClause,
+                            """
+                            + sql.whereClause,
                     Integer.class,
                     args.toArray());
             distinctFeatures = df != null ? df : 0;
@@ -1050,15 +1068,19 @@ public class PlatformUsageAnalyticsService {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         FilterSql sql = filter.toSql();
         String query = """
-                SELECT feature_key, COUNT(*) AS hits
+                SELECT """
+                + FEATURE_DIMENSION
+                + """
+                 AS feature_key, COUNT(*) AS hits
                 FROM product_events
                 WHERE occurred_at >= ? AND occurred_at < ?
-                  AND feature_key IS NOT NULL
-                """ + sql.whereClause + """
-                GROUP BY feature_key
+                """
+                + sql.whereClause
+                + """
+                GROUP BY 1
                 ORDER BY hits DESC
-                LIMIT
-                """ + safeLimit;
+                LIMIT """
+                + safeLimit;
         List<Object> args = new ArrayList<>();
         args.add(Timestamp.from(range.from()));
         args.add(Timestamp.from(range.toExclusive()));
