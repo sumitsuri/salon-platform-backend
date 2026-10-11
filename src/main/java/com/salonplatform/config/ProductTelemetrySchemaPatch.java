@@ -96,6 +96,8 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     "CREATE INDEX IF NOT EXISTS idx_product_events_user_occurred ON product_events (user_id, occurred_at DESC)");
             jdbcTemplate.execute(
                     "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_name_occurred ON product_events (tenant_id, event_name, occurred_at DESC)");
+            jdbcTemplate.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_branch_occurred ON product_events (tenant_id, branch_id, occurred_at DESC)");
             jdbcTemplate.execute("""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_product_events_client_dedupe
                     ON product_events (user_id, client_event_id)

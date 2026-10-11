@@ -1,8 +1,12 @@
 package com.salonplatform.controller;
 
 import com.salonplatform.dto.ApiResponse;
+import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.dto.platform.PlatformTenantUsageDetailResponse;
+import com.salonplatform.dto.platform.PlatformUsageAnalyticsResponse;
+import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
 import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
+import com.salonplatform.service.PlatformUsageAnalyticsService;
 import com.salonplatform.service.PlatformUsageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -21,6 +25,30 @@ import java.util.UUID;
 public class PlatformUsageController {
 
     private final PlatformUsageService platformUsageService;
+    private final PlatformUsageAnalyticsService platformUsageAnalyticsService;
+
+    @GetMapping("/portfolio")
+    public ApiResponse<PlatformUsagePortfolioResponse> portfolio(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "false") boolean includeDemo,
+            @RequestParam(required = false) UUID tenantId,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(platformUsageAnalyticsService.portfolio(from, to, includeDemo, tenantId, branchId));
+    }
+
+    @GetMapping("/tenants/{tenantId}/analytics")
+    public ApiResponse<PlatformUsageAnalyticsResponse> tenantAnalytics(
+            @PathVariable UUID tenantId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) UUID branchId,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam(required = false) UserRole role,
+            @RequestParam(required = false) String search) {
+        return ApiResponse.ok(
+                platformUsageAnalyticsService.tenantAnalytics(tenantId, from, to, branchId, userId, role, search));
+    }
 
     @GetMapping("/summary")
     public ApiResponse<PlatformUsageSummaryResponse> summary(

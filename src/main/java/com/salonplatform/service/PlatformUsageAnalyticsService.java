@@ -1,0 +1,618 @@
+package com.salonplatform.service;
+
+import com.salonplatform.domain.entity.Branch;
+import com.salonplatform.domain.entity.Tenant;
+import com.salonplatform.domain.entity.User;
+import com.salonplatform.domain.enums.UserRole;
+import com.salonplatform.domain.repository.BranchRepository;
+import com.salonplatform.domain.repository.TenantRepository;
+import com.salonplatform.domain.repository.UserRepository;
+import com.salonplatform.dto.platform.PlatformUsageAnalyticsResponse;
+import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
+import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
+import com.salonplatform.exception.ResourceNotFoundException;
+import com.salonplatform.security.SecurityUtils;
+import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class PlatformUsageAnalyticsService {
+
+    private final TenantRepository tenantRepository;
+    private final UserRepository userRepository;
+    private final BranchRepository branchRepository;
+    private final JdbcTemplate jdbcTemplate;
+
+    public PlatformUsagePortfolioResponse portfolio(
+            Instant from, Instant to, boolean includeDemo, UUID tenantIdFilter, UUID branchIdFilter) {
+        SecurityUtils.assertPlatformAdmin();
+        InstantRange range = normalizeRange(from, to);
+        Set<UUID> demoIds = demoTenantIds();
+
+        List<Tenant> tenants = tenantRepository.findAll().stream()
+                .filter(t -> includeDemo || !t.isDemo())
+                .filter(t -> tenantIdFilter == null || t.getId().equals(tenantIdFilter))
+                .sorted(Comparator.comparing(Tenant::getName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+
+        List<PlatformUsagePortfolioResponse.TenantRow> rows = new ArrayList<>();
+        for (Tenant tenant : tenants) {
+            EventFilter filter = EventFilter.forTenant(tenant.getId(), branchIdFilter, null, null, null);
+            UsageStats stats = loadUsageStats(filter, range, demoIds.contains(tenant.getId()));
+            int provisioned = countProvisionedUsers(tenant.getId());
+            rows.add(PlatformUsagePortfolioResponse.TenantRow.builder()
+                    .tenantId(tenant.getId())
+                    .tenantName(tenant.getName())
+                    .tenantSlug(tenant.getSlug())
+                    .demoTenant(tenant.isDemo())
+                    .provisionedUsers(provisioned)
+                    .wau(stats.wau())
+                    .mau(stats.mau())
+                    .activeUsersInRange(stats.activeUsersInRange())
+                    .totalEvents(stats.totalEvents())
+                    .lastActivityAt(stats.lastActivityAt())
+                    .topFeatures(loadTopFeatures(filter, range, 5))
+                    .build());
+        }
+
+        EventFilter platformFilter = EventFilter.platform(tenantIdFilter, branchIdFilter, demoIds, includeDemo);
+        UsageStats platformStats = loadUsageStats(platformFilter, range, false);
+
+        return PlatformUsagePortfolioResponse.builder()
+                .from(range.from())
+                .to(range.to())
+                .platformSummary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
+                        .provisionedUsers(rows.stream().mapToInt(PlatformUsagePortfolioResponse.TenantRow::getProvisionedUsers).sum())
+                        .wau(platformStats.wau())
+                        .mau(platformStats.mau())
+                        .activeUsersInRange(platformStats.activeUsersInRange())
+                        .totalEvents(platformStats.totalEvents())
+                        .distinctFeatures(platformStats.distinctFeatures())
+                        .build())
+                .dailyActiveUsers(loadDailyPlatform(platformFilter, range))
+                .topFeatures(loadTopFeatures(platformFilter, range, 12))
+                .tenants(rows)
+                .build();
+    }
+
+    public PlatformUsageAnalyticsResponse tenantAnalytics(
+            UUID tenantId,
+            Instant from,
+            Instant to,
+            UUID branchId,
+            UUID userId,
+            UserRole role,
+            String search) {
+        SecurityUtils.assertPlatformAdmin();
+        Tenant tenant = tenantRepository.findById(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant not found"));
+        InstantRange range = normalizeRange(from, to);
+        EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
+        UsageStats stats = loadUsageStats(filter, range, tenant.isDemo());
+
+        Map<UUID, Branch> branches = branchRepository.findByTenantId(tenantId).stream()
+                .collect(Collectors.toMap(Branch::getId, b -> b, (a, b) -> a));
+
+        return PlatformUsageAnalyticsResponse.builder()
+                .from(range.from())
+                .to(range.to())
+                .tenantId(tenantId)
+                .tenantName(tenant.getName())
+                .summary(PlatformUsageAnalyticsResponse.UsageSummary.builder()
+                        .provisionedUsers(countProvisionedUsers(tenantId))
+                        .wau(stats.wau())
+                        .mau(stats.mau())
+                        .activeUsersInRange(stats.activeUsersInRange())
+                        .totalEvents(stats.totalEvents())
+                        .distinctFeatures(stats.distinctFeatures())
+                        .build())
+                .dailyActiveUsers(loadDailyTenant(filter, range))
+                .featureUsage(loadFeatureUsage(filter, range))
+                .branchUsage(loadBranchUsage(tenantId, range, branchId, userId, role, search, branches))
+                .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId))
+                .build();
+    }
+
+    private List<PlatformUsageAnalyticsResponse.DailyPoint> loadDailyTenant(EventFilter filter, InstantRange range) {
+        Map<LocalDate, DailyAgg> map = queryDailyAgg(filter, range);
+        return zeroFillDays(range, map);
+    }
+
+    private List<PlatformUsagePortfolioResponse.DailyPoint> loadDailyPlatform(EventFilter filter, InstantRange range) {
+        Map<LocalDate, DailyAgg> map = queryDailyAgg(filter, range);
+        List<PlatformUsagePortfolioResponse.DailyPoint> out = new ArrayList<>();
+        for (LocalDate day = range.fromDate(); !day.isAfter(range.toDate()); day = day.plusDays(1)) {
+            DailyAgg agg = map.getOrDefault(day, DailyAgg.EMPTY);
+            out.add(PlatformUsagePortfolioResponse.DailyPoint.builder()
+                    .date(day)
+                    .activeUsers(agg.activeUsers())
+                    .eventCount(agg.eventCount())
+                    .build());
+        }
+        return out;
+    }
+
+    private List<PlatformUsageAnalyticsResponse.DailyPoint> zeroFillDays(
+            InstantRange range, Map<LocalDate, DailyAgg> map) {
+        List<PlatformUsageAnalyticsResponse.DailyPoint> out = new ArrayList<>();
+        for (LocalDate day = range.fromDate(); !day.isAfter(range.toDate()); day = day.plusDays(1)) {
+            DailyAgg agg = map.getOrDefault(day, DailyAgg.EMPTY);
+            out.add(PlatformUsageAnalyticsResponse.DailyPoint.builder()
+                    .date(day)
+                    .activeUsers(agg.activeUsers())
+                    .eventCount(agg.eventCount())
+                    .build());
+        }
+        return out;
+    }
+
+    private Map<LocalDate, DailyAgg> queryDailyAgg(EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT (occurred_at AT TIME ZONE 'UTC')::date AS usage_date,
+                       COUNT(DISTINCT user_id) AS active_users,
+                       COUNT(*) AS event_count
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                """ + sql.whereClause + """
+                GROUP BY 1
+                """;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+
+        Map<LocalDate, DailyAgg> map = new HashMap<>();
+        jdbcTemplate.query(query, rs -> {
+            map.put(
+                    rs.getDate("usage_date").toLocalDate(),
+                    new DailyAgg(rs.getInt("active_users"), rs.getInt("event_count")));
+        }, args.toArray());
+        return map;
+    }
+
+    private List<PlatformUsageAnalyticsResponse.FeatureUsageRow> loadFeatureUsage(EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT feature_key,
+                       COUNT(*) AS hits,
+                       COUNT(DISTINCT user_id) AS unique_users
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                  AND feature_key IS NOT NULL
+                """ + sql.whereClause + """
+                GROUP BY feature_key
+                ORDER BY hits DESC
+                LIMIT 100
+                """;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+
+        return jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> PlatformUsageAnalyticsResponse.FeatureUsageRow.builder()
+                        .featureKey(rs.getString("feature_key"))
+                        .hitCount(rs.getInt("hits"))
+                        .uniqueUsers(rs.getInt("unique_users"))
+                        .build(),
+                args.toArray());
+    }
+
+    private List<PlatformUsageAnalyticsResponse.BranchUsageRow> loadBranchUsage(
+            UUID tenantId,
+            InstantRange range,
+            UUID branchId,
+            UUID userId,
+            UserRole role,
+            String search,
+            Map<UUID, Branch> branches) {
+        EventFilter filter = EventFilter.forTenant(tenantId, branchId, userId, role, search);
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT branch_id,
+                       COUNT(DISTINCT user_id) AS active_users,
+                       COUNT(*) AS event_count
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                """ + sql.whereClause + """
+                GROUP BY branch_id
+                ORDER BY event_count DESC
+                """;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+
+        List<BranchAgg> aggs = jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> new BranchAgg(
+                        (UUID) rs.getObject("branch_id"),
+                        rs.getInt("active_users"),
+                        rs.getInt("event_count")),
+                args.toArray());
+
+        List<PlatformUsageAnalyticsResponse.BranchUsageRow> rows = new ArrayList<>();
+        for (BranchAgg agg : aggs) {
+            Branch branch = agg.branchId() != null ? branches.get(agg.branchId()) : null;
+            String topFeature = topFeatureForBranch(tenantId, agg.branchId(), range);
+            rows.add(PlatformUsageAnalyticsResponse.BranchUsageRow.builder()
+                    .branchId(agg.branchId())
+                    .branchName(branch != null ? branch.getName() : "Unassigned")
+                    .branchCode(branch != null ? branch.getCode() : "—")
+                    .activeUsers(agg.activeUsers())
+                    .eventCount(agg.eventCount())
+                    .topFeatureKey(topFeature)
+                    .build());
+        }
+        return rows;
+    }
+
+    private String topFeatureForBranch(UUID tenantId, UUID branchId, InstantRange range) {
+        String query = """
+                SELECT feature_key, COUNT(*) AS hits
+                FROM product_events
+                WHERE tenant_id = ? AND occurred_at >= ? AND occurred_at < ?
+                  AND feature_key IS NOT NULL
+                  AND ((?::uuid IS NULL AND branch_id IS NULL) OR branch_id = ?)
+                GROUP BY feature_key
+                ORDER BY hits DESC
+                LIMIT 1
+                """;
+        List<String> keys = jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> rs.getString("feature_key"),
+                tenantId,
+                Timestamp.from(range.from()),
+                Timestamp.from(range.toExclusive()),
+                branchId,
+                branchId);
+        return keys.isEmpty() ? null : keys.get(0);
+    }
+
+    private List<PlatformUsageAnalyticsResponse.UserUsageRow> loadUserRows(
+            UUID tenantId,
+            EventFilter filter,
+            InstantRange range,
+            Map<UUID, Branch> branches,
+            String search,
+            UserRole roleFilter,
+            UUID branchFilter) {
+        Map<UUID, UserEventAgg> eventAggs = loadUserEventAggs(filter, range);
+        Map<UUID, SnapshotRow> snapshots = loadSnapshots(tenantId);
+
+        String searchLower = search == null ? null : search.trim().toLowerCase();
+
+        List<User> users = userRepository.findAll().stream()
+                .filter(u -> tenantId.equals(u.getTenantId()))
+                .filter(u -> branchFilter == null || branchFilter.equals(u.getBranchId()))
+                .filter(u -> roleFilter == null || u.getRole() == roleFilter)
+                .filter(u -> {
+                    if (!StringUtils.hasText(searchLower)) {
+                        return true;
+                    }
+                    return u.getName().toLowerCase().contains(searchLower)
+                            || u.getEmail().toLowerCase().contains(searchLower);
+                })
+                .sorted(Comparator.comparing(User::getName, String.CASE_INSENSITIVE_ORDER))
+                .toList();
+
+        List<PlatformUsageAnalyticsResponse.UserUsageRow> rows = new ArrayList<>();
+        for (User user : users) {
+            UserEventAgg agg = eventAggs.get(user.getId());
+            SnapshotRow snap = snapshots.get(user.getId());
+            int loginCount = snap != null ? snap.loginCount() : 0;
+            Instant lastSeen = snap != null ? snap.lastSeenAt() : null;
+            if (agg != null && agg.lastEventAt() != null) {
+                lastSeen = lastSeen == null || agg.lastEventAt().isAfter(lastSeen) ? agg.lastEventAt() : lastSeen;
+            }
+            Branch branch = user.getBranchId() != null ? branches.get(user.getBranchId()) : null;
+            boolean ever = loginCount > 0 || lastSeen != null || (agg != null && agg.eventCount() > 0);
+            rows.add(PlatformUsageAnalyticsResponse.UserUsageRow.builder()
+                    .userId(user.getId())
+                    .name(user.getName())
+                    .email(user.getEmail())
+                    .role(user.getRole().name())
+                    .branchId(user.getBranchId())
+                    .branchName(branch != null ? branch.getName() : null)
+                    .active(user.isActive())
+                    .lastSeenAt(lastSeen)
+                    .lastPortal(snap != null ? snap.lastPortal() : null)
+                    .lastFeatureKey(snap != null ? snap.lastFeatureKey() : null)
+                    .loginCount(loginCount)
+                    .daysActive28d(snap != null ? snap.daysActive28d() : 0)
+                    .eventsInRange(agg != null ? agg.eventCount() : 0)
+                    .featuresUsedInRange(agg != null ? agg.distinctFeatures() : 0)
+                    .everLoggedIn(ever)
+                    .build());
+        }
+        return rows;
+    }
+
+    private Map<UUID, UserEventAgg> loadUserEventAggs(EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT user_id,
+                       COUNT(*) AS event_count,
+                       COUNT(DISTINCT feature_key) FILTER (WHERE feature_key IS NOT NULL) AS distinct_features,
+                       MAX(occurred_at) AS last_event_at
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                  AND user_id IS NOT NULL
+                """ + sql.whereClause + """
+                GROUP BY user_id
+                """;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+
+        Map<UUID, UserEventAgg> map = new HashMap<>();
+        jdbcTemplate.query(query, rs -> {
+            Timestamp last = rs.getTimestamp("last_event_at");
+            map.put(
+                    (UUID) rs.getObject("user_id"),
+                    new UserEventAgg(
+                            rs.getInt("event_count"),
+                            rs.getInt("distinct_features"),
+                            last != null ? last.toInstant() : null));
+        }, args.toArray());
+        return map;
+    }
+
+    private UsageStats loadUsageStats(EventFilter filter, InstantRange range, boolean skip) {
+        if (skip) {
+            return UsageStats.EMPTY;
+        }
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT COUNT(*) AS total_events,
+                       COUNT(DISTINCT user_id) AS active_users,
+                       COUNT(DISTINCT feature_key) FILTER (WHERE feature_key IS NOT NULL) AS distinct_features,
+                       MAX(occurred_at) AS last_at
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                """ + sql.whereClause;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+
+        List<UsageStats> stats = jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> new UsageStats(
+                        rs.getInt("active_users"),
+                        wauMauDistinct(filter, range.toDate().minusDays(6), range.toDate()),
+                        wauMauDistinct(filter, range.toDate().minusDays(27), range.toDate()),
+                        rs.getInt("total_events"),
+                        rs.getInt("distinct_features"),
+                        timestampToInstant(rs.getTimestamp("last_at"))),
+                args.toArray());
+        return stats.isEmpty() ? UsageStats.EMPTY : stats.get(0);
+    }
+
+    private int wauMauDistinct(EventFilter filter, LocalDate fromDate, LocalDate toDate) {
+        InstantRange sub = InstantRange.fromDates(fromDate, toDate);
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT COUNT(DISTINCT user_id)
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                  AND user_id IS NOT NULL
+                """ + sql.whereClause;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(sub.from()));
+        args.add(Timestamp.from(sub.toExclusive()));
+        args.addAll(sql.args());
+        Integer count = jdbcTemplate.queryForObject(query, Integer.class, args.toArray());
+        return count != null ? count : 0;
+    }
+
+    private List<PlatformUsageSummaryResponse.FeatureHit> loadTopFeatures(
+            EventFilter filter, InstantRange range, int limit) {
+        FilterSql sql = filter.toSql();
+        String query = """
+                SELECT feature_key, COUNT(*) AS hits
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                  AND feature_key IS NOT NULL
+                """ + sql.whereClause + """
+                GROUP BY feature_key
+                ORDER BY hits DESC
+                LIMIT ?
+                """;
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+        args.add(limit);
+
+        return jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> PlatformUsageSummaryResponse.FeatureHit.builder()
+                        .featureKey(rs.getString("feature_key"))
+                        .hitCount(rs.getInt("hits"))
+                        .build(),
+                args.toArray());
+    }
+
+    private int countProvisionedUsers(UUID tenantId) {
+        return (int) userRepository.findAll().stream()
+                .filter(u -> tenantId.equals(u.getTenantId()) && u.isActive())
+                .count();
+    }
+
+    private Set<UUID> demoTenantIds() {
+        return tenantRepository.findAll().stream()
+                .filter(Tenant::isDemo)
+                .map(Tenant::getId)
+                .collect(Collectors.toSet());
+    }
+
+    private Map<UUID, SnapshotRow> loadSnapshots(UUID tenantId) {
+        return jdbcTemplate.query(
+                """
+                        SELECT user_id, last_seen_at, last_portal, last_feature_key, login_count, days_active_28d
+                        FROM user_usage_snapshot
+                        WHERE tenant_id = ?
+                        """,
+                rs -> {
+                    Map<UUID, SnapshotRow> map = new HashMap<>();
+                    while (rs.next()) {
+                        Timestamp lastSeen = rs.getTimestamp("last_seen_at");
+                        map.put(
+                                (UUID) rs.getObject("user_id"),
+                                new SnapshotRow(
+                                        lastSeen != null ? lastSeen.toInstant() : null,
+                                        rs.getString("last_portal"),
+                                        rs.getString("last_feature_key"),
+                                        rs.getInt("login_count"),
+                                        rs.getInt("days_active_28d")));
+                    }
+                    return map;
+                },
+                tenantId);
+    }
+
+    private static InstantRange normalizeRange(Instant from, Instant to) {
+        Instant safeFrom = from != null ? from : Instant.now().minus(28, ChronoUnit.DAYS);
+        Instant safeTo = to != null ? to : Instant.now();
+        if (safeFrom.isAfter(safeTo)) {
+            Instant tmp = safeFrom;
+            safeFrom = safeTo;
+            safeTo = tmp;
+        }
+        LocalDate fromDate = safeFrom.atZone(ZoneOffset.UTC).toLocalDate();
+        LocalDate toDate = safeTo.atZone(ZoneOffset.UTC).toLocalDate();
+        return InstantRange.fromDates(fromDate, toDate);
+    }
+
+    private static Instant timestampToInstant(Timestamp ts) {
+        return ts != null ? ts.toInstant() : null;
+    }
+
+    private record InstantRange(Instant from, Instant toExclusive, LocalDate fromDate, LocalDate toDate) {
+        Instant to() {
+            return toExclusive.minus(1, ChronoUnit.SECONDS);
+        }
+
+        static InstantRange fromDates(LocalDate fromDate, LocalDate toDate) {
+            Instant from = fromDate.atStartOfDay(ZoneOffset.UTC).toInstant();
+            Instant toExclusive = toDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+            return new InstantRange(from, toExclusive, fromDate, toDate);
+        }
+    }
+
+    private record DailyAgg(int activeUsers, int eventCount) {
+        static final DailyAgg EMPTY = new DailyAgg(0, 0);
+    }
+
+    private record UsageStats(
+            int activeUsersInRange,
+            int wau,
+            int mau,
+            int totalEvents,
+            int distinctFeatures,
+            Instant lastActivityAt) {
+        static final UsageStats EMPTY = new UsageStats(0, 0, 0, 0, 0, null);
+    }
+
+    private record UserEventAgg(int eventCount, int distinctFeatures, Instant lastEventAt) {}
+
+    private record BranchAgg(UUID branchId, int activeUsers, int eventCount) {}
+
+    private record SnapshotRow(
+            Instant lastSeenAt, String lastPortal, String lastFeatureKey, int loginCount, int daysActive28d) {}
+
+    private record FilterSql(String whereClause, List<Object> args) {}
+
+    private static final class EventFilter {
+        private final UUID tenantId;
+        private final UUID branchId;
+        private final UUID userId;
+        private final UserRole role;
+        private final String search;
+        private final Set<UUID> excludeTenantIds;
+
+        private EventFilter(
+                UUID tenantId,
+                UUID branchId,
+                UUID userId,
+                UserRole role,
+                String search,
+                Set<UUID> excludeTenantIds) {
+            this.tenantId = tenantId;
+            this.branchId = branchId;
+            this.userId = userId;
+            this.role = role;
+            this.search = search;
+            this.excludeTenantIds = excludeTenantIds != null ? excludeTenantIds : Set.of();
+        }
+
+        static EventFilter forTenant(
+                UUID tenantId, UUID branchId, UUID userId, UserRole role, String search) {
+            return new EventFilter(tenantId, branchId, userId, role, search, Set.of());
+        }
+
+        static EventFilter platform(
+                UUID tenantIdFilter, UUID branchId, Set<UUID> demoTenantIds, boolean includeDemo) {
+            Set<UUID> exclude = includeDemo ? Set.of() : demoTenantIds;
+            return new EventFilter(tenantIdFilter, branchId, null, null, null, exclude);
+        }
+
+        FilterSql toSql() {
+            StringBuilder where = new StringBuilder();
+            List<Object> args = new ArrayList<>();
+            if (tenantId != null) {
+                where.append(" AND tenant_id = ?");
+                args.add(tenantId);
+            }
+            if (branchId != null) {
+                where.append(" AND branch_id = ?");
+                args.add(branchId);
+            }
+            if (userId != null) {
+                where.append(" AND user_id = ?");
+                args.add(userId);
+            }
+            if (role != null) {
+                where.append(" AND role = ?");
+                args.add(role.name());
+            }
+            if (StringUtils.hasText(search)) {
+                where.append(" AND user_id IN (SELECT id FROM users WHERE tenant_id = COALESCE(?, tenant_id)"
+                        + " AND (LOWER(name) LIKE ? OR LOWER(email) LIKE ?))");
+                args.add(tenantId);
+                String pattern = "%" + search.trim().toLowerCase() + "%";
+                args.add(pattern);
+                args.add(pattern);
+            }
+            if (!excludeTenantIds.isEmpty()) {
+                where.append(" AND (tenant_id IS NULL OR tenant_id NOT IN (")
+                        .append(excludeTenantIds.stream().map(x -> "?").collect(Collectors.joining(",")))
+                        .append("))");
+                args.addAll(excludeTenantIds);
+            }
+            return new FilterSql(where.toString(), args);
+        }
+    }
+}
