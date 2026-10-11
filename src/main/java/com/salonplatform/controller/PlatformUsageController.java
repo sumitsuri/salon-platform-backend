@@ -4,6 +4,7 @@ import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.dto.platform.PlatformTenantUsageDetailResponse;
 import com.salonplatform.dto.platform.PlatformUsageAnalyticsResponse;
+import com.salonplatform.dto.platform.PlatformUsageHeatmapResponse;
 import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
 import com.salonplatform.dto.platform.PlatformTelemetryStatusResponse;
 import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
@@ -43,6 +44,17 @@ public class PlatformUsageController {
             @RequestParam(required = false) UUID tenantId,
             @RequestParam(required = false) UUID branchId) {
         return ApiResponse.ok(platformUsageAnalyticsService.portfolio(from, to, includeDemo, tenantId, branchId));
+    }
+
+    @GetMapping("/heatmap")
+    public ApiResponse<PlatformUsageHeatmapResponse> heatmap(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "false") boolean includeDemo,
+            @RequestParam(required = false) UUID tenantId,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(
+                platformUsageAnalyticsService.heatmap(from, to, includeDemo, tenantId, branchId));
     }
 
     @GetMapping("/tenants/{tenantId}/analytics")

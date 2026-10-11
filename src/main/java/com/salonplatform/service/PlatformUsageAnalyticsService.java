@@ -8,6 +8,7 @@ import com.salonplatform.domain.repository.BranchRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.domain.repository.UserRepository;
 import com.salonplatform.dto.platform.PlatformUsageAnalyticsResponse;
+import com.salonplatform.dto.platform.PlatformUsageHeatmapResponse;
 import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
 import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
 import com.salonplatform.exception.ResourceNotFoundException;
@@ -522,6 +523,192 @@ public class PlatformUsageAnalyticsService {
                 .filter(t -> tenantIdFilter == null || t.getId().equals(tenantIdFilter))
                 .sorted(Comparator.comparing(Tenant::getName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
+    }
+
+    public PlatformUsageHeatmapResponse heatmap(
+            Instant from,
+            Instant to,
+            boolean includeDemo,
+            UUID tenantIdFocus,
+            UUID branchIdFilter) {
+        SecurityUtils.assertPlatformAdmin();
+        usageSql.ensureTelemetrySchema();
+        InstantRange range = normalizeRange(from, to);
+        Set<UUID> demoIds = demoTenantIds();
+        EventFilter filter =
+                EventFilter.platform(tenantIdFocus, branchIdFilter, demoIds, includeDemo);
+
+        return PlatformUsageHeatmapResponse.builder()
+                .from(range.from())
+                .to(range.to())
+                .portals(safePortalSlices(filter, range))
+                .tenantPortalCells(
+                        tenantIdFocus == null ? safeTenantPortalCells(filter, range) : List.of())
+                .branchPortalCells(tenantIdFocus != null ? safeBranchPortalCells(filter, range) : List.of())
+                .userDayCells(tenantIdFocus != null ? safeUserDayCells(filter, range) : List.of())
+                .build();
+    }
+
+    private List<PlatformUsageHeatmapResponse.PortalSlice> safePortalSlices(
+            EventFilter filter, InstantRange range) {
+        try {
+            return loadPortalSlices(filter, range);
+        } catch (DataAccessException ex) {
+            log.warn("usage heatmap portal slice failed: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageHeatmapResponse.TenantPortalCell> safeTenantPortalCells(
+            EventFilter filter, InstantRange range) {
+        try {
+            return loadTenantPortalCells(filter, range);
+        } catch (DataAccessException ex) {
+            log.warn("usage heatmap tenant grid failed: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageHeatmapResponse.BranchPortalCell> safeBranchPortalCells(
+            EventFilter filter, InstantRange range) {
+        try {
+            return loadBranchPortalCells(filter, range);
+        } catch (DataAccessException ex) {
+            log.warn("usage heatmap branch grid failed: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageHeatmapResponse.UserDayCell> safeUserDayCells(
+            EventFilter filter, InstantRange range) {
+        try {
+            return loadUserDayCells(filter, range);
+        } catch (DataAccessException ex) {
+            log.warn("usage heatmap user-day grid failed: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageHeatmapResponse.PortalSlice> loadPortalSlices(
+            EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query =
+                """
+                SELECT LOWER(COALESCE(NULLIF(TRIM(portal), ''), 'other')) AS portal,
+                       COUNT(*) AS event_count,
+                       COUNT(DISTINCT user_id) AS active_users
+                FROM product_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                """
+                        + sql.whereClause
+                        + " GROUP BY 1 ORDER BY 1";
+        List<Object> args = rangeAndFilterArgs(range, sql);
+        return jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> PlatformUsageHeatmapResponse.PortalSlice.builder()
+                        .portal(rs.getString("portal"))
+                        .eventCount(rs.getInt("event_count"))
+                        .activeUsers(rs.getInt("active_users"))
+                        .build(),
+                args.toArray());
+    }
+
+    private List<PlatformUsageHeatmapResponse.TenantPortalCell> loadTenantPortalCells(
+            EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query =
+                """
+                SELECT pe.tenant_id,
+                       t.name AS tenant_name,
+                       LOWER(COALESCE(NULLIF(TRIM(pe.portal), ''), 'other')) AS portal,
+                       COUNT(*) AS event_count,
+                       COUNT(DISTINCT pe.user_id) AS active_users
+                FROM product_events pe
+                JOIN tenants t ON t.id = pe.tenant_id
+                WHERE pe.occurred_at >= ? AND pe.occurred_at < ?
+                  AND pe.tenant_id IS NOT NULL
+                """
+                        + sql.whereClause
+                        + " GROUP BY pe.tenant_id, t.name, portal ORDER BY t.name, portal";
+        List<Object> args = rangeAndFilterArgs(range, sql);
+        return jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> PlatformUsageHeatmapResponse.TenantPortalCell.builder()
+                        .tenantId((UUID) rs.getObject("tenant_id"))
+                        .tenantName(rs.getString("tenant_name"))
+                        .portal(rs.getString("portal"))
+                        .eventCount(rs.getInt("event_count"))
+                        .activeUsers(rs.getInt("active_users"))
+                        .build(),
+                args.toArray());
+    }
+
+    private List<PlatformUsageHeatmapResponse.BranchPortalCell> loadBranchPortalCells(
+            EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query =
+                """
+                SELECT pe.branch_id,
+                       COALESCE(b.name, 'Unassigned') AS branch_name,
+                       COALESCE(b.code, '—') AS branch_code,
+                       LOWER(COALESCE(NULLIF(TRIM(pe.portal), ''), 'other')) AS portal,
+                       COUNT(*) AS event_count,
+                       COUNT(DISTINCT pe.user_id) AS active_users
+                FROM product_events pe
+                LEFT JOIN branches b ON b.id = pe.branch_id
+                WHERE pe.occurred_at >= ? AND pe.occurred_at < ?
+                """
+                        + sql.whereClause
+                        + " GROUP BY pe.branch_id, b.name, b.code, portal ORDER BY branch_name, portal";
+        List<Object> args = rangeAndFilterArgs(range, sql);
+        return jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> PlatformUsageHeatmapResponse.BranchPortalCell.builder()
+                        .branchId((UUID) rs.getObject("branch_id"))
+                        .branchName(rs.getString("branch_name"))
+                        .branchCode(rs.getString("branch_code"))
+                        .portal(rs.getString("portal"))
+                        .eventCount(rs.getInt("event_count"))
+                        .activeUsers(rs.getInt("active_users"))
+                        .build(),
+                args.toArray());
+    }
+
+    private List<PlatformUsageHeatmapResponse.UserDayCell> loadUserDayCells(
+            EventFilter filter, InstantRange range) {
+        FilterSql sql = filter.toSql();
+        String query =
+                """
+                SELECT pe.user_id,
+                       COALESCE(u.name, '—') AS user_name,
+                       COALESCE(u.role::text, 'UNKNOWN') AS role,
+                       COALESCE(br.name, '') AS branch_name,
+                       (pe.occurred_at AT TIME ZONE 'UTC')::date AS usage_date,
+                       COUNT(*) AS event_count
+                FROM product_events pe
+                JOIN users u ON u.id = pe.user_id
+                LEFT JOIN branches br ON br.id = u.branch_id
+                WHERE pe.occurred_at >= ? AND pe.occurred_at < ?
+                  AND pe.user_id IS NOT NULL
+                """
+                        + sql.whereClause
+                        + """
+                 GROUP BY pe.user_id, u.name, u.role, br.name, usage_date
+                 ORDER BY user_name, usage_date
+                 LIMIT 2500
+                """;
+        List<Object> args = rangeAndFilterArgs(range, sql);
+        return jdbcTemplate.query(
+                query,
+                (rs, rowNum) -> PlatformUsageHeatmapResponse.UserDayCell.builder()
+                        .userId((UUID) rs.getObject("user_id"))
+                        .userName(rs.getString("user_name"))
+                        .role(rs.getString("role"))
+                        .branchName(rs.getString("branch_name"))
+                        .usageDate(rs.getDate("usage_date").toLocalDate())
+                        .eventCount(rs.getInt("event_count"))
+                        .build(),
+                args.toArray());
     }
 
     public PlatformUsageAnalyticsResponse tenantAnalytics(
