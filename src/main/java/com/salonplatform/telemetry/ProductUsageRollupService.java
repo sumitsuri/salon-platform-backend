@@ -86,6 +86,10 @@ public class ProductUsageRollupService {
                         GROUP BY tenant_id, user_id
                         """, sqlDate, from, to);
 
+        } catch (Exception e) {
+            log.warn("Product usage rollup failed for {}: {}", usageDate, e.getMessage());
+        }
+        try {
             jdbcTemplate.update("""
                         UPDATE user_usage_snapshot s
                         SET days_active_28d = sub.days_active
@@ -100,7 +104,7 @@ public class ProductUsageRollupService {
                         WHERE s.tenant_id = sub.tenant_id AND s.user_id = sub.user_id
                         """, sqlDate, sqlDate);
         } catch (Exception e) {
-            log.warn("Product usage rollup failed for {}: {}", usageDate, e.getMessage());
+            log.warn("Product usage snapshot days_active update failed for {}: {}", usageDate, e.getMessage());
         }
     }
 

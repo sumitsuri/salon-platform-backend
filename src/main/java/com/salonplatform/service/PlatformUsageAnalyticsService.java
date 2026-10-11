@@ -762,17 +762,28 @@ public class PlatformUsageAnalyticsService {
         args.add(Timestamp.from(range.toExclusive()));
         args.addAll(sql.args());
 
-        List<UsageStats> stats = jdbcTemplate.query(
+        List<UsageStatsCore> core = jdbcTemplate.query(
                 query,
-                (rs, rowNum) -> new UsageStats(
+                (rs, rowNum) -> new UsageStatsCore(
                         rs.getInt("active_users"),
-                        wauMauDistinct(filter, range.toDate().minusDays(6), range.toDate()),
-                        wauMauDistinct(filter, range.toDate().minusDays(27), range.toDate()),
                         rs.getInt("total_events"),
                         rs.getInt("distinct_features"),
                         timestampToInstant(rs.getTimestamp("last_at"))),
                 args.toArray());
-        return stats.isEmpty() ? UsageStats.EMPTY : stats.get(0);
+        if (core.isEmpty()) {
+            return UsageStats.EMPTY;
+        }
+        UsageStatsCore totals = core.get(0);
+        // Do not run nested jdbc queries inside RowMapper — PostgreSQL rejects it while the outer ResultSet is open.
+        int wau = wauMauDistinct(filter, range.toDate().minusDays(6), range.toDate());
+        int mau = wauMauDistinct(filter, range.toDate().minusDays(27), range.toDate());
+        return new UsageStats(
+                totals.activeUsersInRange(),
+                wau,
+                mau,
+                totals.totalEvents(),
+                totals.distinctFeatures(),
+                totals.lastActivityAt());
     }
 
     private int wauMauDistinct(EventFilter filter, LocalDate fromDate, LocalDate toDate) {
@@ -899,6 +910,9 @@ public class PlatformUsageAnalyticsService {
     private record DailyAgg(int activeUsers, int eventCount) {
         static final DailyAgg EMPTY = new DailyAgg(0, 0);
     }
+
+    private record UsageStatsCore(
+            int activeUsersInRange, int totalEvents, int distinctFeatures, Instant lastActivityAt) {}
 
     private record UsageStats(
             int activeUsersInRange,
