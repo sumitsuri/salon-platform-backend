@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 
 @Service
@@ -68,6 +69,31 @@ public class ProductTelemetryStatusService {
         } catch (DataAccessException ignored) {
             // rollup tables optional for status
         }
+        long eventsAllTime = 0;
+        long eventsInPortfolioWindow = 0;
+        if (tableReady) {
+            try {
+                Long all = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM product_events", Long.class);
+                eventsAllTime = all != null ? all : 0;
+                Instant windowFrom = Instant.now().minus(60, ChronoUnit.DAYS);
+                Instant windowTo = Instant.now();
+                LocalDate fromDate = windowFrom.atZone(ZoneOffset.UTC).toLocalDate();
+                LocalDate toDate = windowTo.atZone(ZoneOffset.UTC).toLocalDate();
+                Instant rangeFrom = fromDate.atStartOfDay(ZoneOffset.UTC).toInstant();
+                Instant rangeToExclusive = toDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+                Long inWindow = jdbcTemplate.queryForObject(
+                        """
+                                SELECT COUNT(*) FROM product_events
+                                WHERE occurred_at >= ? AND occurred_at < ?
+                                """,
+                        Long.class,
+                        Timestamp.from(rangeFrom),
+                        Timestamp.from(rangeToExclusive));
+                eventsInPortfolioWindow = inWindow != null ? inWindow : 0;
+            } catch (DataAccessException ignored) {
+                // diagnostic fields optional
+            }
+        }
         return PlatformTelemetryStatusResponse.builder()
                 .ingestEnabled(properties.isEnabled())
                 .eventsTableReady(tableReady)
@@ -75,6 +101,8 @@ public class ProductTelemetryStatusService {
                 .eventsWithTenantLast24Hours(tenantEvents24h)
                 .latestEventAt(latestEventAt)
                 .rollupRowsLast24Hours(rollup24h)
+                .eventsAllTime(eventsAllTime)
+                .eventsInPortfolioWindow(eventsInPortfolioWindow)
                 .build();
     }
 }
