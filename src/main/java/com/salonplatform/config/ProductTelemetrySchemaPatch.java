@@ -42,8 +42,11 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     """)) {
             telemetryReadiness.markEventsTablePresent();
         } else {
+            log.error("CRITICAL: product_events table could not be created — product usage metrics will stay empty");
             telemetryReadiness.clearCache();
         }
+
+        ensureProductEventsColumns();
 
         runStatement("""
                     CREATE TABLE IF NOT EXISTS usage_daily_tenant (
@@ -110,6 +113,21 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                     """);
 
         log.info("Product telemetry schema patch applied");
+    }
+
+    private void ensureProductEventsColumns() {
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS event_version SMALLINT NOT NULL DEFAULT 1");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'SALON_STAFF'");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS portal VARCHAR(16)");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS session_id UUID");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS feature_key VARCHAR(128)");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS route VARCHAR(256)");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS properties JSONB");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS client VARCHAR(16)");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS app_version VARCHAR(64)");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS client_event_id UUID");
+        runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+        telemetryReadiness.clearCache();
     }
 
     private boolean runStatement(String sql) {

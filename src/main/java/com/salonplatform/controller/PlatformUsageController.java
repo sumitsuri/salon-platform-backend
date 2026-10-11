@@ -5,9 +5,11 @@ import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.dto.platform.PlatformTenantUsageDetailResponse;
 import com.salonplatform.dto.platform.PlatformUsageAnalyticsResponse;
 import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
+import com.salonplatform.dto.platform.PlatformTelemetryStatusResponse;
 import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
 import com.salonplatform.service.PlatformUsageAnalyticsService;
 import com.salonplatform.service.PlatformUsageService;
+import com.salonplatform.telemetry.ProductTelemetryStatusService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +28,12 @@ public class PlatformUsageController {
 
     private final PlatformUsageService platformUsageService;
     private final PlatformUsageAnalyticsService platformUsageAnalyticsService;
+    private final ProductTelemetryStatusService telemetryStatusService;
+
+    @GetMapping("/telemetry-status")
+    public ApiResponse<PlatformTelemetryStatusResponse> telemetryStatus() {
+        return ApiResponse.ok(telemetryStatusService.status());
+    }
 
     @GetMapping("/portfolio")
     public ApiResponse<PlatformUsagePortfolioResponse> portfolio(
