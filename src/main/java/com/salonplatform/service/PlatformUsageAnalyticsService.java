@@ -42,7 +42,7 @@ public class PlatformUsageAnalyticsService {
 
     /** Stable label for feature breakdown when {@code feature_key} was not persisted on older rows. */
     private static final String FEATURE_DIMENSION =
-            "COALESCE(NULLIF(TRIM(feature_key), ''), NULLIF(TRIM(route), ''), event_name)";
+            "COALESCE(NULLIF(TRIM(feature_key), ''), event_name)";
 
     private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
@@ -542,7 +542,8 @@ public class PlatformUsageAnalyticsService {
             return tenantFallback(tenant, range, branches, search, role, branchId);
         }
         try {
-            return buildTenantAnalyticsResponse(tenant, tenantId, range, filter, branches, branchId, userId, role, search);
+            return buildTenantAnalyticsResponseResilient(
+                    tenant, tenantId, range, filter, branches, branchId, userId, role, search);
         } catch (Exception ex) {
             log.error("Platform usage tenant analytics failed for {}", tenantId, ex);
             if (rawEvents > 0) {
@@ -756,6 +757,16 @@ public class PlatformUsageAnalyticsService {
     }
 
     private List<PlatformUsageAnalyticsResponse.FeatureUsageRow> loadFeatureUsage(EventFilter filter, InstantRange range) {
+        try {
+            return loadFeatureUsageUnchecked(filter, range);
+        } catch (DataAccessException ex) {
+            log.warn("featureUsage query failed: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageAnalyticsResponse.FeatureUsageRow> loadFeatureUsageUnchecked(
+            EventFilter filter, InstantRange range) {
         FilterSql sql = filter.toSql();
         String query = """
                 SELECT """
@@ -789,6 +800,22 @@ public class PlatformUsageAnalyticsService {
     }
 
     private List<PlatformUsageAnalyticsResponse.BranchUsageRow> loadBranchUsage(
+            UUID tenantId,
+            InstantRange range,
+            UUID branchId,
+            UUID userId,
+            UserRole role,
+            String search,
+            Map<UUID, Branch> branches) {
+        try {
+            return loadBranchUsageUnchecked(tenantId, range, branchId, userId, role, search, branches);
+        } catch (DataAccessException ex) {
+            log.warn("branchUsage query failed: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<PlatformUsageAnalyticsResponse.BranchUsageRow> loadBranchUsageUnchecked(
             UUID tenantId,
             InstantRange range,
             UUID branchId,
