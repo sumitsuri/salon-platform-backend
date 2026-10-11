@@ -68,7 +68,7 @@ public class PlatformUsageAnalyticsService {
     private void refreshRollupsForRange(InstantRange range) {
         try {
             int days = (int) ChronoUnit.DAYS.between(range.fromDate(), range.toDate()) + 1;
-            rollupService.rollupRecentDays(Math.min(Math.max(days, 1), 40));
+            rollupService.rollupRecentDays(Math.min(Math.max(days, 1), 7));
         } catch (Exception e) {
             log.warn("Could not refresh usage rollups for portfolio: {}", e.getMessage());
         }

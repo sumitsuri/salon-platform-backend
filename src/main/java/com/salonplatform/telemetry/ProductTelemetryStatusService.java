@@ -25,7 +25,8 @@ public class ProductTelemetryStatusService {
         SecurityUtils.assertPlatformAdmin();
         boolean tableReady = readiness.isEventsTableReady();
         long events24h = 0;
-        long rollup24h = 0;
+        long tenantEvents24h = 0;
+        String latestEventAt = null;
         if (tableReady) {
             Instant since = Instant.now().minus(24, ChronoUnit.HOURS);
             try {
@@ -34,10 +35,25 @@ public class ProductTelemetryStatusService {
                         Long.class,
                         Timestamp.from(since));
                 events24h = count != null ? count : 0;
+                Long withTenant = jdbcTemplate.queryForObject(
+                        """
+                                SELECT COUNT(*) FROM product_events
+                                WHERE occurred_at >= ? AND tenant_id IS NOT NULL
+                                """,
+                        Long.class,
+                        Timestamp.from(since));
+                tenantEvents24h = withTenant != null ? withTenant : 0;
+                Timestamp latest = jdbcTemplate.queryForObject(
+                        "SELECT MAX(occurred_at) FROM product_events",
+                        Timestamp.class);
+                if (latest != null) {
+                    latestEventAt = latest.toInstant().toString();
+                }
             } catch (DataAccessException ignored) {
                 tableReady = false;
             }
         }
+        long rollup24h = 0;
         try {
             LocalDate sinceDate = LocalDate.now().minusDays(1);
             Long rollup = jdbcTemplate.queryForObject(
@@ -56,6 +72,8 @@ public class ProductTelemetryStatusService {
                 .ingestEnabled(properties.isEnabled())
                 .eventsTableReady(tableReady)
                 .eventsLast24Hours(events24h)
+                .eventsWithTenantLast24Hours(tenantEvents24h)
+                .latestEventAt(latestEventAt)
                 .rollupRowsLast24Hours(rollup24h)
                 .build();
     }

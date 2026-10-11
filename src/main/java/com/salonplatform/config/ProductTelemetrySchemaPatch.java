@@ -47,6 +47,7 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
         }
 
         ensureProductEventsColumns();
+        ensureUsageDailyColumns();
 
         runStatement("""
                     CREATE TABLE IF NOT EXISTS usage_daily_tenant (
@@ -141,6 +142,14 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
         runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS client_event_id UUID");
         runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
         telemetryReadiness.clearCache();
+    }
+
+    private void ensureUsageDailyColumns() {
+        runStatement("ALTER TABLE usage_daily_tenant ADD COLUMN IF NOT EXISTS active_staff INT NOT NULL DEFAULT 0");
+        runStatement("ALTER TABLE usage_daily_tenant ADD COLUMN IF NOT EXISTS active_managers INT NOT NULL DEFAULT 0");
+        runStatement("ALTER TABLE usage_daily_tenant ADD COLUMN IF NOT EXISTS session_count INT NOT NULL DEFAULT 0");
+        runStatement("ALTER TABLE usage_daily_user ADD COLUMN IF NOT EXISTS distinct_features INT NOT NULL DEFAULT 0");
+        runStatement("ALTER TABLE usage_daily_user ADD COLUMN IF NOT EXISTS last_event_at TIMESTAMPTZ");
     }
 
     private boolean runStatement(String sql) {

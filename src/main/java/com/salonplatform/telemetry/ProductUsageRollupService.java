@@ -47,9 +47,9 @@ public class ProductUsageRollupService {
                             tenant_id,
                             ?::date,
                             COUNT(DISTINCT user_id),
-                            COUNT(DISTINCT user_id) FILTER (WHERE role = 'SALON_STAFF'),
-                            COUNT(DISTINCT user_id) FILTER (WHERE role IN ('BRANCH_MANAGER', 'SALON_MANAGER', 'BRAND_ADMIN')),
-                            COUNT(DISTINCT session_id) FILTER (WHERE session_id IS NOT NULL)
+                            COUNT(DISTINCT CASE WHEN role = 'SALON_STAFF' THEN user_id END),
+                            COUNT(DISTINCT CASE WHEN role IN ('BRANCH_MANAGER', 'SALON_MANAGER', 'BRAND_ADMIN') THEN user_id END),
+                            COUNT(DISTINCT CASE WHEN session_id IS NOT NULL THEN session_id END)
                         FROM product_events
                         WHERE tenant_id IS NOT NULL
                           AND occurred_at >= ? AND occurred_at < ?
@@ -77,7 +77,7 @@ public class ProductUsageRollupService {
                             user_id,
                             ?::date,
                             COUNT(*),
-                            COUNT(DISTINCT feature_key) FILTER (WHERE feature_key IS NOT NULL),
+                            COUNT(DISTINCT CASE WHEN feature_key IS NOT NULL THEN feature_key END),
                             MAX(occurred_at)
                         FROM product_events
                         WHERE tenant_id IS NOT NULL
