@@ -35,10 +35,11 @@ public class ProductUsageRollupService {
         Instant to = usageDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         Date sqlDate = Date.valueOf(usageDate);
 
-        jdbcTemplate.update("""
+        try {
+            jdbcTemplate.update("""
                         DELETE FROM usage_daily_tenant WHERE usage_date = ?
                         """, sqlDate);
-        jdbcTemplate.update("""
+            jdbcTemplate.update("""
                         INSERT INTO usage_daily_tenant (
                             tenant_id, usage_date, active_users, active_staff, active_managers, session_count
                         )
@@ -55,8 +56,8 @@ public class ProductUsageRollupService {
                         GROUP BY tenant_id
                         """, sqlDate, from, to);
 
-        jdbcTemplate.update("DELETE FROM usage_daily_tenant_feature WHERE usage_date = ?", sqlDate);
-        jdbcTemplate.update("""
+            jdbcTemplate.update("DELETE FROM usage_daily_tenant_feature WHERE usage_date = ?", sqlDate);
+            jdbcTemplate.update("""
                         INSERT INTO usage_daily_tenant_feature (tenant_id, usage_date, feature_key, hit_count)
                         SELECT tenant_id, ?::date, feature_key, COUNT(*)
                         FROM product_events
@@ -66,8 +67,8 @@ public class ProductUsageRollupService {
                         GROUP BY tenant_id, feature_key
                         """, sqlDate, from, to);
 
-        jdbcTemplate.update("DELETE FROM usage_daily_user WHERE usage_date = ?", sqlDate);
-        jdbcTemplate.update("""
+            jdbcTemplate.update("DELETE FROM usage_daily_user WHERE usage_date = ?", sqlDate);
+            jdbcTemplate.update("""
                         INSERT INTO usage_daily_user (
                             tenant_id, user_id, usage_date, event_count, distinct_features, last_event_at
                         )
@@ -85,7 +86,7 @@ public class ProductUsageRollupService {
                         GROUP BY tenant_id, user_id
                         """, sqlDate, from, to);
 
-        jdbcTemplate.update("""
+            jdbcTemplate.update("""
                         UPDATE user_usage_snapshot s
                         SET days_active_28d = sub.days_active
                         FROM (
@@ -98,6 +99,9 @@ public class ProductUsageRollupService {
                         ) sub
                         WHERE s.tenant_id = sub.tenant_id AND s.user_id = sub.user_id
                         """, sqlDate, sqlDate);
+        } catch (Exception e) {
+            log.warn("Product usage rollup failed for {}: {}", usageDate, e.getMessage());
+        }
     }
 
     public void purgeOldRawEvents() {

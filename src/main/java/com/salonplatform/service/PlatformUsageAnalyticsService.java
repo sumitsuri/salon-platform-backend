@@ -13,6 +13,7 @@ import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.SecurityUtils;
 import com.salonplatform.telemetry.ProductTelemetryReadiness;
+import com.salonplatform.telemetry.ProductUsageRollupService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -44,6 +45,7 @@ public class PlatformUsageAnalyticsService {
     private final BranchRepository branchRepository;
     private final JdbcTemplate jdbcTemplate;
     private final ProductTelemetryReadiness telemetryReadiness;
+    private final ProductUsageRollupService rollupService;
 
     public PlatformUsagePortfolioResponse portfolio(
             Instant from, Instant to, boolean includeDemo, UUID tenantIdFilter, UUID branchIdFilter) {
@@ -53,11 +55,22 @@ public class PlatformUsageAnalyticsService {
         if (!telemetryReadiness.isEventsTableReady()) {
             return portfolioFromRollups(range, tenants);
         }
+        refreshRollupsForRange(range);
         try {
             return portfolioWithEvents(range, tenants, includeDemo, tenantIdFilter, branchIdFilter);
         } catch (Exception ex) {
             log.error("Platform usage portfolio query failed", ex);
+            refreshRollupsForRange(range);
             return portfolioFromRollups(range, tenants);
+        }
+    }
+
+    private void refreshRollupsForRange(InstantRange range) {
+        try {
+            int days = (int) ChronoUnit.DAYS.between(range.fromDate(), range.toDate()) + 1;
+            rollupService.rollupRecentDays(Math.min(Math.max(days, 1), 40));
+        } catch (Exception e) {
+            log.warn("Could not refresh usage rollups for portfolio: {}", e.getMessage());
         }
     }
 
