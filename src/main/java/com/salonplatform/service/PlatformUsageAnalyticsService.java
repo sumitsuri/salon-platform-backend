@@ -55,7 +55,7 @@ public class PlatformUsageAnalyticsService {
         }
         try {
             return portfolioWithEvents(range, tenants, includeDemo, tenantIdFilter, branchIdFilter);
-        } catch (DataAccessException ex) {
+        } catch (Exception ex) {
             log.error("Platform usage portfolio query failed", ex);
             return portfolioFallback(range, tenants, false);
         }
@@ -192,9 +192,9 @@ public class PlatformUsageAnalyticsService {
                     .dailyActiveUsers(loadDailyTenant(filter, range))
                     .featureUsage(loadFeatureUsage(filter, range))
                     .branchUsage(loadBranchUsage(tenantId, range, branchId, userId, role, search, branches))
-                    .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId))
+                    .users(loadUserRows(tenantId, filter, range, branches, search, role, branchId, true))
                     .build();
-        } catch (DataAccessException ex) {
+        } catch (Exception ex) {
             log.error("Platform usage tenant analytics failed for {}", tenantId, ex);
             return tenantFallback(tenant, range, branches, search, role, branchId);
         }
@@ -225,7 +225,7 @@ public class PlatformUsageAnalyticsService {
                 .dailyActiveUsers(zeroFillDays(range, Map.of()))
                 .featureUsage(List.of())
                 .branchUsage(List.of())
-                .users(loadUserRows(tenant.getId(), filter, range, branches, search, roleFilter, branchFilter))
+                .users(loadUserRows(tenant.getId(), filter, range, branches, search, roleFilter, branchFilter, false))
                 .build();
     }
 
@@ -400,8 +400,10 @@ public class PlatformUsageAnalyticsService {
             Map<UUID, Branch> branches,
             String search,
             UserRole roleFilter,
-            UUID branchFilter) {
-        Map<UUID, UserEventAgg> eventAggs = loadUserEventAggs(filter, range);
+            UUID branchFilter,
+            boolean includeEventMetrics) {
+        Map<UUID, UserEventAgg> eventAggs =
+                includeEventMetrics ? loadUserEventAggs(filter, range) : Map.of();
         Map<UUID, SnapshotRow> snapshots = loadSnapshots(tenantId);
 
         String searchLower = search == null ? null : search.trim().toLowerCase();
@@ -453,34 +455,39 @@ public class PlatformUsageAnalyticsService {
     }
 
     private Map<UUID, UserEventAgg> loadUserEventAggs(EventFilter filter, InstantRange range) {
-        FilterSql sql = filter.toSql();
-        String query = """
-                SELECT user_id,
-                       COUNT(*) AS event_count,
-                       COUNT(DISTINCT feature_key) AS distinct_features,
-                       MAX(occurred_at) AS last_event_at
-                FROM product_events
-                WHERE occurred_at >= ? AND occurred_at < ?
-                  AND user_id IS NOT NULL
-                """ + sql.whereClause + """
-                GROUP BY user_id
-                """;
-        List<Object> args = new ArrayList<>();
-        args.add(Timestamp.from(range.from()));
-        args.add(Timestamp.from(range.toExclusive()));
-        args.addAll(sql.args());
+        try {
+            FilterSql sql = filter.toSql();
+            String query = """
+                    SELECT user_id,
+                           COUNT(*) AS event_count,
+                           COUNT(DISTINCT feature_key) AS distinct_features,
+                           MAX(occurred_at) AS last_event_at
+                    FROM product_events
+                    WHERE occurred_at >= ? AND occurred_at < ?
+                      AND user_id IS NOT NULL
+                    """ + sql.whereClause + """
+                    GROUP BY user_id
+                    """;
+            List<Object> args = new ArrayList<>();
+            args.add(Timestamp.from(range.from()));
+            args.add(Timestamp.from(range.toExclusive()));
+            args.addAll(sql.args());
 
-        Map<UUID, UserEventAgg> map = new HashMap<>();
-        jdbcTemplate.query(query, rs -> {
-            Timestamp last = rs.getTimestamp("last_event_at");
-            map.put(
-                    (UUID) rs.getObject("user_id"),
-                    new UserEventAgg(
-                            rs.getInt("event_count"),
-                            rs.getInt("distinct_features"),
-                            last != null ? last.toInstant() : null));
-        }, args.toArray());
-        return map;
+            Map<UUID, UserEventAgg> map = new HashMap<>();
+            jdbcTemplate.query(query, rs -> {
+                Timestamp last = rs.getTimestamp("last_event_at");
+                map.put(
+                        (UUID) rs.getObject("user_id"),
+                        new UserEventAgg(
+                                rs.getInt("event_count"),
+                                rs.getInt("distinct_features"),
+                                last != null ? last.toInstant() : null));
+            }, args.toArray());
+            return map;
+        } catch (DataAccessException ex) {
+            log.warn("product_events user aggregates unavailable: {}", ex.getMessage());
+            return Map.of();
+        }
     }
 
     private UsageStats loadUsageStats(EventFilter filter, InstantRange range) {
