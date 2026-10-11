@@ -52,14 +52,32 @@ public class PlatformUsageAnalyticsService {
         SecurityUtils.assertPlatformAdmin();
         InstantRange range = normalizeRange(from, to);
         List<Tenant> tenants = listTenants(includeDemo, tenantIdFilter);
-        if (!telemetryReadiness.isEventsTableReady()) {
+        Set<UUID> demoIds = demoTenantIds();
+        EventFilter platformProbe =
+                EventFilter.platform(tenantIdFilter, branchIdFilter, demoIds, includeDemo);
+        long rawPlatformEvents = countEventsForFilter(platformProbe, range);
+
+        if (!telemetryReadiness.isEventsTableReady() && rawPlatformEvents == 0) {
             return portfolioFromRollups(range, tenants);
         }
         refreshRollupsForRange(range);
         try {
-            return portfolioWithEvents(range, tenants, includeDemo, tenantIdFilter, branchIdFilter);
+            PlatformUsagePortfolioResponse response =
+                    portfolioWithEvents(range, tenants, includeDemo, tenantIdFilter, branchIdFilter, demoIds);
+            if (response.getPlatformSummary().getTotalEvents() == 0 && rawPlatformEvents > 0) {
+                log.warn(
+                        "Portfolio aggregates were 0 but {} product_events matched the range; rebuilding response",
+                        rawPlatformEvents);
+                return portfolioWithEventsResilient(
+                        range, tenants, includeDemo, tenantIdFilter, branchIdFilter, demoIds);
+            }
+            return response;
         } catch (Exception ex) {
             log.error("Platform usage portfolio query failed", ex);
+            if (rawPlatformEvents > 0) {
+                return portfolioWithEventsResilient(
+                        range, tenants, includeDemo, tenantIdFilter, branchIdFilter, demoIds);
+            }
             refreshRollupsForRange(range);
             return portfolioFromRollups(range, tenants);
         }
@@ -79,26 +97,45 @@ public class PlatformUsageAnalyticsService {
             List<Tenant> tenants,
             boolean includeDemo,
             UUID tenantIdFilter,
-            UUID branchIdFilter) {
-        Set<UUID> demoIds = demoTenantIds();
+            UUID branchIdFilter,
+            Set<UUID> demoIds) {
+        return buildPortfolioFromProductEvents(
+                range, tenants, includeDemo, tenantIdFilter, branchIdFilter, demoIds, false);
+    }
+
+    /** Per-tenant failures must not zero out platform metrics when raw events exist. */
+    private PlatformUsagePortfolioResponse portfolioWithEventsResilient(
+            InstantRange range,
+            List<Tenant> tenants,
+            boolean includeDemo,
+            UUID tenantIdFilter,
+            UUID branchIdFilter,
+            Set<UUID> demoIds) {
+        return buildPortfolioFromProductEvents(
+                range, tenants, includeDemo, tenantIdFilter, branchIdFilter, demoIds, true);
+    }
+
+    private PlatformUsagePortfolioResponse buildPortfolioFromProductEvents(
+            InstantRange range,
+            List<Tenant> tenants,
+            boolean includeDemo,
+            UUID tenantIdFilter,
+            UUID branchIdFilter,
+            Set<UUID> demoIds,
+            boolean resilientTenants) {
         List<PlatformUsagePortfolioResponse.TenantRow> rows = new ArrayList<>();
         for (Tenant tenant : tenants) {
             EventFilter filter = EventFilter.forTenant(tenant.getId(), branchIdFilter, null, null, null);
-            UsageStats stats = loadUsageStats(filter, range);
-            int provisioned = countProvisionedUsers(tenant.getId());
-            rows.add(PlatformUsagePortfolioResponse.TenantRow.builder()
-                    .tenantId(tenant.getId())
-                    .tenantName(tenant.getName())
-                    .tenantSlug(tenant.getSlug())
-                    .demoTenant(tenant.isDemo())
-                    .provisionedUsers(provisioned)
-                    .wau(stats.wau())
-                    .mau(stats.mau())
-                    .activeUsersInRange(stats.activeUsersInRange())
-                    .totalEvents(stats.totalEvents())
-                    .lastActivityAt(stats.lastActivityAt())
-                    .topFeatures(loadTopFeatures(filter, range, 5))
-                    .build());
+            if (resilientTenants) {
+                try {
+                    rows.add(buildTenantRow(tenant, filter, range));
+                } catch (Exception e) {
+                    log.warn("Tenant usage row failed for {}: {}", tenant.getId(), e.getMessage());
+                    rows.add(emptyTenantRow(tenant));
+                }
+            } else {
+                rows.add(buildTenantRow(tenant, filter, range));
+            }
         }
 
         EventFilter platformFilter = EventFilter.platform(tenantIdFilter, branchIdFilter, demoIds, includeDemo);
@@ -117,9 +154,78 @@ public class PlatformUsageAnalyticsService {
                         .distinctFeatures(platformStats.distinctFeatures())
                         .build())
                 .dailyActiveUsers(loadDailyPlatform(platformFilter, range))
-                .topFeatures(loadTopFeatures(platformFilter, range, 12))
+                .topFeatures(safeTopFeatures(platformFilter, range, 12))
                 .tenants(rows)
                 .build();
+    }
+
+    private PlatformUsagePortfolioResponse.TenantRow buildTenantRow(
+            Tenant tenant, EventFilter filter, InstantRange range) {
+        UsageStats stats = loadUsageStats(filter, range);
+        return PlatformUsagePortfolioResponse.TenantRow.builder()
+                .tenantId(tenant.getId())
+                .tenantName(tenant.getName())
+                .tenantSlug(tenant.getSlug())
+                .demoTenant(tenant.isDemo())
+                .provisionedUsers(countProvisionedUsers(tenant.getId()))
+                .wau(stats.wau())
+                .mau(stats.mau())
+                .activeUsersInRange(stats.activeUsersInRange())
+                .totalEvents(stats.totalEvents())
+                .lastActivityAt(stats.lastActivityAt())
+                .topFeatures(safeTopFeatures(filter, range, 5))
+                .build();
+    }
+
+    private PlatformUsagePortfolioResponse.TenantRow emptyTenantRow(Tenant tenant) {
+        return PlatformUsagePortfolioResponse.TenantRow.builder()
+                .tenantId(tenant.getId())
+                .tenantName(tenant.getName())
+                .tenantSlug(tenant.getSlug())
+                .demoTenant(tenant.isDemo())
+                .provisionedUsers(countProvisionedUsers(tenant.getId()))
+                .wau(0)
+                .mau(0)
+                .activeUsersInRange(0)
+                .totalEvents(0)
+                .topFeatures(List.of())
+                .build();
+    }
+
+    private List<PlatformUsageSummaryResponse.FeatureHit> safeTopFeatures(
+            EventFilter filter, InstantRange range, int limit) {
+        try {
+            return loadTopFeatures(filter, range, limit);
+        } catch (DataAccessException e) {
+            log.warn("topFeatures query failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private long countEventsForFilter(EventFilter filter, InstantRange range) {
+        try {
+            FilterSql sql = filter.toSql();
+            List<Object> args = rangeAndFilterArgs(range, sql);
+            Long count = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(*) FROM product_events
+                            WHERE occurred_at >= ? AND occurred_at < ?
+                            """ + sql.whereClause,
+                    Long.class,
+                    args.toArray());
+            return count != null ? count : 0;
+        } catch (DataAccessException e) {
+            log.warn("countEventsForFilter failed: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    private static List<Object> rangeAndFilterArgs(InstantRange range, FilterSql sql) {
+        List<Object> args = new ArrayList<>();
+        args.add(Timestamp.from(range.from()));
+        args.add(Timestamp.from(range.toExclusive()));
+        args.addAll(sql.args());
+        return args;
     }
 
     /**
@@ -749,41 +855,64 @@ public class PlatformUsageAnalyticsService {
 
     private UsageStats loadUsageStats(EventFilter filter, InstantRange range) {
         FilterSql sql = filter.toSql();
-        String query = """
-                SELECT COUNT(*) AS total_events,
-                       COUNT(DISTINCT user_id) AS active_users,
-                       COUNT(DISTINCT feature_key) AS distinct_features,
-                       MAX(occurred_at) AS last_at
+        List<Object> args = rangeAndFilterArgs(range, sql);
+        String rangeWhere = """
                 FROM product_events
                 WHERE occurred_at >= ? AND occurred_at < ?
                 """ + sql.whereClause;
-        List<Object> args = new ArrayList<>();
-        args.add(Timestamp.from(range.from()));
-        args.add(Timestamp.from(range.toExclusive()));
-        args.addAll(sql.args());
 
-        List<UsageStatsCore> core = jdbcTemplate.query(
-                query,
-                (rs, rowNum) -> new UsageStatsCore(
-                        rs.getInt("active_users"),
-                        rs.getInt("total_events"),
-                        rs.getInt("distinct_features"),
-                        timestampToInstant(rs.getTimestamp("last_at"))),
+        Integer totalEvents = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) " + rangeWhere, Integer.class, args.toArray());
+        Integer activeUsers = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(DISTINCT user_id)
+                        FROM product_events
+                        WHERE occurred_at >= ? AND occurred_at < ?
+                          AND user_id IS NOT NULL
+                        """ + sql.whereClause,
+                Integer.class,
                 args.toArray());
-        if (core.isEmpty()) {
-            return UsageStats.EMPTY;
+        Instant lastAt = null;
+        try {
+            Timestamp lastTs = jdbcTemplate.queryForObject(
+                    "SELECT MAX(occurred_at) " + rangeWhere, Timestamp.class, args.toArray());
+            lastAt = timestampToInstant(lastTs);
+        } catch (DataAccessException ignored) {
+            // no rows in range
         }
-        UsageStatsCore totals = core.get(0);
-        // Do not run nested jdbc queries inside RowMapper — PostgreSQL rejects it while the outer ResultSet is open.
-        int wau = wauMauDistinct(filter, range.toDate().minusDays(6), range.toDate());
-        int mau = wauMauDistinct(filter, range.toDate().minusDays(27), range.toDate());
+
+        int distinctFeatures = 0;
+        try {
+            Integer df = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(DISTINCT feature_key)
+                            FROM product_events
+                            WHERE occurred_at >= ? AND occurred_at < ?
+                              AND feature_key IS NOT NULL
+                            """ + sql.whereClause,
+                    Integer.class,
+                    args.toArray());
+            distinctFeatures = df != null ? df : 0;
+        } catch (DataAccessException e) {
+            log.debug("distinct feature_key unavailable: {}", e.getMessage());
+        }
+
+        int wau = 0;
+        int mau = 0;
+        try {
+            wau = wauMauDistinct(filter, range.toDate().minusDays(6), range.toDate());
+            mau = wauMauDistinct(filter, range.toDate().minusDays(27), range.toDate());
+        } catch (DataAccessException e) {
+            log.warn("WAU/MAU query failed: {}", e.getMessage());
+        }
+
         return new UsageStats(
-                totals.activeUsersInRange(),
+                activeUsers != null ? activeUsers : 0,
                 wau,
                 mau,
-                totals.totalEvents(),
-                totals.distinctFeatures(),
-                totals.lastActivityAt());
+                totalEvents != null ? totalEvents : 0,
+                distinctFeatures,
+                lastAt);
     }
 
     private int wauMauDistinct(EventFilter filter, LocalDate fromDate, LocalDate toDate) {
@@ -910,9 +1039,6 @@ public class PlatformUsageAnalyticsService {
     private record DailyAgg(int activeUsers, int eventCount) {
         static final DailyAgg EMPTY = new DailyAgg(0, 0);
     }
-
-    private record UsageStatsCore(
-            int activeUsersInRange, int totalEvents, int distinctFeatures, Instant lastActivityAt) {}
 
     private record UsageStats(
             int activeUsersInRange,

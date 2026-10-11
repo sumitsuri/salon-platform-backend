@@ -116,6 +116,42 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
         log.info("Product telemetry schema patch applied");
     }
 
+    /** Idempotent — safe to call before usage rollups when tables were never created on prod. */
+    public void ensureUsageRollupTables() {
+        ensureUsageDailyColumns();
+        runStatement("""
+                    CREATE TABLE IF NOT EXISTS usage_daily_tenant (
+                        tenant_id UUID NOT NULL,
+                        usage_date DATE NOT NULL,
+                        active_users INT NOT NULL DEFAULT 0,
+                        active_staff INT NOT NULL DEFAULT 0,
+                        active_managers INT NOT NULL DEFAULT 0,
+                        session_count INT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (tenant_id, usage_date)
+                    )
+                    """);
+        runStatement("""
+                    CREATE TABLE IF NOT EXISTS usage_daily_tenant_feature (
+                        tenant_id UUID NOT NULL,
+                        usage_date DATE NOT NULL,
+                        feature_key VARCHAR(128) NOT NULL,
+                        hit_count INT NOT NULL DEFAULT 0,
+                        PRIMARY KEY (tenant_id, usage_date, feature_key)
+                    )
+                    """);
+        runStatement("""
+                    CREATE TABLE IF NOT EXISTS usage_daily_user (
+                        tenant_id UUID NOT NULL,
+                        user_id UUID NOT NULL,
+                        usage_date DATE NOT NULL,
+                        event_count INT NOT NULL DEFAULT 0,
+                        distinct_features INT NOT NULL DEFAULT 0,
+                        last_event_at TIMESTAMPTZ,
+                        PRIMARY KEY (tenant_id, user_id, usage_date)
+                    )
+                    """);
+    }
+
     private void ensureProductEventsColumns() {
         try {
             Integer exists = jdbcTemplate.queryForObject(

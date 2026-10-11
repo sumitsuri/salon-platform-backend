@@ -1,6 +1,7 @@
 package com.salonplatform.telemetry;
 
 import com.salonplatform.config.ProductTelemetryProperties;
+import com.salonplatform.config.ProductTelemetrySchemaPatch;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,6 +19,7 @@ public class ProductUsageRollupService {
 
     private final ProductTelemetryProperties properties;
     private final JdbcTemplate jdbcTemplate;
+    private final ProductTelemetrySchemaPatch schemaPatch;
 
     public void rollupRecentDays(int daysBack) {
         if (!properties.isEnabled()) {
@@ -34,6 +36,8 @@ public class ProductUsageRollupService {
         Instant from = usageDate.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant to = usageDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         Date sqlDate = Date.valueOf(usageDate);
+
+        schemaPatch.ensureUsageRollupTables();
 
         try {
             jdbcTemplate.update("""
