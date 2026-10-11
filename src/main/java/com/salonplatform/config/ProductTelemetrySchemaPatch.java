@@ -116,6 +116,19 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
     }
 
     private void ensureProductEventsColumns() {
+        try {
+            Integer exists = jdbcTemplate.queryForObject(
+                    """
+                            SELECT COUNT(*) FROM information_schema.tables
+                            WHERE table_schema = 'public' AND table_name = 'product_events'
+                            """,
+                    Integer.class);
+            if (exists == null || exists == 0) {
+                return;
+            }
+        } catch (Exception e) {
+            return;
+        }
         runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS event_version SMALLINT NOT NULL DEFAULT 1");
         runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS role VARCHAR(32) NOT NULL DEFAULT 'SALON_STAFF'");
         runStatement("ALTER TABLE product_events ADD COLUMN IF NOT EXISTS portal VARCHAR(16)");
