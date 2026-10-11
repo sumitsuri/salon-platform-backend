@@ -63,8 +63,9 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** Employee portal host — always allowed even if runtime env lags SSM after infra changes. */
+    /** Ops app hosts — always allowed even if runtime env lags SSM after infra changes. */
     private static final String EMPLOYEE_PORTAL_ORIGIN = "https://employee.antrahq.com";
+    private static final String PLATFORM_PORTAL_ORIGIN = "https://platform.antrahq.com";
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
@@ -73,6 +74,7 @@ public class SecurityConfig {
         patterns.add("http://localhost:*");
         patterns.add("http://127.0.0.1:*");
         patterns.add(EMPLOYEE_PORTAL_ORIGIN);
+        patterns.add(PLATFORM_PORTAL_ORIGIN);
         for (String origin : allowedOrigins.split(",")) {
             String trimmed = origin.trim();
             if (!trimmed.isEmpty()) {
