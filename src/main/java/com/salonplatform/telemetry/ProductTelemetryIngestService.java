@@ -11,12 +11,15 @@ import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -24,9 +27,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public class ProductTelemetryIngestService {
 
+    private static final String INSERT_EVENT_SQL = """
+            INSERT INTO product_events (
+                id, occurred_at, event_name, event_version,
+                tenant_id, branch_id, user_id, role,
+                portal, session_id, feature_key, route,
+                properties, client, app_version, client_event_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
+            """;
+
     private final ProductTelemetryProperties properties;
     private final ProductTelemetryEventValidator validator;
     private final JdbcTemplate jdbcTemplate;
+    private final ProductUsageRollupService rollupService;
 
     private final AtomicBoolean running = new AtomicBoolean(true);
     private BlockingQueue<StoredEvent> queue;
@@ -102,6 +115,7 @@ public class ProductTelemetryIngestService {
 
     private void enqueue(StoredEvent event) {
         if (queue == null) {
+            log.warn("Product telemetry queue not started; dropping {} event", event.eventName());
             return;
         }
         if (!queue.offer(event)) {
@@ -135,38 +149,71 @@ public class ProductTelemetryIngestService {
             return;
         }
         try {
-            jdbcTemplate.batchUpdate("""
-                            INSERT INTO product_events (
-                                id, occurred_at, event_name, event_version,
-                                tenant_id, branch_id, user_id, role,
-                                portal, session_id, feature_key, route,
-                                properties, client, app_version, client_event_id
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
-                            ON CONFLICT (user_id, client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING
-                            """,
+            jdbcTemplate.batchUpdate(
+                    INSERT_EVENT_SQL,
                     batch,
                     batch.size(),
-                    (ps, event) -> {
-                        ps.setObject(1, event.id());
-                        ps.setTimestamp(2, Timestamp.from(event.occurredAt()));
-                        ps.setString(3, event.eventName());
-                        ps.setShort(4, event.eventVersion());
-                        ps.setObject(5, event.tenantId());
-                        ps.setObject(6, event.branchId());
-                        ps.setObject(7, event.userId());
-                        ps.setString(8, event.role());
-                        ps.setString(9, event.portal());
-                        ps.setObject(10, event.sessionId());
-                        ps.setString(11, event.featureKey());
-                        ps.setString(12, event.route());
-                        ps.setString(13, event.propertiesJson());
-                        ps.setString(14, event.client());
-                        ps.setString(15, event.appVersion());
-                        ps.setObject(16, event.clientEventId());
-                    });
+                    (ps, event) -> bindEvent(ps, event));
+        } catch (Exception e) {
+            log.error("Product telemetry insert failed ({} events): {}", batch.size(), e.getMessage());
+            requeue(batch);
+            return;
+        }
+
+        try {
             upsertSnapshots(batch);
         } catch (Exception e) {
-            log.warn("Product telemetry flush failed ({} events): {}", batch.size(), e.getMessage());
+            log.warn("Product telemetry snapshot upsert failed ({} events): {}", batch.size(), e.getMessage());
+        }
+
+        rollupAffectedDays(batch);
+    }
+
+    private void bindEvent(java.sql.PreparedStatement ps, StoredEvent event) throws java.sql.SQLException {
+        ps.setObject(1, event.id());
+        ps.setTimestamp(2, Timestamp.from(event.occurredAt()));
+        ps.setString(3, event.eventName());
+        ps.setShort(4, event.eventVersion());
+        ps.setObject(5, event.tenantId());
+        ps.setObject(6, event.branchId());
+        ps.setObject(7, event.userId());
+        ps.setString(8, event.role());
+        ps.setString(9, event.portal());
+        ps.setObject(10, event.sessionId());
+        ps.setString(11, event.featureKey());
+        ps.setString(12, event.route());
+        ps.setString(13, event.propertiesJson());
+        ps.setString(14, event.client());
+        ps.setString(15, event.appVersion());
+        ps.setObject(16, event.clientEventId());
+    }
+
+    private void requeue(List<StoredEvent> batch) {
+        if (queue == null) {
+            return;
+        }
+        for (StoredEvent event : batch) {
+            if (!queue.offer(event)) {
+                log.warn("Product telemetry requeue full; dropping {}", event.eventName());
+                break;
+            }
+        }
+    }
+
+    private void rollupAffectedDays(List<StoredEvent> batch) {
+        if (!properties.isEnabled()) {
+            return;
+        }
+        Set<LocalDate> days = new HashSet<>();
+        for (StoredEvent event : batch) {
+            days.add(event.occurredAt().atZone(ZoneOffset.UTC).toLocalDate());
+        }
+        for (LocalDate day : days) {
+            try {
+                rollupService.rollupDay(day);
+            } catch (Exception e) {
+                log.warn("Product usage rollup failed for {}: {}", day, e.getMessage());
+            }
         }
     }
 

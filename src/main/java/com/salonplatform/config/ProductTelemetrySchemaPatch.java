@@ -102,6 +102,7 @@ public class ProductTelemetrySchemaPatch implements ApplicationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_name_occurred ON product_events (tenant_id, event_name, occurred_at DESC)");
         runStatement(
                 "CREATE INDEX IF NOT EXISTS idx_product_events_tenant_branch_occurred ON product_events (tenant_id, branch_id, occurred_at DESC)");
+        // Optional dedupe index — ingest no longer depends on partial ON CONFLICT (see ProductTelemetryIngestService).
         runStatement("""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_product_events_client_dedupe
                     ON product_events (user_id, client_event_id)
