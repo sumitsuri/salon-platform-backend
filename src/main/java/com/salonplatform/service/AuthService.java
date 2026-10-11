@@ -16,6 +16,7 @@ import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.JwtTokenProvider;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.telemetry.ProductTelemetryIngestService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -38,6 +39,7 @@ public class AuthService {
     private final TenantRepository tenantRepository;
     private final BranchRepository branchRepository;
     private final StaffRepository staffRepository;
+    private final ProductTelemetryIngestService productTelemetryIngestService;
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
@@ -59,6 +61,12 @@ public class AuthService {
                 .token(refreshTokenValue)
                 .expiresAt(Instant.now().plusMillis(jwtTokenProvider.getRefreshTokenExpiryMs()))
                 .build());
+
+        try {
+            productTelemetryIngestService.recordLoginSucceeded(principal, request.getPortal());
+        } catch (Exception ignored) {
+            // Telemetry must never affect authentication.
+        }
 
         return buildAuthResponse(principal, accessToken, refreshTokenValue);
     }

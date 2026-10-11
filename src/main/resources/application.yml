@@ -233,6 +233,15 @@ app:
       - varthur-menu-v2
       - varthur-menu-v3
 
+  product-telemetry:
+    enabled: ${PRODUCT_TELEMETRY_ENABLED:true}
+    max-batch-size: 50
+    queue-capacity: 10000
+    flush-interval-ms: 1000
+    retention-days: 90
+    rollup-cron: "0 15 * * * *"
+    retention-cron: "0 30 3 * * *"
+
 springdoc:
   api-docs:
     path: /api-docs
