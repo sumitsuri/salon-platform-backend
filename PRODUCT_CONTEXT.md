@@ -115,8 +115,8 @@ Backend: `/api/v1/platform/*` for tenants, users, cross-tenant operations.
 
 | Surface | Route | Purpose |
 |---------|-------|---------|
-| Portfolio | `/platform/usage` | WAU/MAU, platform daily chart, brand list, **brand × app heatmap**, top features |
-| Brand drill-down | `/platform/usage/detail?tenantId={uuid}` | Daily chart, feature breakdown, branches, users; **branch × app heatmap**, **user activity calendar**; filters: date, branch, user, role, search |
+| Portfolio | `/platform/usage` | KPI cards with change vs previous period, **account health** table (score, status, trend sparkline, change, adoption, last active) with health-segment filter, **feature adoption across brands** (brand reach, last used, trend), platform daily chart, **brand × app heatmap** |
+| Brand drill-down | `/platform/usage/detail?tenantId={uuid}` | Tabs: **Overview** (health score + breakdown, KPIs, auto-generated findings, daily events by app), **Features** (events, user reach, trend, first/last used), **Branches** (scorecard incl. silent branches + **feature × branch matrix**), **Users** (events, features, last seen, status + **feature × user matrix**), **Activity** (recent events feed); plus branch × app heatmap and user activity calendar; filters: date, branch, user, role, search |
 
 **Audience:** `PLATFORM_SUPER_ADMIN` only (`SecurityUtils.assertPlatformAdmin()` on APIs).
 
@@ -151,8 +151,12 @@ Backend: `/api/v1/platform/*` for tenants, users, cross-tenant operations.
 | `GET /api/v1/platform/usage/portfolio?from&to&includeDemo&tenantId&branchId` | `PlatformUsagePortfolioResponse` | `PlatformUsageAnalyticsService.portfolio()` |
 | `GET /api/v1/platform/usage/tenants/{tenantId}/analytics?from&to&branchId&userId&role&search` | `PlatformUsageAnalyticsResponse` | `tenantAnalytics()` — resilient sections (`safeDailyTenant`, `safeFeatureUsage`, …) |
 | `GET /api/v1/platform/usage/heatmap?from&to&includeDemo&tenantId&branchId` | `PlatformUsageHeatmapResponse` | `heatmap()` — portal totals; tenant×portal grid (portfolio); branch×portal + user×day when `tenantId` set |
+| `GET /api/v1/platform/usage/insights/portfolio?from&to&includeDemo` | `PlatformUsageInsights.Portfolio` | `PlatformUsageInsightsService.portfolio()` — per-brand totals vs previous period, health, daily trend, platform feature reach |
+| `GET /api/v1/platform/usage/insights/tenants/{tenantId}?from&to&branchId` | `PlatformUsageInsights.Tenant` | `PlatformUsageInsightsService.tenant()` — health, daily-by-app, feature/branch/user rows with last-used and trends, feature × branch and feature × user matrices, recent activity |
 | `GET /api/v1/platform/usage/summary?from&to&includeDemo` | Legacy rollup-oriented summary | `PlatformUsageService` |
 | `GET /api/v1/platform/usage/telemetry-status` | Pipeline health | `ProductTelemetryStatusService` |
+
+**Insights layer (adoption analytics):** `PlatformUsageInsightsService` is deliberately separate from `PlatformUsageAnalyticsService` so the existing screens are untouched. It reads `product_events` directly with explicit SQL strings, compares the selected range with the immediately preceding range of equal length, and collapses daily series into at most 60 buckets for sparklines (`bucketize`). **Health score (0–100)** = 35% adoption (active ÷ provisioned users, capped at 100) + 25% feature breadth (distinct features ÷ core set of up to 8) + 20% stickiness (WAU ÷ MAU) + 20% momentum (events vs previous period, 50 = flat). Status: `DORMANT` (no activity in last 14 days; score capped at 25), `NEW` (no previous-period baseline), `AT_RISK` (score < 45, or events fell ≥ 50% from a previous period with ≥ 20 events; score capped at 44), `WATCH` (45–69), `HEALTHY` (≥ 70). The score components are returned so the UI can explain it. Rules are unit-tested in `PlatformUsageInsightsServiceTest`.
 
 **Core class:** `PlatformUsageAnalyticsService` — filters via inner `EventFilter` / `FilterSql` (`AND tenant_id = ?`, branch, user, role, search, demo exclusion).
 
@@ -173,6 +177,8 @@ Backend: `/api/v1/platform/*` for tenants, users, cross-tenant operations.
 | `frontend/src/app/platform/usage/detail/page.tsx` | Brand drill-down (`tenantId` query) |
 | `PlatformUsagePortfolioView.tsx` / `PlatformUsageTenantView.tsx` | Charts (MetricChart), tables, filters |
 | `PlatformUsageFilterBar.tsx` | Date, branch, user, role, search |
+| `insights/PortfolioInsights.tsx` / `insights/TenantInsights.tsx` | Adoption insights UI (health, change, trends, matrices); replace the former brand/feature/branch/user tables |
+| `insights/usage-viz.tsx` / `insights/usage-format.ts` | Shared visuals (health badge/ring, score breakdown, change chip, relative time, stacked daily bars, matrix grid) and status metadata |
 | `feature-labels.ts` + `lib/product-analytics/feature-key-labels.ts` | **Display names** for keys (e.g. `admin.guest_voice` → “Guest voice”) — keys stay dotted in DB only |
 | `UsageHeatmap.tsx` / `PlatformUsageHeatmapSection.tsx` | Heatmap grids and drill-down (portfolio: click brand cell → detail; tenant: branch cell sets `branchId` in URL) |
 | `frontend/src/lib/api.ts` | `getPlatformUsagePortfolio`, `getPlatformUsageAnalytics`, `getPlatformUsageHeatmap` |
@@ -205,6 +211,10 @@ API_BASE=http://localhost:8089 MYSTIC_TENANT_ID=<tenant-with-events> \
 # Prod (default API https://api.antrahq.com, Mystic tenant id in script)
 node salon-platform/scripts/verify-tenant-usage.mjs
 ```
+
+The script also checks the insights endpoints for internal consistency (trend buckets sum to event counts, per-app split equals the daily total, segments equal brand count, dormant brands score ≤ 25).
+
+**Testing the platform app locally:** `/platform/*` on any host other than the platform host redirects to production. For a local run, start the stack with session-only env vars (do not commit them): `APP_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://platform.localhost:3000 NEXT_PUBLIC_PLATFORM_HOST=platform.localhost NEXT_PUBLIC_PLATFORM_APP_URL=http://platform.localhost:3000 NEXT_PUBLIC_API_URL=http://127.1:8080 bash scripts/dev-server.sh restart`, then open `http://platform.localhost:3000/`. (`127.1` is used because the client drops a `localhost` API URL on non-`localhost` hosts and assumes a same-origin proxy.) The local database has almost no telemetry; generate synthetic events tagged `properties->>'synthetic' = 'true'` and delete them afterwards.
 
 **Pass criteria when `totalEvents > 0`:** `sum(daily.eventCount) > 0`, `featureUsage.length > 0`, `activeUsersInRange > 0` (and ideally user rows with `eventsInRange > 0` when event `user_id`s match `users` table).
 

@@ -5,10 +5,12 @@ import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.dto.platform.PlatformTenantUsageDetailResponse;
 import com.salonplatform.dto.platform.PlatformUsageAnalyticsResponse;
 import com.salonplatform.dto.platform.PlatformUsageHeatmapResponse;
+import com.salonplatform.dto.platform.PlatformUsageInsights;
 import com.salonplatform.dto.platform.PlatformUsagePortfolioResponse;
 import com.salonplatform.dto.platform.PlatformTelemetryStatusResponse;
 import com.salonplatform.dto.platform.PlatformUsageSummaryResponse;
 import com.salonplatform.service.PlatformUsageAnalyticsService;
+import com.salonplatform.service.PlatformUsageInsightsService;
 import com.salonplatform.service.PlatformUsageService;
 import com.salonplatform.telemetry.ProductTelemetryStatusService;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class PlatformUsageController {
     private final PlatformUsageService platformUsageService;
     private final PlatformUsageAnalyticsService platformUsageAnalyticsService;
     private final ProductTelemetryStatusService telemetryStatusService;
+    private final PlatformUsageInsightsService platformUsageInsightsService;
 
     @GetMapping("/telemetry-status")
     public ApiResponse<PlatformTelemetryStatusResponse> telemetryStatus() {
@@ -68,6 +71,25 @@ public class PlatformUsageController {
             @RequestParam(required = false) String search) {
         return ApiResponse.ok(
                 platformUsageAnalyticsService.tenantAnalytics(tenantId, from, to, branchId, userId, role, search));
+    }
+
+    /** Adoption insights across brands: health, change vs previous period, feature reach, trends. */
+    @GetMapping("/insights/portfolio")
+    public ApiResponse<PlatformUsageInsights.Portfolio> insightsPortfolio(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(defaultValue = "false") boolean includeDemo) {
+        return ApiResponse.ok(platformUsageInsightsService.portfolio(from, to, includeDemo));
+    }
+
+    /** One brand: feature adoption with last-used, branch scorecards, user activity, matrices and recent activity. */
+    @GetMapping("/insights/tenants/{tenantId}")
+    public ApiResponse<PlatformUsageInsights.Tenant> insightsTenant(
+            @PathVariable UUID tenantId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant to,
+            @RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(platformUsageInsightsService.tenant(tenantId, from, to, branchId));
     }
 
     @GetMapping("/summary")
