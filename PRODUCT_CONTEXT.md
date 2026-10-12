@@ -96,13 +96,55 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 
 **Expenditure (admin):** Full ledger — rent, employee salary, product cost, accommodation, miscellaneous; payroll sync endpoint; used in finance P&L.
 
-**Team requests — leave approvals + salary advances (`/admin/requests`, Ops hub tile, banner on `/admin/employees`):**
-- Employees apply from the employee app (`/employee/advance`, Time → Leave); managers/CEO decide. Leave: managers (branch-scoped) or brand admin approve/reject with an optional note; employees can cancel their own *pending* leave (`CANCELLED`); overlapping leave is refused.
-- Advances are **owner-only** (`assertBrandAdmin`). Revolving budget: `available = pool − SCHEDULED installments`, so repayments free the budget again. Fairness knobs (`salary_advance_policies`): per-employee share of pool %, salary multiple, max installments, cooldown days, enable/pause. Approval takes a `PESSIMISTIC_WRITE` lock on the policy row so two approvals cannot overspend. Approved amount may be lower than asked; installments split equally (remainder on last); first deduction defaults to next month (IST). Repeat requesters (≥3 in 180 days) are flagged. Owners can also **record an advance directly** (`POST /api/v1/salary-advances/grant`) when money was paid outside the employee app — same budget/per-employee checks and installment schedule, no employee cooldown.
-- Deductions tab: "mark month deducted" settles due installments; individual installments can be waived; an advance completes when nothing is left to recover. Advances are **not** auto-applied to payroll/P&L — "after advance" = salary minus deductions only.
-- Schema: new tables come from `ddl-auto: update`; `SalaryAdvanceSchemaPatch` adds `leave_records.decision_note/decided_at` and recreates `leave_records_status_check` to include `CANCELLED` (Hibernate never alters existing CHECK constraints).
-- Copy: English base + Hindi for employee-facing strings; other locales fall back to English.
-- Local employee-app testing: `/employee/*` redirects off plain `localhost`. Run `bash scripts/dev-server.sh restart` with session-only `APP_CORS_ALLOWED_ORIGINS=<defaults>,http://employee.localhost:3000 NEXT_PUBLIC_API_URL=http://127.1:8080 NEXT_PUBLIC_EMPLOYEE_HOST=employee.localhost NEXT_PUBLIC_EMPLOYEE_APP_URL=http://employee.localhost:3000`, then browse `http://employee.localhost:3000/employee/`. Restart without those vars afterwards.
+#### 4.2.1 Team requests — leave approvals + salary advances
+
+**Surfaces:** `/admin/requests` (tabs **Approvals · Budget · Deductions**, plus an advance-records panel for edits), 6th tile on the Ops hub (`/admin/ops`, rose accent), pending-requests banner on `/admin/employees`. Employee app: `/employee/advance` (sidebar + "Need a salary advance?" card on Time) and Time → Leave. Shipped Oct 2026.
+
+**Roles**
+| Action | Who |
+|--------|-----|
+| Apply for leave / request advance / cancel own *pending* | Active staff (`StaffAccessService.requireCurrentStaff()`; deactivated staff are blocked) |
+| Approve/reject leave (optional note ≤500 chars) | Branch manager (own branch) or brand admin |
+| Everything about advances: budget, approve/reject, deductions, per-employee history | **Brand admin only** (`SecurityUtils.assertBrandAdmin()`); managers get 403 |
+
+**Leave workflow:** `PENDING → APPROVED | REJECTED | CANCELLED`. Employee may cancel only while pending. Overlapping leave (pending/approved) is refused. Decisions stamp `decision_note` + `decided_at`; the employee sees the note. Pending list (`GET /leave/pending`) carries each person's approved days this year. Approve/reject bodies are optional so older clients keep working.
+
+**Advance model** (tables `salary_advance_policies` (one row per brand), `salary_advances`, `salary_advance_installments`)
+- Policy: pool ₹ (0–10 cr), max pool share per employee % (1–100), max salary multiple (0.1–12×), max installments (1–24), cooldown days (0–365), enabled flag. Defaults on first configure are owner-supplied; until configured employees see "not set up yet".
+- **Revolving budget:** `available = pool − Σ SCHEDULED installments`. Approved-but-unrecovered money is "held"; deducted/waived installments free it again. Pending requests do not reserve budget.
+- **Employee ceiling** = `min(pool available, share cap − held, salary × multiple − held)`, floored to whole rupees. Employee sees "You can request up to ₹X right now." Blocked reasons: not configured, paused, pending request exists, cooldown (date shown), no headroom.
+- **Request:** amount ≥ ₹1, 1–24 installments (also ≤ policy max), reason required (≤500). One open request at a time.
+- **Approval:** locks the policy row (`PESSIMISTIC_WRITE`) so concurrent approvals cannot overspend; owner may approve a **lower amount** and/or change installments; rechecks budget and the employee's limits at decision time. Installments split equally, remainder on the last; first deduction defaults to **next month (IST)**. A decided advance cannot be decided again.
+- **Repeat flag:** ≥3 requests in the last 180 days (`SalaryAdvanceRules.REPEAT_*`). The owner sees count, total approved, outstanding and pool share for every employee (including those who never asked) via `GET /salary-advances/employees`.
+- **Deductions tab:** per month — due, salary, net-after-advances; "Mark month deducted" settles all due installments; single installment deduct or waive. Advance auto-moves to `COMPLETED` when nothing is left to recover.
+- **Owner-recorded advances** (`POST /salary-advances/grant`, Budget tab): when cash was handed over outside the app, the owner records staff, amount, installments, first deduction month, reason and note. Same budget and per-employee checks and the same installment schedule as an approval, but no employee request and no cooldown. The advance is flagged `recordedOnBehalf` and the employee app labels it as recorded by the owner.
+- **Editing decided advances** (`PUT /salary-advances/{id}`, advance-records panel): the owner can change reason/note, approved amount, installments and first deduction month after a decision (amounts already settled are shown and kept), or set `revoke: true` to waive every remaining scheduled installment and mark the advance cancelled.
+- **Pro-rated salary (display only):** `StaffSalaryProRating` = monthly salary × (days present + approved leave days) ÷ calendar days of the month containing the period end (period end is capped via `effectiveEnd` for staff who are no longer active). Shown as a "pro-rated salary" column in the attendance dashboard and the Deductions tab (`proRatedSalary`, `monthlySalary` on the attendance summary); `—` when the staff has no salary set.
+- Statuses: `AdvanceStatus` PENDING/APPROVED/REJECTED/CANCELLED/COMPLETED; `InstallmentStatus` SCHEDULED/DEDUCTED/WAIVED.
+
+**API**
+- Owner: `GET /salary-advances` (status, staffId, branchId, excludePending, page, size) · `GET /budget` · `PUT /policy` · `GET /employees` (**paginated**: branchId, onlyAsked, search, page, size) · `POST /grant` · `PUT /{id}` (edit/revoke) · `POST /{id}/approve|reject` · `GET /deductions?month=` · `POST /deductions/deduct-month?month=` · `POST /installments/{id}/deduct|waive`.
+- Leave: `POST /leave/{id}/approve|reject|cancel` · `GET /leave/pending`.
+- Employee (`/staff-portal`): `GET|POST /advances` · `POST /advances/{id}/cancel` · `GET|POST /leaves` · `POST /leaves/{id}/cancel`.
+
+**Code map:** backend `SalaryAdvanceService` (workflow), `SalaryAdvanceRules` (pure money rules, unit-tested in `SalaryAdvanceRulesTest`), `StaffSalaryProRating` (`StaffSalaryProRatingTest`), `AttendanceAnalyticsService` (pro-rated column), `SalaryAdvanceController`, `LeaveService`, `StaffPortalService/Controller`, `SalaryAdvanceSchemaPatch`. Frontend `components/admin/requests/*` (`use-team-requests.ts` holds react-query keys; `AdvanceRecordsPanel.tsx` edit/revoke; `BudgetPanel.tsx` policy + record-advance), `components/AttendanceDashboardSection.tsx` (pro-rated column), `components/employee/StaffAdvanceSection.tsx`, `StaffLeavesSection.tsx`, i18n under `admin.requests` / employee advance keys in `messages/en-IN.json` + `hi-IN.json`.
+
+**Schema:** new tables via `ddl-auto: update`. `SalaryAdvanceSchemaPatch` (idempotent, `@Order(0)`) adds `leave_records.decision_note`/`decided_at` and recreates `leave_records_status_check` to include `CANCELLED`.
+
+**Local testing of the employee app:** `/employee/*` redirects off plain `localhost`. Restart with session-only env — `APP_CORS_ALLOWED_ORIGINS=<defaults>,http://employee.localhost:3000 NEXT_PUBLIC_API_URL=http://127.1:8080 NEXT_PUBLIC_EMPLOYEE_HOST=employee.localhost NEXT_PUBLIC_EMPLOYEE_APP_URL=http://employee.localhost:3000 bash scripts/dev-server.sh restart` — browse `http://employee.localhost:3000/employee/`, then restart without those vars. Seed demo staff logins are in §9.
+
+**Known issues / limitations**
+1. **Enum CHECK constraints are not migrated by Hibernate.** Adding any enum value (as `LeaveStatus.CANCELLED` did) fails at runtime with a `*_status_check` violation unless a schema patch recreates the constraint. Recommended fix: Flyway migrations + `ddl-auto: validate` in prod, plus a Testcontainers test that exercises every enum value. Until then: add an idempotent patch for every enum/column change and put it on the pre-deploy checklist.
+2. **Advances are not wired into payroll or P&L.** "After advance" in the UI is salary minus installments due; "Mark month deducted" is a manual owner action and does not touch the expenditure/payroll sync. Pro-rated salary is an MTD *display* figure only: it uses a calendar-month denominator, so weekly offs and holidays are not modelled (an employee with a weekly off cannot reach 100%), and it is not fed into payroll sync/expenditure.
+3. **No notifications.** Employees and owners are not pushed/WhatsApped on request or decision; they see state in-app (banner, tiles, history) only.
+4. **Owner-only advances, not branch-scoped.** Managers cannot see or decide advances; the pool is brand-wide, not per branch.
+5. **Deactivated staff:** they cannot request, and are hidden from the per-employee list unless they have history, but their outstanding installments are not auto-waived or accelerated — the owner must settle/waive them manually.
+6. **Copy:** English base + Hindi for employee-facing strings; the other 8 locales fall back to English (admin screens are English-only).
+7. **Pending requests don't reserve budget**, so several employees can have pending requests that together exceed the pool; the approval-time recheck is what protects the budget.
+8. **Employee app on tablet width** renders as a left-aligned mobile column (pre-existing layout behaviour, not specific to this feature).
+9. Lint baseline: `src/lib/api.ts` (empty `UpdateServicePackagePlanRequest` interface) and `admin/employees/page.tsx` (`set-state-in-effect`) have pre-existing ESLint errors unrelated to this feature.
+10. **Edit history is thin:** every action writes an audit-log row (`ADVANCE_REQUESTED/APPROVED/REJECTED/GRANTED/UPDATED/REVOKED/CANCELLED`, installment deduct/waive, `ADVANCE_POLICY_UPDATED`), but `ADVANCE_UPDATED`/`ADVANCE_REVOKED` carry no before/after values. Revoke is only allowed on an active (approved, not completed) advance.
+11. Local demo data was affected once during development (72 seeded demo leaves deleted locally; prod untouched). Re-seed local DB if the leave demo list looks short.
 
 ---
 
@@ -268,6 +310,7 @@ Spring Boot 3.5, Java 21, PostgreSQL, Redis. Key modules (see `backend/README.md
 - Inventory
 - Platform tenant administration
 - Sales module (leads) for platform
+- **Team requests:** leave approvals + revolving salary-advance budget (`/api/v1/salary-advances/*`, `/api/v1/leave/*`, `/api/v1/staff-portal/advances|leaves`) — see §4.2.1
 
 **Schema evolution:** Many `*SchemaPatch` `ApplicationRunner` classes apply idempotent SQL (e.g. `ExpenditureSchemaPatch`, `MembershipSoldByStaffSchemaPatch`, `ScratchCampaignSchemaPatch`, `branches.scratch_card_enabled` default false).
 
@@ -476,6 +519,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 | Expenditure service | `backend/.../ExpenditureService.java` |
 | Staff promo analytics | `backend/.../StaffPromoSalesAnalyticsService.java` |
 | **Platform customer usage** | **§4.3.1** — `PlatformUsageAnalyticsService.java`, `PlatformUsageController.java`, `ProductUsageSqlSupport.java`, `ProductUsageRollupService.java`, `ProductTelemetryIngestService.java`, `route-feature-map.ts`, `frontend/src/modules/platform/usage/*`, `scripts/verify-tenant-usage.mjs`, `scripts/verify-usage-sql-local.sh` |
+| Team requests (leave + advances) | **§4.2.1** — `SalaryAdvanceService.java`, `SalaryAdvanceRules.java`, `SalaryAdvanceController.java`, `LeaveService.java`, `SalaryAdvanceSchemaPatch.java`; `frontend/src/components/admin/requests/*`, `frontend/src/components/employee/StaffAdvanceSection.tsx` |
 | Deploy workflows | `frontend/.github/workflows/deploy.yml`, `backend/.github/workflows/deploy.yml` |
 
 ---
