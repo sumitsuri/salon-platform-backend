@@ -12,7 +12,6 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 /** Owner (brand admin) side of salary advances. Employees use the staff-portal endpoints. */
@@ -28,9 +27,10 @@ public class SalaryAdvanceController {
             @RequestParam(required = false) AdvanceStatus status,
             @RequestParam(required = false) UUID staffId,
             @RequestParam(required = false) UUID branchId,
+            @RequestParam(required = false) Boolean excludePending,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(salaryAdvanceService.list(status, staffId, branchId, page, size));
+        return ApiResponse.ok(salaryAdvanceService.list(status, staffId, branchId, excludePending, page, size));
     }
 
     @GetMapping("/budget")
@@ -44,8 +44,19 @@ public class SalaryAdvanceController {
     }
 
     @GetMapping("/employees")
-    public ApiResponse<List<EmployeeAdvanceSummary>> employees(@RequestParam(required = false) UUID branchId) {
-        return ApiResponse.ok(salaryAdvanceService.employeeSummaries(branchId));
+    public ApiResponse<PageResponse<EmployeeAdvanceSummary>> employees(
+            @RequestParam(required = false) UUID branchId,
+            @RequestParam(required = false) Boolean onlyAsked,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        return ApiResponse.ok(salaryAdvanceService.employeeSummaries(branchId, onlyAsked, search, page, size));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<AdvanceResponse> update(
+            @PathVariable UUID id, @Valid @RequestBody UpdateAdvanceRequest request) {
+        return ApiResponse.ok(salaryAdvanceService.update(id, request));
     }
 
     @PostMapping("/grant")

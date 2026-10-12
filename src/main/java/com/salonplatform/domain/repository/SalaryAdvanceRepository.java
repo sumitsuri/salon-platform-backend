@@ -25,11 +25,13 @@ public interface SalaryAdvanceRepository extends JpaRepository<SalaryAdvance, UU
 
     @Query("select a from SalaryAdvance a where a.tenantId = :tenantId"
             + " and (:status is null or a.status = :status)"
+            + " and (:excludePending = false or a.status <> com.salonplatform.domain.enums.AdvanceStatus.PENDING)"
             + " and (:staffId is null or a.staffId = :staffId)"
             + " and (:branchId is null or a.branchId = :branchId)")
     Page<SalaryAdvance> search(
             @Param("tenantId") UUID tenantId,
             @Param("status") AdvanceStatus status,
+            @Param("excludePending") boolean excludePending,
             @Param("staffId") UUID staffId,
             @Param("branchId") UUID branchId,
             Pageable pageable);

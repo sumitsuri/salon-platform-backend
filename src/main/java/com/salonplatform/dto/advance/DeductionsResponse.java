@@ -24,6 +24,8 @@ public class DeductionsResponse {
         private String staffName;
         private String branchName;
         private BigDecimal baseSalary;
+        /** Pro-rated salary for this month up to today. */
+        private BigDecimal proRatedSalary;
         /** Scheduled (not yet deducted) installments this month. */
         private BigDecimal dueAmount;
         private BigDecimal deductedAmount;

@@ -120,10 +120,18 @@ public class AttendanceAnalyticsService {
                     .max(Comparator.comparing(AttendanceRecord::getWorkDate)
                             .thenComparing(r -> r.getEntryTime() != null ? r.getEntryTime() : Instant.EPOCH));
 
+            BigDecimal monthlySalary = staff.getSalary() != null
+                    ? staff.getSalary().setScale(2, RoundingMode.HALF_UP) : null;
+            LocalDate periodEnd = effectiveEnd(staff, end);
+            long leaveDays = leaveDaysByStaff.getOrDefault(staff.getId(), 0L);
+            BigDecimal proRatedSalary = StaffSalaryProRating.proRated(monthlySalary, daysPresent, leaveDays, periodEnd);
+
             return StaffAttendanceSummary.builder()
                     .staffId(staff.getId().toString())
                     .staffName(staff.getName())
                     .branchName(branchName)
+                    .monthlySalary(monthlySalary)
+                    .proRatedSalary(proRatedSalary)
                     .daysPresent(daysPresent)
                     .daysLeave(leaveDaysByStaff.getOrDefault(staff.getId(), 0L))
                     .totalHours(BigDecimal.valueOf(totalHours).setScale(1, RoundingMode.HALF_UP))

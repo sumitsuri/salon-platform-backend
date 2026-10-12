@@ -18,6 +18,8 @@ public class EmployeeAdvanceSummary {
     private String role;
     private boolean active;
     private BigDecimal monthlySalary;
+    /** Pro-rated salary for the current month up to today (present + approved leave). */
+    private BigDecimal proRatedSalary;
     private int requestCount;
     private int approvedCount;
     private int rejectedCount;

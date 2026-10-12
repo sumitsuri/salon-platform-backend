@@ -12,6 +12,9 @@ public class StaffAttendanceSummary {
     private String staffId;
     private String staffName;
     private String branchName;
+    private BigDecimal monthlySalary;
+    /** Pro-rated salary for the selected period (denominator = month of period end). */
+    private BigDecimal proRatedSalary;
     private long daysPresent;
     private long daysLeave;
     private BigDecimal totalHours;
