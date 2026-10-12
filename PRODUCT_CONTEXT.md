@@ -104,10 +104,121 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 
 | Role | Features |
 |------|----------|
-| **Platform super admin** | `/platform/overview`, `/platform` tenant list, `/platform/sales/*` pipeline, incoming leads, sales team |
+| **Platform super admin** | `/platform/overview`, `/platform` tenant list, **`/platform/usage`** (customer usage), `/platform/sales/*` pipeline, incoming leads, sales team |
 | **Sales executive** | `/platform/sales` pipeline, `/platform/sales/growth`, lead detail; restricted from tenant admin routes |
 
 Backend: `/api/v1/platform/*` for tenants, users, cross-tenant operations.
+
+#### 4.3.1 Customer usage (platform analytics)
+
+**Product name in UI:** “Customer usage” — adoption and feature-level activity across **all brands** (tenants), with drill-down to branches and users.
+
+| Surface | Route | Purpose |
+|---------|-------|---------|
+| Portfolio | `/platform/usage` | WAU/MAU, platform daily chart, brand list, **brand × app heatmap**, top features |
+| Brand drill-down | `/platform/usage/detail?tenantId={uuid}` | Daily chart, feature breakdown, branches, users; **branch × app heatmap**, **user activity calendar**; filters: date, branch, user, role, search |
+
+**Audience:** `PLATFORM_SUPER_ADMIN` only (`SecurityUtils.assertPlatformAdmin()` on APIs).
+
+**Production URLs:** Platform UI `https://platform.antrahq.com/platform/usage/` · API `https://api.antrahq.com`.
+
+---
+
+##### Data model and ingestion
+
+| Store | Role |
+|-------|------|
+| **`product_events`** | Raw telemetry (source of truth for live analytics). Rows include `tenant_id`, `user_id`, `branch_id`, `role`, `portal`, `event_name`, optional `feature_key`, `route`, `occurred_at`, `session_id`. |
+| **`usage_daily_*` rollups** | `usage_daily_tenant`, `usage_daily_tenant_feature`, `usage_daily_user` — populated by `ProductUsageRollupService` (hourly / on portfolio refresh). Used when raw reads fail or for legacy summary paths. |
+| **`user_usage_snapshot`** | Login counts, last seen, `days_active_28d` (updated from rollups). |
+
+**How events are produced (frontend):**
+
+- `ProductTelemetryTracker` on employee / manager / admin shells records sign-in, session, screen views, feature use.
+- Stable **feature keys** are derived from routes only (brand-agnostic): `frontend/src/lib/product-analytics/route-feature-map.ts` → e.g. `/admin/guest-voice` → `admin.guest_voice`.
+- Ingest: `ProductTelemetryIngestService` → `POST /api/v1/telemetry/events` (see `IngestTelemetryEventRequest`).
+
+**Feature dimension in SQL:** `ProductUsageSqlSupport.featureDimensionSql()` probes `information_schema` for `product_events.feature_key`. If the column is missing (older prod DB until patch runs), SQL uses `event_name` only; otherwise `COALESCE(NULLIF(TRIM(feature_key), ''), event_name)`. Call `usageSql.ensureTelemetrySchema()` at the start of portfolio/tenant analytics (via `ProductTelemetrySchemaPatch.ensureProductEventsColumnsPublic()`).
+
+**Do not** reference a non-existent `route` column in analytics GROUP BY (removed from prod-safe paths).
+
+---
+
+##### Backend APIs and services
+
+| Endpoint | Response | Service |
+|----------|----------|---------|
+| `GET /api/v1/platform/usage/portfolio?from&to&includeDemo&tenantId&branchId` | `PlatformUsagePortfolioResponse` | `PlatformUsageAnalyticsService.portfolio()` |
+| `GET /api/v1/platform/usage/tenants/{tenantId}/analytics?from&to&branchId&userId&role&search` | `PlatformUsageAnalyticsResponse` | `tenantAnalytics()` — resilient sections (`safeDailyTenant`, `safeFeatureUsage`, …) |
+| `GET /api/v1/platform/usage/heatmap?from&to&includeDemo&tenantId&branchId` | `PlatformUsageHeatmapResponse` | `heatmap()` — portal totals; tenant×portal grid (portfolio); branch×portal + user×day when `tenantId` set |
+| `GET /api/v1/platform/usage/summary?from&to&includeDemo` | Legacy rollup-oriented summary | `PlatformUsageService` |
+| `GET /api/v1/platform/usage/telemetry-status` | Pipeline health | `ProductTelemetryStatusService` |
+
+**Core class:** `PlatformUsageAnalyticsService` — filters via inner `EventFilter` / `FilterSql` (`AND tenant_id = ?`, branch, user, role, search, demo exclusion).
+
+**Date ranges:**
+
+- Frontend sends ISO instants from **local calendar bounds** (`toIsoDateTimeRange` in `frontend/src/lib/date-range.ts`) so “Today” / “Last 60 days” match operator timezone (e.g. IST).
+- Backend `normalizeRange()` maps request instants to **UTC date** bounds (`InstantRange.fromDates`) for SQL `occurred_at >= ? AND occurred_at < ?`.
+
+**Portfolio logic (high level):** Count raw `product_events` in range; if table ready, build from live events + optional rollup refresh; if aggregates return 0 but raw count &gt; 0, rebuild via resilient path; if table unavailable and no raw rows, fall back to `portfolioFromRollups()`.
+
+---
+
+##### Frontend modules
+
+| File | Responsibility |
+|------|----------------|
+| `frontend/src/app/platform/usage/page.tsx` | Portfolio entry |
+| `frontend/src/app/platform/usage/detail/page.tsx` | Brand drill-down (`tenantId` query) |
+| `PlatformUsagePortfolioView.tsx` / `PlatformUsageTenantView.tsx` | Charts (MetricChart), tables, filters |
+| `PlatformUsageFilterBar.tsx` | Date, branch, user, role, search |
+| `feature-labels.ts` + `lib/product-analytics/feature-key-labels.ts` | **Display names** for keys (e.g. `admin.guest_voice` → “Guest voice”) — keys stay dotted in DB only |
+| `UsageHeatmap.tsx` / `PlatformUsageHeatmapSection.tsx` | Heatmap grids and drill-down (portfolio: click brand cell → detail; tenant: branch cell sets `branchId` in URL) |
+| `frontend/src/lib/api.ts` | `getPlatformUsagePortfolio`, `getPlatformUsageAnalytics`, `getPlatformUsageHeatmap` |
+
+**UI rules for feature names:** Tables and charts show **catalog labels**, not raw `admin.home` strings. Optional tooltip (`title`) holds the stable key for support. Subtitle on tenant feature rows may show “Admin app” / “Manager app” via `featurePortalLabel()`.
+
+---
+
+##### Known pitfalls (read before changing usage SQL)
+
+1. **Java text-block concatenation** — Patterns like `""" SELECT """ + expr` or `""" ... """ + sql.whereClause + """ GROUP BY ... """` can compile to invalid SQL (`SELECTCOALESCE`, `?GROUP BY`). **Always** use explicit strings: `"SELECT " + dim + " ..." + sql.whereClause + " GROUP BY ..."`. This caused prod symptoms: header showed correct **totalEvents** / WAU while daily chart, features, and user rows were **empty** (failed queries caught in `safe*` methods).
+2. **Partial failure** — Summary queries (`COUNT(*)`, `COUNT(DISTINCT user_id)`) can succeed while breakdown queries fail; UI looks “half broken”. Use verification scripts after changes.
+3. **Deploy timing** — Backend EC2 restart may return **502** for ~30–60s; heatmap may 500 until new container is live.
+4. **Demo tenants** — Portfolio `includeDemo` checkbox; demo tenant IDs excluded from platform filters when unchecked (`EventFilter.platform`).
+
+---
+
+##### Verification before prod (required for usage work)
+
+Scripts live in monorepo `salon-platform/scripts/` (run from dev machine; not deployed):
+
+```bash
+# 1) SQL patterns against local Docker Postgres (feature_key present/absent)
+bash salon-platform/scripts/verify-usage-sql-local.sh
+
+# 2) API contract — local or prod
+API_BASE=http://localhost:8089 MYSTIC_TENANT_ID=<tenant-with-events> \
+  node salon-platform/scripts/verify-tenant-usage.mjs
+
+# Prod (default API https://api.antrahq.com, Mystic tenant id in script)
+node salon-platform/scripts/verify-tenant-usage.mjs
+```
+
+**Pass criteria when `totalEvents > 0`:** `sum(daily.eventCount) > 0`, `featureUsage.length > 0`, `activeUsersInRange > 0` (and ideally user rows with `eventsInRange > 0` when event `user_id`s match `users` table).
+
+**Typical deploy order for usage features:** backend first (`salon-platform-backend` `main`) → wait for GitHub Actions + SSM → run prod verify script → frontend if UI/API types changed → hard refresh platform (CloudFront).
+
+---
+
+##### Key commits (reference)
+
+| Area | Notes |
+|------|--------|
+| SQL concatenation fix | `PlatformUsageAnalyticsService` + `ProductUsageSqlSupport` — explicit SQL strings |
+| Heatmap API | `PlatformUsageHeatmapResponse`, `GET .../usage/heatmap` |
+| Labels + heatmap UI | `feature-key-labels.ts`, `PlatformUsageHeatmapSection` |
 
 ---
 
@@ -177,6 +288,7 @@ Patterns consistently used in this codebase — **follow these for new work**.
 - **Authorization:** `SecurityUtils.assertBrandAdminOrAbove()`, `isManagerRole()`, `assertBranchAccess(branchId)` — enforce server-side, not only UI. Branch target performance uses manager branch scoping (same idea as `AnalyticsService.resolveBranchIds`).
 - **Manager expenditure:** restrict category on create; filter list by `managerRecorded`.
 - **Analytics:** `GET /api/v1/analytics/dashboard`, `.../staff-promo-sales`, etc. — date range via `startDate` / `endDate`.
+- **Platform customer usage:** `PlatformUsageAnalyticsService`, `ProductUsageSqlSupport`, `ProductUsageRollupService`, `ProductTelemetryIngestService` — see **§4.3.1**; never glue SQL with adjacent text blocks without explicit spaces before `GROUP BY` / function names.
 - **Scratch gating:** `Branch.scratchCardEnabled` — when false, **no new card issue** and empty active-campaign list for managers; redeem allowed for a card already tied to the current bill.
 - **Local profile:** `mvn spring-boot:run -Dspring-boot.run.profiles=local` (requires Docker Postgres/Redis from `docker compose up -d` at monorepo root).
 
@@ -229,6 +341,9 @@ Patterns consistently used in this codebase — **follow these for new work**.
 ```bash
 mvn test
 # optional: mvn -q spring-boot:run -Dspring-boot.run.profiles=local
+# if touching platform usage analytics:
+bash ../scripts/verify-usage-sql-local.sh   # from repo root scripts path on dev machine
+node ../scripts/verify-tenant-usage.mjs     # with API_BASE pointing at local or staging API
 ```
 
 **Frontend** (from `salon-platform/frontend/`):
@@ -342,6 +457,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 | Branch scratch flag | `backend/.../Branch.java` `scratchCardEnabled`, `BranchSchemaPatch` |
 | Expenditure service | `backend/.../ExpenditureService.java` |
 | Staff promo analytics | `backend/.../StaffPromoSalesAnalyticsService.java` |
+| **Platform customer usage** | **§4.3.1** — `PlatformUsageAnalyticsService.java`, `PlatformUsageController.java`, `ProductUsageSqlSupport.java`, `ProductUsageRollupService.java`, `ProductTelemetryIngestService.java`, `route-feature-map.ts`, `frontend/src/modules/platform/usage/*`, `scripts/verify-tenant-usage.mjs`, `scripts/verify-usage-sql-local.sh` |
 | Deploy workflows | `frontend/.github/workflows/deploy.yml`, `backend/.github/workflows/deploy.yml` |
 
 ---
@@ -367,6 +483,7 @@ When asking for enhancements:
 2. Reference **branch vs brand scope** and **mobile vs desktop**.  
 3. Call out if change needs **backend + frontend** or UI-only.  
 4. For manager money features, check **expenditure** and **incentive** rules above.  
-5. After implementation, run **build/test** and follow **§7** for prod push.
+5. For **platform customer usage** (`/platform/usage`), read **§4.3.1** and run verify scripts before pushing backend analytics changes.  
+6. After implementation, run **build/test** and follow **§7** for prod push.
 
 Keep this file updated when adding major modules or changing deploy topology.
