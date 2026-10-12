@@ -4,6 +4,7 @@ import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.domain.enums.LeaveStatus;
 import com.salonplatform.dto.common.PageResponse;
 import com.salonplatform.dto.leave.CreateLeaveRequest;
+import com.salonplatform.dto.leave.DecideLeaveRequest;
 import com.salonplatform.dto.leave.LeaveListFilter;
 import com.salonplatform.dto.leave.LeaveResponse;
 import com.salonplatform.service.LeaveService;
@@ -28,14 +29,27 @@ public class LeaveController {
         return ApiResponse.ok(leaveService.create(request));
     }
 
+    /** The body is optional so existing callers that post nothing keep working. */
     @PostMapping("/{leaveId}/approve")
-    public ApiResponse<LeaveResponse> approve(@PathVariable UUID leaveId) {
-        return ApiResponse.ok(leaveService.approve(leaveId));
+    public ApiResponse<LeaveResponse> approve(
+            @PathVariable UUID leaveId, @Valid @RequestBody(required = false) DecideLeaveRequest request) {
+        return ApiResponse.ok(leaveService.approve(leaveId, request != null ? request.getNote() : null));
     }
 
     @PostMapping("/{leaveId}/reject")
-    public ApiResponse<LeaveResponse> reject(@PathVariable UUID leaveId) {
-        return ApiResponse.ok(leaveService.reject(leaveId));
+    public ApiResponse<LeaveResponse> reject(
+            @PathVariable UUID leaveId, @Valid @RequestBody(required = false) DecideLeaveRequest request) {
+        return ApiResponse.ok(leaveService.reject(leaveId, request != null ? request.getNote() : null));
+    }
+
+    @PostMapping("/{leaveId}/cancel")
+    public ApiResponse<LeaveResponse> cancel(@PathVariable UUID leaveId) {
+        return ApiResponse.ok(leaveService.cancel(leaveId));
+    }
+
+    @GetMapping("/pending")
+    public ApiResponse<List<LeaveResponse>> pending(@RequestParam(required = false) UUID branchId) {
+        return ApiResponse.ok(leaveService.listPending(branchId));
     }
 
     @GetMapping

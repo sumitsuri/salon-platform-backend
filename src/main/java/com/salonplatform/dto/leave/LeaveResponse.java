@@ -23,4 +23,10 @@ public class LeaveResponse {
     private LeaveStatus status;
     private String reason;
     private Instant createdAt;
+    /** Calendar days requested (half days count as 0.5). */
+    private double days;
+    private String decisionNote;
+    private Instant decidedAt;
+    /** Approved leave days this calendar year — only filled for pending requests, to inform the decision. */
+    private Double staffApprovedDaysThisYear;
 }

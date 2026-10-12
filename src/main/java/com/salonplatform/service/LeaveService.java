@@ -65,6 +65,14 @@ public class LeaveService {
         if (request.getEndDate().isBefore(request.getStartDate())) {
             throw new BadRequestException("End date must be on or after start date");
         }
+        boolean overlaps = leaveRepository
+                .findByStaffIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(
+                        staff.getId(), request.getEndDate(), request.getStartDate())
+                .stream()
+                .anyMatch(l -> l.getStatus() == LeaveStatus.PENDING || l.getStatus() == LeaveStatus.APPROVED);
+        if (overlaps) {
+            throw new BadRequestException("A leave request already covers some of these dates.");
+        }
 
         LeaveStatus initialStatus;
         if (SecurityUtils.isSalonStaff()) {
@@ -93,15 +101,111 @@ public class LeaveService {
 
     @Transactional
     public LeaveResponse approve(UUID leaveId) {
-        return updateStatus(leaveId, LeaveStatus.APPROVED);
+        return updateStatus(leaveId, LeaveStatus.APPROVED, null);
+    }
+
+    @Transactional
+    public LeaveResponse approve(UUID leaveId, String note) {
+        return updateStatus(leaveId, LeaveStatus.APPROVED, note);
     }
 
     @Transactional
     public LeaveResponse reject(UUID leaveId) {
-        return updateStatus(leaveId, LeaveStatus.REJECTED);
+        return updateStatus(leaveId, LeaveStatus.REJECTED, null);
     }
 
-    private LeaveResponse updateStatus(UUID leaveId, LeaveStatus status) {
+    @Transactional
+    public LeaveResponse reject(UUID leaveId, String note) {
+        return updateStatus(leaveId, LeaveStatus.REJECTED, note);
+    }
+
+    /**
+     * Withdraws a leave. An employee can withdraw their own request while it is still pending; a manager or the
+     * brand admin can withdraw a pending or approved leave that has not started.
+     */
+    @Transactional
+    public LeaveResponse cancel(UUID leaveId) {
+        UUID tenantId = SecurityUtils.requireTenantId();
+        LeaveRecord record = leaveRepository.findById(leaveId)
+                .orElseThrow(() -> new ResourceNotFoundException("Leave record not found"));
+        if (!record.getTenantId().equals(tenantId)) {
+            throw new ResourceNotFoundException("Leave record not found");
+        }
+        if (SecurityUtils.isSalonStaff()) {
+            Staff self = staffRepository.findByTenantIdAndUserId(tenantId, SecurityUtils.currentUserId())
+                    .orElseThrow(() -> new BadRequestException("No employee profile linked to this login"));
+            if (!self.getId().equals(record.getStaffId())) {
+                throw new com.salonplatform.exception.ForbiddenException("You can only cancel your own leave");
+            }
+            if (record.getStatus() != LeaveStatus.PENDING) {
+                throw new BadRequestException("Only a request that is still waiting for a decision can be cancelled.");
+            }
+        } else {
+            SecurityUtils.assertManagerOrBrandAdmin();
+            if (SecurityUtils.isManagerRole()) {
+                SecurityUtils.assertBranchAccess(record.getBranchId());
+            }
+            boolean startable = record.getStatus() == LeaveStatus.PENDING
+                    || (record.getStatus() == LeaveStatus.APPROVED && record.getStartDate().isAfter(LocalDate.now(ZONE)));
+            if (!startable) {
+                throw new BadRequestException("Only a pending leave, or an approved leave that has not started, can be cancelled.");
+            }
+        }
+        record.setStatus(LeaveStatus.CANCELLED);
+        leaveRepository.save(record);
+        Staff staff = staffRepository.findById(record.getStaffId()).orElseThrow();
+        return toResponse(record, staff);
+    }
+
+    /** Requests waiting for a decision, each with how much leave the employee has already had this year. */
+    public List<LeaveResponse> listPending(UUID branchId) {
+        UUID tenantId = SecurityUtils.requireTenantId();
+        SecurityUtils.assertManagerOrBrandAdmin();
+        if (SecurityUtils.isManagerRole()) {
+            UUID own = SecurityUtils.currentUser().getBranchId();
+            SecurityUtils.assertBranchAccess(own);
+            branchId = own;
+        } else if (branchId != null) {
+            SecurityUtils.assertBranchAccess(branchId);
+        }
+        final UUID scope = branchId;
+        List<LeaveRecord> pending = leaveRepository.findByTenantIdAndStatus(tenantId, LeaveStatus.PENDING).stream()
+                .filter(l -> scope == null || scope.equals(l.getBranchId()))
+                .sorted(Comparator.comparing(LeaveRecord::getStartDate))
+                .toList();
+        LocalDate yearStart = LocalDate.now(ZONE).withDayOfYear(1);
+        LocalDate yearEnd = yearStart.plusYears(1).minusDays(1);
+        java.util.Map<UUID, Double> ytd = new java.util.HashMap<>();
+        List<LeaveResponse> out = new java.util.ArrayList<>();
+        for (LeaveRecord r : pending) {
+            Staff s = staffRepository.findById(r.getStaffId()).orElse(null);
+            if (s == null) {
+                continue;
+            }
+            LeaveResponse resp = toResponse(r, s);
+            resp.setStaffApprovedDaysThisYear(ytd.computeIfAbsent(s.getId(), id -> approvedDays(id, yearStart, yearEnd)));
+            out.add(resp);
+        }
+        return out;
+    }
+
+    private double approvedDays(UUID staffId, LocalDate from, LocalDate to) {
+        double days = 0;
+        for (LeaveRecord l : leaveRepository.findByStaffIdAndStartDateLessThanEqualAndEndDateGreaterThanEqual(staffId, to, from)) {
+            if (l.getStatus() == LeaveStatus.APPROVED) {
+                days += leaveDays(l.getStartDate().isBefore(from) ? from : l.getStartDate(),
+                        l.getEndDate().isAfter(to) ? to : l.getEndDate(), l.getLeaveType());
+            }
+        }
+        return days;
+    }
+
+    private static double leaveDays(LocalDate start, LocalDate end, com.salonplatform.domain.enums.LeaveType type) {
+        long n = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
+        return n * (type == com.salonplatform.domain.enums.LeaveType.HALF_DAY ? 0.5 : 1.0);
+    }
+
+    private LeaveResponse updateStatus(UUID leaveId, LeaveStatus status, String note) {
         UUID tenantId = SecurityUtils.requireTenantId();
         UserPrincipal user = SecurityUtils.currentUser();
         if (!SecurityUtils.isManagerRole() && !SecurityUtils.isBrandAdmin()) {
@@ -116,8 +220,13 @@ public class LeaveService {
         if (SecurityUtils.isManagerRole()) {
             SecurityUtils.assertBranchAccess(record.getBranchId());
         }
+        if (record.getStatus() == LeaveStatus.CANCELLED) {
+            throw new BadRequestException("This leave request was cancelled.");
+        }
         record.setStatus(status);
         record.setApprovedByUserId(user.getId());
+        record.setDecisionNote(note != null && !note.isBlank() ? note.trim() : null);
+        record.setDecidedAt(java.time.Instant.now());
         leaveRepository.save(record);
 
         Staff staff = staffRepository.findById(record.getStaffId()).orElseThrow();
@@ -239,6 +348,9 @@ public class LeaveService {
                 .status(record.getStatus())
                 .reason(record.getReason())
                 .createdAt(record.getCreatedAt())
+                .days(leaveDays(record.getStartDate(), record.getEndDate(), record.getLeaveType()))
+                .decisionNote(record.getDecisionNote())
+                .decidedAt(record.getDecidedAt())
                 .build();
     }
 }

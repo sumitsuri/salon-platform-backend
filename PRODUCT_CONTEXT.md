@@ -96,6 +96,14 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 
 **Expenditure (admin):** Full ledger — rent, employee salary, product cost, accommodation, miscellaneous; payroll sync endpoint; used in finance P&L.
 
+**Team requests — leave approvals + salary advances (`/admin/requests`, Ops hub tile, banner on `/admin/employees`):**
+- Employees apply from the employee app (`/employee/advance`, Time → Leave); managers/CEO decide. Leave: managers (branch-scoped) or brand admin approve/reject with an optional note; employees can cancel their own *pending* leave (`CANCELLED`); overlapping leave is refused.
+- Advances are **owner-only** (`assertBrandAdmin`). Revolving budget: `available = pool − SCHEDULED installments`, so repayments free the budget again. Fairness knobs (`salary_advance_policies`): per-employee share of pool %, salary multiple, max installments, cooldown days, enable/pause. Approval takes a `PESSIMISTIC_WRITE` lock on the policy row so two approvals cannot overspend. Approved amount may be lower than asked; installments split equally (remainder on last); first deduction defaults to next month (IST). Repeat requesters (≥3 in 180 days) are flagged.
+- Deductions tab: "mark month deducted" settles due installments; individual installments can be waived; an advance completes when nothing is left to recover. Advances are **not** auto-applied to payroll/P&L — "after advance" = salary minus deductions only.
+- Schema: new tables come from `ddl-auto: update`; `SalaryAdvanceSchemaPatch` adds `leave_records.decision_note/decided_at` and recreates `leave_records_status_check` to include `CANCELLED` (Hibernate never alters existing CHECK constraints).
+- Copy: English base + Hindi for employee-facing strings; other locales fall back to English.
+- Local employee-app testing: `/employee/*` redirects off plain `localhost`. Run `bash scripts/dev-server.sh restart` with session-only `APP_CORS_ALLOWED_ORIGINS=<defaults>,http://employee.localhost:3000 NEXT_PUBLIC_API_URL=http://127.1:8080 NEXT_PUBLIC_EMPLOYEE_HOST=employee.localhost NEXT_PUBLIC_EMPLOYEE_APP_URL=http://employee.localhost:3000`, then browse `http://employee.localhost:3000/employee/`. Restart without those vars afterwards.
+
 ---
 
 ### 4.3 Platform app (`/platform/*`)

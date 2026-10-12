@@ -53,6 +53,12 @@ public class LeaveRecord {
 
     private UUID approvedByUserId;
 
+    /** Why a request was approved/rejected — shown to the employee. */
+    @Column(length = 500)
+    private String decisionNote;
+
+    private Instant decidedAt;
+
     @CreationTimestamp
     private Instant createdAt;
 

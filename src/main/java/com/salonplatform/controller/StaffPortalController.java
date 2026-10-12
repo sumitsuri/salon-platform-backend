@@ -3,6 +3,9 @@ package com.salonplatform.controller;
 import com.salonplatform.dto.ApiResponse;
 import com.salonplatform.dto.attendance.PunchResult;
 import com.salonplatform.dto.attendance.VerifiedPunchRequest;
+import com.salonplatform.dto.advance.AdvanceResponse;
+import com.salonplatform.dto.advance.CreateAdvanceRequest;
+import com.salonplatform.dto.advance.MyAdvancesResponse;
 import com.salonplatform.dto.leave.CreateLeaveRequest;
 import com.salonplatform.dto.leave.LeaveResponse;
 import com.salonplatform.dto.staffportal.*;
@@ -26,6 +29,7 @@ import java.util.List;
 public class StaffPortalController {
 
     private final StaffPortalService staffPortalService;
+    private final com.salonplatform.service.SalaryAdvanceService salaryAdvanceService;
     private final AttendancePhotoStorageService photoStorage;
 
     @GetMapping("/me")
@@ -111,6 +115,26 @@ public class StaffPortalController {
     @PostMapping("/leaves")
     public ApiResponse<LeaveResponse> applyLeave(@Valid @RequestBody CreateLeaveRequest request) {
         return ApiResponse.ok(staffPortalService.applyLeave(request));
+    }
+
+    @PostMapping("/leaves/{leaveId}/cancel")
+    public ApiResponse<LeaveResponse> cancelLeave(@PathVariable java.util.UUID leaveId) {
+        return ApiResponse.ok(staffPortalService.cancelLeave(leaveId));
+    }
+
+    @GetMapping("/advances")
+    public ApiResponse<MyAdvancesResponse> advances() {
+        return ApiResponse.ok(salaryAdvanceService.myAdvances());
+    }
+
+    @PostMapping("/advances")
+    public ApiResponse<AdvanceResponse> requestAdvance(@Valid @RequestBody CreateAdvanceRequest request) {
+        return ApiResponse.ok(salaryAdvanceService.request(request));
+    }
+
+    @PostMapping("/advances/{advanceId}/cancel")
+    public ApiResponse<AdvanceResponse> cancelAdvance(@PathVariable java.util.UUID advanceId) {
+        return ApiResponse.ok(salaryAdvanceService.cancel(advanceId));
     }
 
     @GetMapping("/goals")

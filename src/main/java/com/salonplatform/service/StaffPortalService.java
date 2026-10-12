@@ -342,6 +342,11 @@ public class StaffPortalService {
         return leaveService.create(request);
     }
 
+    public LeaveResponse cancelLeave(UUID leaveId) {
+        staffAccessService.requireCurrentStaff();
+        return leaveService.cancel(leaveId);
+    }
+
     public List<LeaveResponse> myLeaves() {
         Staff staff = staffAccessService.requireCurrentStaff();
         return leaveService.listForStaff(staff.getId());
