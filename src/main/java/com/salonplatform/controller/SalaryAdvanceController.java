@@ -48,6 +48,11 @@ public class SalaryAdvanceController {
         return ApiResponse.ok(salaryAdvanceService.employeeSummaries(branchId));
     }
 
+    @PostMapping("/grant")
+    public ApiResponse<AdvanceResponse> grant(@Valid @RequestBody GrantAdvanceRequest request) {
+        return ApiResponse.ok(salaryAdvanceService.grant(request));
+    }
+
     @PostMapping("/{id}/approve")
     public ApiResponse<AdvanceResponse> approve(
             @PathVariable UUID id, @Valid @RequestBody(required = false) DecideAdvanceRequest request) {

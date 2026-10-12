@@ -213,13 +213,50 @@ public class SalaryAdvanceService {
     }
 
     @Transactional
+    public AdvanceResponse grant(GrantAdvanceRequest request) {
+        SecurityUtils.assertBrandAdmin();
+        UUID tenantId = SecurityUtils.requireTenantId();
+        SalaryAdvancePolicy policy = requireConfiguredPolicyForUpdate(tenantId);
+        Staff staff = staffRepository.findById(request.getStaffId())
+                .filter(s -> s.getTenantId().equals(tenantId))
+                .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
+
+        BigDecimal amount = SalaryAdvanceRules.money(request.getAmount());
+        int installments = request.getInstallments();
+        assertInstallmentCount(installments, policy);
+        LocalDate firstMonth = resolveFirstDeductionMonth(request.getFirstDeductionMonth());
+        assertGrantWithinBudget(staff, amount, policy, tenantId);
+
+        String reason = request.getReason() != null && !request.getReason().isBlank()
+                ? request.getReason().trim()
+                : "Salary advance recorded by your manager.";
+
+        SalaryAdvance advance = advanceRepository.save(SalaryAdvance.builder()
+                .tenantId(tenantId)
+                .branchId(staff.getBranchId())
+                .staffId(staff.getId())
+                .requestedAmount(amount)
+                .requestedInstallments(installments)
+                .reason(reason)
+                .status(AdvanceStatus.APPROVED)
+                .approvedAmount(amount)
+                .approvedInstallments(installments)
+                .firstDeductionMonth(firstMonth)
+                .createdByUserId(SecurityUtils.currentUserId())
+                .build());
+        stampDecision(advance, request.getNote());
+        advanceRepository.save(advance);
+        createScheduledInstallments(advance.getId(), tenantId, staff.getId(), amount, installments, firstMonth);
+        auditService.log("ADVANCE_GRANTED", "SalaryAdvance", advance.getId(),
+                staff.getName() + ": " + rupees(amount) + " over " + installments + " months (owner recorded)");
+        return toResponses(List.of(advance), true).get(0);
+    }
+
+    @Transactional
     public AdvanceResponse approve(UUID advanceId, DecideAdvanceRequest request) {
         SecurityUtils.assertBrandAdmin();
         UUID tenantId = SecurityUtils.requireTenantId();
-        // Lock the brand's budget row first so two decisions cannot both spend the same money.
-        SalaryAdvancePolicy policy = policyRepository.findByTenantIdForUpdate(tenantId)
-                .filter(p -> p.getPoolAmount().signum() > 0)
-                .orElseThrow(() -> new BadRequestException("Set an advance budget before approving requests."));
+        SalaryAdvancePolicy policy = requireConfiguredPolicyForUpdate(tenantId);
         SalaryAdvance advance = requireAdvance(tenantId, advanceId);
         if (advance.getStatus() != AdvanceStatus.PENDING) {
             throw new BadRequestException("This request has already been decided.");
@@ -231,51 +268,14 @@ public class SalaryAdvanceService {
             throw new BadRequestException("You cannot approve more than the " + rupees(advance.getRequestedAmount()) + " requested.");
         }
         int installments = request.getInstallments() != null ? request.getInstallments() : advance.getRequestedInstallments();
-        if (installments > policy.getMaxInstallments()) {
-            throw new BadRequestException("Repayment can be spread over at most " + policy.getMaxInstallments() + " months.");
-        }
+        assertInstallmentCount(installments, policy);
 
         Staff staff = staffRepository.findById(advance.getStaffId())
                 .orElseThrow(() -> new ResourceNotFoundException("Staff not found"));
-        BigDecimal outstandingTotal = installmentRepository.sumOutstanding(tenantId);
-        BigDecimal staffOutstanding = installmentRepository.sumOutstandingForStaff(staff.getId());
+        assertGrantWithinBudget(staff, amount, policy, tenantId);
+        LocalDate firstMonth = resolveFirstDeductionMonth(request.getFirstDeductionMonth());
 
-        BigDecimal available = SalaryAdvanceRules.poolAvailable(policy.getPoolAmount(), outstandingTotal);
-        if (amount.compareTo(available) > 0) {
-            throw new BadRequestException("Only " + rupees(available) + " is left in the advance budget.");
-        }
-        BigDecimal cap = SalaryAdvanceRules.perEmployeeCap(policy.getPoolAmount(), policy.getMaxPoolSharePercent());
-        if (staffOutstanding.add(amount).compareTo(cap) > 0) {
-            throw new BadRequestException(staff.getName() + " already holds " + rupees(staffOutstanding)
-                    + "; this would exceed the per-employee limit of " + rupees(cap) + ".");
-        }
-        if (staff.getSalary() != null && staff.getSalary().signum() > 0) {
-            BigDecimal salaryCap = staff.getSalary().multiply(policy.getMaxSalaryMultiple());
-            if (staffOutstanding.add(amount).compareTo(salaryCap) > 0) {
-                throw new BadRequestException("This would take " + staff.getName() + " above " + policy.getMaxSalaryMultiple().stripTrailingZeros().toPlainString()
-                        + "× their monthly salary (" + rupees(salaryCap) + ").");
-            }
-        }
-
-        LocalDate today = LocalDate.now(ZONE);
-        LocalDate firstMonth = request.getFirstDeductionMonth() != null
-                ? SalaryAdvanceRules.startOfMonth(request.getFirstDeductionMonth())
-                : SalaryAdvanceRules.firstOfNextMonth(today);
-        if (firstMonth.isBefore(SalaryAdvanceRules.startOfMonth(today))) {
-            throw new BadRequestException("The first deduction cannot be in a past month.");
-        }
-
-        List<BigDecimal> parts = SalaryAdvanceRules.splitInstallments(amount, installments);
-        for (int i = 0; i < parts.size(); i++) {
-            installmentRepository.save(SalaryAdvanceInstallment.builder()
-                    .advanceId(advance.getId())
-                    .tenantId(tenantId)
-                    .staffId(staff.getId())
-                    .dueMonth(firstMonth.plusMonths(i))
-                    .amount(parts.get(i))
-                    .status(InstallmentStatus.SCHEDULED)
-                    .build());
-        }
+        createScheduledInstallments(advance.getId(), tenantId, staff.getId(), amount, installments, firstMonth);
         advance.setStatus(AdvanceStatus.APPROVED);
         advance.setApprovedAmount(amount);
         advance.setApprovedInstallments(installments);
@@ -596,9 +596,22 @@ public class SalaryAdvanceService {
                     .settled(SalaryAdvanceRules.money(sum(parts, InstallmentStatus.DEDUCTED).add(sum(parts, InstallmentStatus.WAIVED))))
                     .installments(parts.stream().map(this::toInstallment).toList())
                     .requesterHistory(a.getStatus() == AdvanceStatus.PENDING ? history.get(a.getStaffId()) : null)
+                    .recordedOnBehalf(isRecordedOnBehalf(a, s))
                     .build());
         }
         return out;
+    }
+
+    private static boolean isRecordedOnBehalf(SalaryAdvance advance, Staff staff) {
+        UUID creator = advance.getCreatedByUserId();
+        if (creator == null) {
+            return false;
+        }
+        if (staff != null && staff.getUserId() != null) {
+            return !creator.equals(staff.getUserId());
+        }
+        return advance.getDecidedAt() != null && advance.getCreatedAt() != null
+                && !advance.getDecidedAt().isBefore(advance.getCreatedAt());
     }
 
     private AdvanceInstallmentResponse toInstallment(SalaryAdvanceInstallment i) {
@@ -643,6 +656,66 @@ public class SalaryAdvanceService {
         advance.setDecisionNote(note != null && !note.isBlank() ? note.trim() : null);
         advance.setDecidedByUserId(SecurityUtils.currentUserId());
         advance.setDecidedAt(Instant.now());
+    }
+
+    private SalaryAdvancePolicy requireConfiguredPolicyForUpdate(UUID tenantId) {
+        return policyRepository.findByTenantIdForUpdate(tenantId)
+                .filter(p -> p.getPoolAmount().signum() > 0)
+                .orElseThrow(() -> new BadRequestException("Set an advance budget before approving requests."));
+    }
+
+    private static void assertInstallmentCount(int installments, SalaryAdvancePolicy policy) {
+        if (installments > policy.getMaxInstallments()) {
+            throw new BadRequestException("Repayment can be spread over at most " + policy.getMaxInstallments() + " months.");
+        }
+    }
+
+    private LocalDate resolveFirstDeductionMonth(LocalDate requested) {
+        LocalDate today = LocalDate.now(ZONE);
+        LocalDate firstMonth = requested != null
+                ? SalaryAdvanceRules.startOfMonth(requested)
+                : SalaryAdvanceRules.firstOfNextMonth(today);
+        if (firstMonth.isBefore(SalaryAdvanceRules.startOfMonth(today))) {
+            throw new BadRequestException("The first deduction cannot be in a past month.");
+        }
+        return firstMonth;
+    }
+
+    private void assertGrantWithinBudget(Staff staff, BigDecimal amount, SalaryAdvancePolicy policy, UUID tenantId) {
+        BigDecimal outstandingTotal = installmentRepository.sumOutstanding(tenantId);
+        BigDecimal staffOutstanding = installmentRepository.sumOutstandingForStaff(staff.getId());
+
+        BigDecimal available = SalaryAdvanceRules.poolAvailable(policy.getPoolAmount(), outstandingTotal);
+        if (amount.compareTo(available) > 0) {
+            throw new BadRequestException("Only " + rupees(available) + " is left in the advance budget.");
+        }
+        BigDecimal cap = SalaryAdvanceRules.perEmployeeCap(policy.getPoolAmount(), policy.getMaxPoolSharePercent());
+        if (staffOutstanding.add(amount).compareTo(cap) > 0) {
+            throw new BadRequestException(staff.getName() + " already holds " + rupees(staffOutstanding)
+                    + "; this would exceed the per-employee limit of " + rupees(cap) + ".");
+        }
+        if (staff.getSalary() != null && staff.getSalary().signum() > 0) {
+            BigDecimal salaryCap = staff.getSalary().multiply(policy.getMaxSalaryMultiple());
+            if (staffOutstanding.add(amount).compareTo(salaryCap) > 0) {
+                throw new BadRequestException("This would take " + staff.getName() + " above " + policy.getMaxSalaryMultiple().stripTrailingZeros().toPlainString()
+                        + "× their monthly salary (" + rupees(salaryCap) + ").");
+            }
+        }
+    }
+
+    private void createScheduledInstallments(
+            UUID advanceId, UUID tenantId, UUID staffId, BigDecimal amount, int installments, LocalDate firstMonth) {
+        List<BigDecimal> parts = SalaryAdvanceRules.splitInstallments(amount, installments);
+        for (int i = 0; i < parts.size(); i++) {
+            installmentRepository.save(SalaryAdvanceInstallment.builder()
+                    .advanceId(advanceId)
+                    .tenantId(tenantId)
+                    .staffId(staffId)
+                    .dueMonth(firstMonth.plusMonths(i))
+                    .amount(parts.get(i))
+                    .status(InstallmentStatus.SCHEDULED)
+                    .build());
+        }
     }
 
     private SalaryAdvance requireAdvance(UUID tenantId, UUID advanceId) {

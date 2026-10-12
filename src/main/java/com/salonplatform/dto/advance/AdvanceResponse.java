@@ -36,4 +36,6 @@ public class AdvanceResponse {
     private List<AdvanceInstallmentResponse> installments;
     /** Pending requests only: how this employee's earlier requests look, to inform the decision. */
     private EmployeeAdvanceSummary requesterHistory;
+    /** True when the owner/manager recorded this advance without an employee-initiated request. */
+    private boolean recordedOnBehalf;
 }
