@@ -2,10 +2,10 @@ package com.salonplatform.service;
 
 import com.salonplatform.domain.entity.Branch;
 import com.salonplatform.domain.entity.RefreshToken;
+import com.salonplatform.session.ClientInfo;
 import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.entity.User;
 import com.salonplatform.domain.repository.BranchRepository;
-import com.salonplatform.domain.repository.RefreshTokenRepository;
 import com.salonplatform.domain.repository.TenantRepository;
 import com.salonplatform.domain.repository.StaffRepository;
 import com.salonplatform.domain.repository.UserRepository;
@@ -34,7 +34,7 @@ public class AuthService {
 
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final SessionService sessionService;
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
     private final BranchRepository branchRepository;
@@ -42,7 +42,7 @@ public class AuthService {
     private final ProductTelemetryIngestService productTelemetryIngestService;
 
     @Transactional
-    public AuthResponse login(LoginRequest request) {
+    public AuthResponse login(LoginRequest request, ClientInfo client) {
         // Normalise the email (mobile keyboards add capitals and trailing spaces); the user lookup falls back
         // to a case-insensitive match so accounts stored with capitals still sign in. Passwords are compared
         // exactly as typed.
@@ -52,15 +52,13 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(email, password));
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
         assertPortalMatchesRole(request.getPortal(), principal.getRole());
-        String accessToken = jwtTokenProvider.generateAccessToken(authentication);
         String refreshTokenValue = jwtTokenProvider.generateRefreshTokenValue();
 
-        refreshTokenRepository.deleteByUserId(principal.getId());
-        refreshTokenRepository.save(RefreshToken.builder()
-                .userId(principal.getId())
-                .token(refreshTokenValue)
-                .expiresAt(Instant.now().plusMillis(jwtTokenProvider.getRefreshTokenExpiryMs()))
-                .build());
+        // Each sign-in is its own device session; other devices stay signed in.
+        ClientInfo info = (client != null ? client : ClientInfo.unknown()).withPortal(
+                client != null && client.portal() != null ? client.portal() : request.getPortal());
+        RefreshToken session = sessionService.open(principal.getId(), principal.getRole(), refreshTokenValue, info);
+        String accessToken = jwtTokenProvider.generateAccessToken(principal, session.getId());
 
         try {
             productTelemetryIngestService.recordLoginSucceeded(principal, request.getPortal());
@@ -72,19 +70,16 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse refresh(String refreshToken) {
-        RefreshToken token = refreshTokenRepository.findByTokenAndRevokedFalse(refreshToken)
-                .orElseThrow(() -> new BadRequestException("error.refreshToken.invalid"));
-        if (token.getExpiresAt().isBefore(Instant.now())) {
-            throw new BadRequestException("error.refreshToken.expired");
-        }
-        token.setExpiresAt(Instant.now().plusMillis(jwtTokenProvider.getRefreshTokenExpiryMs()));
-        refreshTokenRepository.save(token);
-        User user = userRepository.findById(token.getUserId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        UserPrincipal principal = new UserPrincipal(user);
-        String accessToken = jwtTokenProvider.generateAccessToken(principal);
+    public AuthResponse refresh(String refreshToken, ClientInfo client) {
+        SessionService.Validated validated = sessionService.validateAndTouch(refreshToken, client);
+        UserPrincipal principal = new UserPrincipal(validated.user());
+        String accessToken = jwtTokenProvider.generateAccessToken(principal, validated.session().getId());
         return buildAuthResponse(principal, accessToken, refreshToken);
+    }
+
+    /** Explicit sign-out of one device. */
+    public void logout(String refreshToken) {
+        sessionService.logout(refreshToken);
     }
 
     public AuthResponse me(UserPrincipal principal) {

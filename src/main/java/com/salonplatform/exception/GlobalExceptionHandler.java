@@ -40,6 +40,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, resolve(code, request), code, request);
     }
 
+    @ExceptionHandler(UnauthorizedException.class)
+    public ResponseEntity<Map<String, Object>> handleUnauthorized(
+            UnauthorizedException ex, HttpServletRequest request) {
+        return error(HttpStatus.UNAUTHORIZED, resolve(ex.getMessage(), request), ex.getMessage(), request);
+    }
+
     @ExceptionHandler(ForbiddenException.class)
     public ResponseEntity<Map<String, Object>> handleForbidden(
             ForbiddenException ex, HttpServletRequest request) {

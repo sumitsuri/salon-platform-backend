@@ -28,6 +28,7 @@ public class StaffService {
     private final StaffRepository staffRepository;
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final SessionService sessionService;
 
     @Transactional
     public StaffResponse create(CreateStaffRequest request) {
@@ -99,6 +100,8 @@ public class StaffService {
         Staff staff = requireStaff(tenantId, id);
         applyActive(staff, false);
         staffRepository.save(staff);
+        // A deactivated employee must be signed out of every device, not left on an app that now rejects them.
+        sessionService.revokeAll(staff.getUserId());
     }
 
     @Transactional

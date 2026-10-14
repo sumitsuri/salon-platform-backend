@@ -41,6 +41,7 @@ public class PlatformManagementService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final ProductionTenantGuard productionTenantGuard;
+    private final SessionService sessionService;
 
     @Transactional
     public TenantResponse createTenant(CreateTenantRequest request) {
@@ -87,6 +88,7 @@ public class PlatformManagementService {
         userRepository.findByTenantId(tenantId).forEach(u -> {
             u.setActive(false);
             userRepository.save(u);
+            sessionService.revokeAll(u.getId());
         });
     }
 

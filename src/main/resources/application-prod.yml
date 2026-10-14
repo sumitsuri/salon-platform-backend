@@ -20,7 +20,17 @@ app:
   jwt:
     secret: ${JWT_SECRET}
     access-token-expiry-ms: ${JWT_ACCESS_TOKEN_EXPIRY_MS:900000}        # 15 minutes (silent refresh via refresh token)
-    refresh-token-expiry-ms: ${JWT_REFRESH_TOKEN_EXPIRY_MS:1728000000}   # 20 days — hard logout after this if unused
+    # Idle limit for internal platform staff only (PLATFORM_SUPER_ADMIN, SALES_EXECUTIVE). Everyone else stays
+    # signed in until they sign out, are signed out from Signed-in devices, or an admin ends the session.
+    refresh-token-expiry-ms: ${JWT_REFRESH_TOKEN_EXPIRY_MS:1728000000}   # 20 days idle, platform staff only
+    max-sessions-per-user: ${JWT_MAX_SESSIONS_PER_USER:25}   # oldest-unused device is signed out beyond this
+  auth:
+    # Proxies that append to X-Forwarded-For before the API (prod: ALB + nginx = 2; local dev: none).
+    trusted-proxy-hops: ${AUTH_TRUSTED_PROXY_HOPS:2}
+    geo:
+      # Shows a city/country per signed-in device. Sends the device IP to the lookup service at `url`.
+      enabled: ${AUTH_GEO_ENABLED:true}
+      url: ${AUTH_GEO_URL:https://ipwho.is/{ip}?fields=success,city,region,country}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   public-url: ${PUBLIC_URL:http://localhost}

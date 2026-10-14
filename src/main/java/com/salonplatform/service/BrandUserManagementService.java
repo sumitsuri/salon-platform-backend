@@ -27,6 +27,7 @@ public class BrandUserManagementService {
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
+    private final SessionService sessionService;
 
     public List<PlatformUserResponse> list() {
         SecurityUtils.assertBrandAdminOrAbove();
@@ -67,29 +68,38 @@ public class BrandUserManagementService {
         SecurityUtils.assertBrandAdminOrAbove();
         UUID tenantId = SecurityUtils.requireTenantId();
         User user = requireUser(tenantId, userId);
+        boolean endSessions = false;
 
         if (request.getName() != null) user.setName(request.getName());
         if (request.getEmail() != null) {
             userRepository.findByTenantIdAndEmail(tenantId, request.getEmail())
                     .filter(existing -> !existing.getId().equals(userId))
                     .ifPresent(u -> { throw new BadRequestException("Email already exists"); });
+            if (!request.getEmail().equals(user.getEmail())) endSessions = true;
             user.setEmail(request.getEmail());
         }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
+            endSessions = true;
         }
         if (request.getRole() != null) {
             if (request.getRole() == UserRole.PLATFORM_SUPER_ADMIN) {
                 throw new BadRequestException("Invalid role");
             }
+            if (request.getRole() != user.getRole()) endSessions = true;
             user.setRole(request.getRole());
         }
         UUID branchId = request.getBranchId() != null ? request.getBranchId() : user.getBranchId();
         validateBranchForRole(tenantId, user.getRole(), branchId);
         if (request.getBranchId() != null) user.setBranchId(request.getBranchId());
-        if (request.getActive() != null) user.setActive(request.getActive());
+        if (request.getActive() != null) {
+            if (!request.getActive() && user.isActive()) endSessions = true;
+            user.setActive(request.getActive());
+        }
 
-        return toResponse(userRepository.save(user));
+        User saved = userRepository.save(user);
+        if (endSessions) sessionService.revokeAll(saved.getId());
+        return toResponse(saved);
     }
 
     @Transactional
@@ -102,6 +112,7 @@ public class BrandUserManagementService {
         }
         user.setActive(false);
         userRepository.save(user);
+        sessionService.revokeAll(user.getId());
     }
 
     private User requireUser(UUID tenantId, UUID userId) {

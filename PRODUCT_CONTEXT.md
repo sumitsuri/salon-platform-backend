@@ -44,6 +44,34 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 
 **Admin layout** allows `BRAND_ADMIN` and `PLATFORM_SUPER_ADMIN`. Everyone else is redirected to `/manager`.
 
+### 3.1 Sessions — stay signed in until explicit logout (Oct 2026)
+
+**Rule:** a user stays signed in on a device until they press **Logout**, remove that device from **Settings → Signed-in devices**, or an admin ends the session. No idle timeout, however long the app goes unused. **Exception:** `PLATFORM_SUPER_ADMIN` and `SALES_EXECUTIVE` keep a 20-day sliding idle limit (`app.jwt.refresh-token-expiry-ms`).
+
+**How it works**
+- Access token (JWT, 15 min, carries a `sid` claim = the device's session id) + an opaque refresh token. One `refresh_tokens` row **per device**; a row existing = session live (rows are deleted on logout/revoke; `revoked` is unused). `expires_at` is NULL for non-platform users. The frontend refreshes silently (app load, tab visible, back online, every 10 min, and on a 401).
+- **Logging in never signs other devices out** (before Oct 2026 `login()` deleted all of the user's tokens, so a second phone/browser or a shared account logged the first one out). Cap: `app.jwt.max-sessions-per-user` (25); beyond it the least-recently-used device is dropped.
+- Refresh failures: **401** with code `error.session.revoked` / `error.session.accountDisabled` / `error.refreshToken.expired` means the session really ended (client signs out and shows "You were signed out"). Any other failure (5xx, network, timeout) keeps the user signed in and retries. A retried request that still gets 401 after a *successful* refresh does not sign the user out either.
+- **Self-heal:** `refresh()` lifts a leftover `expires_at` on non-platform sessions, which also revives sessions that had lapsed under the old 20-day rule if the browser still holds the token (unless another login/reset had deleted the row). `RefreshTokenSchemaPatch` drops NOT NULL on `expires_at` and clears it for live non-platform sessions (replaces the old `RefreshTokenExpiryPatch`).
+- **Explicit logout:** `POST /auth/logout {refreshToken}` (idempotent, no auth) deletes that device's session; the client calls it fire-and-forget from `useAuthStore.logout()` (so every Logout button, and the wrong-portal login bounce, ends the server session too) and then clears local state.
+- **Sessions end automatically on:** password reset (`PasswordResetService`), admin password/email/role change or deactivation (`BrandUserManagementService`), staff login change (`StaffAccountService`), employee deactivation (`StaffService.deactivate`), tenant suspension (`PlatformManagementService.deactivateTenant`). `JwtAuthenticationFilter` also ignores tokens of disabled users, so a disabled account stops working immediately, not after ≤15 min.
+
+**Signed-in devices** (`SignedInDevices.tsx`, inside `SettingsSheet`, so every app — employee, manager, admin, platform — has it)
+- `GET /account/sessions` (current device flagged via the `sid` claim), `DELETE /account/sessions/{id}`, `POST /account/sessions/revoke-others`. A user can only see or end their own.
+- Stored per session at sign-in: User-Agent → browser/OS/device type/label ("Chrome on Windows"; `UserAgentParser`, dependency-free), app (employee/manager/admin→"Platform app"), client IP and location, plus last-seen IP/location (written at most hourly; location re-resolved only when the IP changes).
+- **IP:** behind ALB → nginx the real client is the entry `app.auth.trusted-proxy-hops` places from the right of `X-Forwarded-For` (prod = 2, local = 0 → socket address). **Location:** `GeoIpService` calls `app.auth.geo.url` (default `https://ipwho.is/{ip}`), async after commit, 2 s timeout, cached 24 h, never blocks or fails a login; private/loopback IPs show "Local network". `app.auth.geo.enabled=false` turns it off.
+- Config: `app.jwt.max-sessions-per-user`, `app.auth.trusted-proxy-hops`, `app.auth.geo.*` (env `AUTH_TRUSTED_PROXY_HOPS`, `AUTH_GEO_ENABLED`, `AUTH_GEO_URL`, `JWT_MAX_SESSIONS_PER_USER`).
+
+**Known issues / limitations**
+1. **Privacy:** with geo enabled each sign-in IP is sent to a third-party lookup service (default ipwho.is, free tier, rate/terms limits unverified for commercial scale). For production-grade accuracy and no third party, host the lookup yourself (e.g. MaxMind GeoLite2 behind `app.auth.geo.url`). Location is city-level and wrong for VPN/mobile-carrier IPs.
+2. **Browser storage can still be wiped:** the session lives in `localStorage` per origin. Safari clears site data after ~7 days of no use in a normal tab (not in an installed PWA), and "clear site data" removes it anywhere. Installed apps ask for persistent storage (`navigator.storage.persist()`); an IndexedDB copy was considered and rejected (evicted on the same schedule). A server-set HttpOnly refresh cookie is the real fix — not built (needs credentialed CORS, SameSite and CSRF handling on `/auth/refresh`).
+3. **Refresh tokens are stored in plaintext** in `refresh_tokens.token` (hashing deferred: it would log everyone out if a deploy had to be rolled back). With non-expiring tokens a database leak is now more serious; hash with a lookup-by-hash + legacy fallback as the next hardening step.
+4. **A stolen token never expires** until the owner removes the device or an admin ends it. There is no admin "sign out this user everywhere" button (use deactivate / password reset); no new-device alert or email.
+5. No refresh-token rotation (deliberate: parallel tabs would race and log people out).
+6. Sessions created before Oct 2026 have no device metadata and appear as "Unknown device" until they next sign in. The other 8 locales still show the old "session expired" login banner wording (English/Hindi updated).
+7. Local IPv6 loopback shows as `0:0:0:0:0:0:0:1`; real addresses are fine.
+8. Old frontend bundles (cached PWAs) treat the new 401 refresh responses exactly like the old 400s, so backend-first deploys are safe.
+
 ---
 
 ## 4. App surfaces and features

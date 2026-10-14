@@ -34,11 +34,16 @@ public class JwtTokenProvider {
 
     public String generateAccessToken(Authentication authentication) {
         UserPrincipal principal = (UserPrincipal) authentication.getPrincipal();
-        return buildToken(principal, accessTokenExpiryMs, "access");
+        return buildToken(principal, accessTokenExpiryMs, "access", null);
     }
 
     public String generateAccessToken(UserPrincipal principal) {
-        return buildToken(principal, accessTokenExpiryMs, "access");
+        return buildToken(principal, accessTokenExpiryMs, "access", null);
+    }
+
+    /** Access token tied to a device session ({@code sid} claim) so the app can tell "this device" from the others. */
+    public String generateAccessToken(UserPrincipal principal, UUID sessionId) {
+        return buildToken(principal, accessTokenExpiryMs, "access", sessionId);
     }
 
     public String generateRefreshTokenValue() {
@@ -49,7 +54,7 @@ public class JwtTokenProvider {
         return refreshTokenExpiryMs;
     }
 
-    private String buildToken(UserPrincipal principal, long expiry, String type) {
+    private String buildToken(UserPrincipal principal, long expiry, String type, UUID sessionId) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiry);
 
@@ -61,6 +66,7 @@ public class JwtTokenProvider {
                 .claim("role", principal.getRole().name())
                 .claim("name", principal.getName())
                 .claim("type", type)
+                .claim("sid", sessionId != null ? sessionId.toString() : null)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(key)
@@ -69,6 +75,16 @@ public class JwtTokenProvider {
 
     public String getEmailFromToken(String token) {
         return parseClaims(token).getSubject();
+    }
+
+    /** The device session an access token belongs to, or null for tokens issued before sessions were tracked. */
+    public UUID getSessionId(String token) {
+        try {
+            Object sid = parseClaims(token).get("sid");
+            return sid != null ? UUID.fromString(sid.toString()) : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public boolean validateToken(String token) {

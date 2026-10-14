@@ -31,6 +31,7 @@ public class StaffAccountService {
     private final PasswordEncoder passwordEncoder;
     private final StaffSuggestedPasswordService suggestedPasswordService;
     private final StaffLoginPasswordVaultService loginPasswordVaultService;
+    private final SessionService sessionService;
 
     @Transactional
     public StaffResponse provisionLogin(UUID staffId, ProvisionStaffLoginRequest request) {
@@ -93,6 +94,7 @@ public class StaffAccountService {
                 .orElseThrow(() -> new BadRequestException("Login user not found"));
 
         boolean changed = false;
+        boolean credentialsChanged = false;
         if (request.getEmail() != null && !request.getEmail().isBlank()) {
             String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
             if (!email.equals(user.getEmail())) {
@@ -101,6 +103,7 @@ public class StaffAccountService {
                 }
                 user.setEmail(email);
                 changed = true;
+                credentialsChanged = true;
             }
         }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
@@ -108,6 +111,7 @@ public class StaffAccountService {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
             loginPasswordVaultService.storePlaintext(user, request.getPassword());
             changed = true;
+            credentialsChanged = true;
         }
         if (request.getDesignation() != null && !request.getDesignation().isBlank()) {
             staff.setDesignation(request.getDesignation().trim());
@@ -118,6 +122,7 @@ public class StaffAccountService {
         }
         userRepository.save(user);
         staff = staffRepository.save(staff);
+        if (credentialsChanged) sessionService.revokeAll(user.getId());
         return toResponse(staff);
     }
 
