@@ -174,6 +174,35 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 10. **Edit history is thin:** every action writes an audit-log row (`ADVANCE_REQUESTED/APPROVED/REJECTED/GRANTED/UPDATED/REVOKED/CANCELLED`, installment deduct/waive, `ADVANCE_POLICY_UPDATED`), but `ADVANCE_UPDATED`/`ADVANCE_REVOKED` carry no before/after values. Revoke is only allowed on an active (approved, not completed) advance.
 11. Local demo data was affected once during development (72 seeded demo leaves deleted locally; prod untouched). Re-seed local DB if the leave demo list looks short.
 
+#### 4.2.3 Busy hours — when customers arrive vs who is on the floor (Admin → Intelligence → Busy hours, `/admin/busy-hours`)
+
+Answers the owner question "should staff shifts follow demand instead of a fixed 10-8?" Brand admin only (`assertBrandAdmin`). Added Oct 2026.
+
+**What the owner sees**
+- **All branches:** portfolio tiles (branches with something to act on, average team workload, estimated idle staff cost) and a card per branch with a tiny week-map "fingerprint", its busiest slot, team workload and top recommendation; branches with HIGH advice sort first. Period presets 4 weeks / 3 months / 6 months / 12 months; the branch filter is client-side (one request returns every branch in full).
+- **One branch:** hero figure "team busy X% of the time" with a spare / about-right / stretched gauge; tiles (customers a day + trend vs previous 4 weeks, busiest hour, % of customers served with the right team, idle staff time); **What to do** (recommendation cards: what we see / what to do / why it matters, day + hour chips, "Show on map" highlights the cells); **week map** (weekday × hour heatmap with lenses Customers / Billing / Staffing check, table view, tooltip + keyboard focus); **typical day** chart (customers arriving per hour as bars and "customers your team on the floor can comfortably serve" as a line on the *same* axis — no dual axis — plus a ▲ ✓ ▼ staffing ribbon; day chips All / Weekdays / Weekends / each day; table view); week-shape and year-shape bar charts; "How to read this page".
+- Colours: one-hue blue ramp for magnitude; red ← grey → blue diverging scale for staffing; series colours are slots 1-2 of the validated data-viz palette (CSS variables `--bv-*` in `globals.css`, re-stepped for dark mode). Mobile draws the charts at phone width and drops the per-day totals column so the whole day fits.
+
+**Definitions** (also in the "How to read" panel and the page footnote)
+- *Arrival*: walk-in = booking `created_at`; ONLINE with a scheduled time = `scheduled_start_at`. DRAFT and cancelled bookings are not visits (cancellations counted separately). Everything bucketed in `Asia/Kolkata`. Revenue = non-voided invoice total of the booking.
+- *Staff on the floor*: attendance records split across hours (`DemandInsightsService.addPresence`); a missing exit is taken as closing time or 8 h (cap 14 h). A branch needs ≥20 records over ≥7 days in the period, else staffing views are hidden ("needs attendance").
+- *Visit length*: median recorded `actual_duration_minutes` of completed bookings (10-240 min, ≥30 of them), else the average catalogue `estimated_duration_minutes`, else an assumed 45 min; the source is shown.
+- *Busy %* (utilisation) = arrivals per hour × visit length ÷ staff on the floor. **Stretched** ≥ 85%; **spare** ≤ 45% *and* at least one person could be freed at the 70% comfort target; otherwise about right. Without attendance the model falls back to each hour vs the branch's own average demand.
+- *Days averaged* only from the branch's first customer, per weekday occurrence. Months: last 12 (current one flagged partial); seasonal advice needs ≥ 6 full months.
+
+**Recommendations** (`DemandAnalyzer`, pure and unit-tested): OVERSTAFFED (team busy ≤ 45% overall — one headline instead of many), STAGGER_START / EARLY_LEAVE (quiet opening/closing hours + a rush on the same day → move shifts instead of hiring), RUSH (extra people sized to bring that hour to ~70% busy, with the ₹ billed through those hours), QUIET (off-peak offer idea with a scenario estimate, spare staff cost), PREMIUM_HOURS (higher-ticket hours), DAY_MIX, SEASON, CANCELLATIONS, OFF_HOURS (visits logged outside opening hours — also a data-quality flag), EDGE_HOUR, TREND. Same pattern on several weekdays is merged ("Tue-Thu 2-4 pm"); max 7 per branch (3 RUSH, 3 QUIET, 2 of each other kind), ranked by weight → HIGH / MEDIUM / LOW. ₹ figures marked *estimate*: idle cost = spare staff-hours × average branch salary ÷ (26 × 9 h) × 52/12; promo scenario = 20% off filling half the gap to 70% of an average hour at the branch's revenue per visit.
+
+**Code:** backend `controller/DemandInsightsController` (`GET /api/v1/analytics/demand?startDate&endDate&branchId`, default last 90 days, max 400), `service/DemandInsightsService` (SQL aggregates + attendance), `demand/DemandAnalyzer`, `demand/TimeLabels`, `dto/demand/*` (cells carry `state` + `busyPercent` so the UI never re-derives thresholds); frontend `app/admin/busy-hours/page.tsx`, `components/admin/busy/*` (`BusyHours`, `BranchCard`, `BranchDetail`, `WeekMap`, `DayShape`, `BarChart`, `Recommendations`, `busy-model.ts`, `ChartTooltip`), i18n `admin.busyHours` (English only), nav under Intelligence. No schema changes.
+
+**Known issues / limitations**
+1. **Attendance counts everyone who clocks in** (reception, managers included), so utilisation is understated and "idle staff" can be overstated for service staff; the OVERSTAFFED card says so. Roster data does not exist in the product, so shift advice is inferred from who actually checked in, not from planned shifts.
+2. **One person per visit**: parallel or multi-stylist services, skills and breaks are not modelled; peaks *within* an hour and festival/holiday effects are not.
+3. **Arrival time quality**: if walk-ins are registered late (or the device clock is wrong) the pattern shifts; OFF_HOURS flags the obvious cases.
+4. **Performance**: every call scans the tenant's bookings several times (~1 s for 5 branches × 12 months on ~43k bookings locally, no caching). Fine for now; a nightly hourly rollup is the next step for very large tenants.
+5. **Seeded demo data** has about 5 people on the floor for ~2 customers an hour, so demo branches look heavily over-staffed (team busy ~30%) — an artefact of the seed, not of the logic.
+6. Brand admin only (managers cannot see it); IST is hard-coded; English-only admin copy; no export/print or what-if shift planner yet; inactive branches are excluded from the all-branches view.
+7. Local check: log in as the demo brand owner (`aura@antrahq.com`) after giving it a known local password; the other seed brands have too little history for advice.
+
 ---
 
 ### 4.3 Platform app (`/platform/*`)
@@ -338,6 +367,7 @@ Spring Boot 3.5, Java 21, PostgreSQL, Redis. Key modules (see `backend/README.md
 - Inventory
 - Platform tenant administration
 - Sales module (leads) for platform
+- **Busy hours:** demand vs staffing insights (`/api/v1/analytics/demand`) — see §4.2.3
 - **Team requests:** leave approvals + revolving salary-advance budget (`/api/v1/salary-advances/*`, `/api/v1/leave/*`, `/api/v1/staff-portal/advances|leaves`) — see §4.2.1
 
 **Schema evolution:** Many `*SchemaPatch` `ApplicationRunner` classes apply idempotent SQL (e.g. `ExpenditureSchemaPatch`, `MembershipSoldByStaffSchemaPatch`, `ScratchCampaignSchemaPatch`, `branches.scratch_card_enabled` default false).
@@ -548,6 +578,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 | Staff promo analytics | `backend/.../StaffPromoSalesAnalyticsService.java` |
 | **Platform customer usage** | **§4.3.1** — `PlatformUsageAnalyticsService.java`, `PlatformUsageController.java`, `ProductUsageSqlSupport.java`, `ProductUsageRollupService.java`, `ProductTelemetryIngestService.java`, `route-feature-map.ts`, `frontend/src/modules/platform/usage/*`, `scripts/verify-tenant-usage.mjs`, `scripts/verify-usage-sql-local.sh` |
 | Team requests (leave + advances) | **§4.2.1** — `SalaryAdvanceService.java`, `SalaryAdvanceRules.java`, `SalaryAdvanceController.java`, `LeaveService.java`, `SalaryAdvanceSchemaPatch.java`; `frontend/src/components/admin/requests/*`, `frontend/src/components/employee/StaffAdvanceSection.tsx` |
+| Busy hours (demand vs staffing) | **§4.2.3** — `DemandAnalyzer.java`, `DemandInsightsService.java`; `frontend/src/components/admin/busy/*` |
 | Deploy workflows | `frontend/.github/workflows/deploy.yml`, `backend/.github/workflows/deploy.yml` |
 
 ---
