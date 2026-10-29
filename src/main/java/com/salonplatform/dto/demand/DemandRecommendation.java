@@ -16,6 +16,8 @@ public class DemandRecommendation {
     /** HIGH | MEDIUM | LOW */
     private String priority;
     private String title;
+    /** One-line instruction for the action board, e.g. "Start 2 people at 12 pm instead of 10 am on weekdays". */
+    private String action;
     /** What the numbers show, in plain words. */
     private String whatWeSee;
     /** What the owner can do about it. */

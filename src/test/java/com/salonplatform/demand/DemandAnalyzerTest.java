@@ -88,6 +88,7 @@ class DemandAnalyzerTest {
         assertEquals(List.of(1, 2, 3, 4, 5), stagger.getDays());
         assertTrue(stagger.getTitle().contains("weekdays"), stagger.getTitle());
         assertTrue(stagger.getWhatToDo().contains("10 am to 12 pm"), stagger.getWhatToDo());
+        assertTrue(stagger.getAction().startsWith("Start ") && stagger.getAction().contains("at 12 pm instead of 10 am on weekdays"), stagger.getAction());
 
         // Weekend evenings and weekday evenings are over-loaded.
         List<DemandRecommendation> rush = out.recommendations().stream().filter(r -> r.getType().equals("RUSH")).toList();
@@ -226,6 +227,7 @@ class DemandAnalyzerTest {
         assertEquals(20, rush.getEndHour());
         assertTrue(rush.getTitle().contains("every day 5-8 pm"), rush.getTitle());
         assertTrue(rush.getWhatToDo().contains("Add 3 more people"), rush.getWhatToDo());
+        assertEquals("Add 3 people on every day 5-8 pm", rush.getAction());
         assertTrue(rush.getWhatWeSee().contains("busy 133% of the time"), rush.getWhatWeSee());
     }
 
@@ -249,9 +251,28 @@ class DemandAnalyzerTest {
         assertEquals("HIGH", over.getPriority());
         assertTrue(over.getTitle().startsWith("Your team is busy only"), over.getTitle());
         assertTrue(over.getWhatToDo().contains("Attendance counts everyone"), over.getWhatToDo());
+        assertTrue(over.getAction().startsWith("Plan for "), over.getAction());
         assertTrue(out.summary().getTeamBusyPercent() < 40);
         assertTrue(out.summary().getSpareStaffHoursPerWeek() > 20);
         assertNotNull(out.summary().getIdleStaffCostPerMonth());
+    }
+
+    @Test
+    void everyRecommendationHasAShortAction() {
+        List<MonthStat> months = new ArrayList<>();
+        double[] perDay = {20, 20, 20, 20, 20, 12, 12, 20, 20, 30, 34, 36};
+        String[] names = {"2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"};
+        for (int i = 0; i < 12; i++) months.add(new MonthStat(names[i], (long) (perDay[i] * 30), perDay[i] * 30 * 700, 30, perDay[i], i == 11));
+        double[][] cancelled = grid((d, h) -> open(h) ? (h == 18 ? 3.0 : 0.2) : 0.0);
+        for (DemandAnalyzer.Input in : List.of(
+                input(demandPerDay(), fixedShift(5), true, months, cancelled, 300, 400),
+                input(demandPerDay(), null, false, months, cancelled, 400, 300))) {
+            for (DemandRecommendation r : DemandAnalyzer.analyze(in).recommendations()) {
+                assertNotNull(r.getAction(), r.getType());
+                assertFalse(r.getAction().isBlank(), r.getType());
+                assertTrue(r.getAction().length() <= 140, r.getType() + ": " + r.getAction());
+            }
+        }
     }
 
     @Test

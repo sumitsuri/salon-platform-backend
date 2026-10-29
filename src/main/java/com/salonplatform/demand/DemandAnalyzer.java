@@ -291,6 +291,8 @@ public final class DemandAnalyzer {
         String type;
         double weight;
         String title;
+        /** The one-line instruction shown on the action board. */
+        String action;
         String see;
         String todo;
         String impact;
@@ -302,7 +304,7 @@ public final class DemandAnalyzer {
         DemandRecommendation build() {
             String priority = weight >= 15 ? "HIGH" : weight >= 7 ? "MEDIUM" : "LOW";
             return DemandRecommendation.builder()
-                    .id(id).type(type).priority(priority).title(title).whatWeSee(see).whatToDo(todo)
+                    .id(id).type(type).priority(priority).title(title).action(action).whatWeSee(see).whatToDo(todo)
                     .impact(impact).impactAmount(impactAmount)
                     .days(days).startHour(start).endHour(end).build();
         }
@@ -334,6 +336,7 @@ public final class DemandAnalyzer {
         } else {
             x.impact = "About " + fmt(spareHours) + " paid staff-hours a week go beyond what customers need.";
         }
+        x.action = "Plan for " + plan + " " + people(plan) + " per hour instead of " + Math.round(avgOnFloor) + ", adding cover only for rush hours";
         x.weight = busy <= 0.35 ? 40 : 30;
         recs.add(x);
     }
@@ -420,6 +423,9 @@ public final class DemandAnalyzer {
         } else {
             x.impact = "Puts your people where customers are, with no extra hiring.";
         }
+        x.action = atStart
+                ? "Start " + people + " " + people(people) + " at " + TimeLabels.hour(g.end) + " instead of " + TimeLabels.hour(g.start) + " on " + days
+                : "Let " + people + " " + people(people) + " leave at " + TimeLabels.hour(g.start) + " on " + days;
         x.weight = 12 + Math.min(20, spareHoursWeek * 1.5) + g.days.size();
         x.days = new ArrayList<>(g.days.stream().map(d -> d + 1).toList());
         x.start = g.start;
@@ -470,6 +476,9 @@ public final class DemandAnalyzer {
             }
             x.impact = "About ₹" + inr(round(rev, 100)) + " a week flows through these hours (" + Math.round(share)
                     + "% of the branch's billing) — long waits here cost the most.";
+            x.action = staffed
+                    ? "Add " + extra + " " + people(extra) + " on " + days + " " + range
+                    : "Put your strongest team on " + days + " " + range;
             x.weight = Math.min(40, share) + (staffed ? 5 : 0) + g.days.size() * 0.5;
             x.days = new ArrayList<>(g.days.stream().map(d -> d + 1).toList());
             x.start = g.start;
@@ -537,6 +546,7 @@ public final class DemandAnalyzer {
                 impact.append("Idle staff time here ≈ ₹").append(inr(month)).append(" a month (estimate from average salary).");
             }
             x.impact = impact.length() == 0 ? null : impact.toString();
+            x.action = "Offer 20% off " + range + " on " + days + " to fill the quiet hours";
             x.weight = 4 + Math.min(14, (staffed ? spare * 1.2 : 0) + g.days.size() * 1.5 + extraVisitsWeek * 0.3);
             x.days = new ArrayList<>(g.days.stream().map(d -> d + 1).toList());
             x.start = g.start;
@@ -588,6 +598,7 @@ public final class DemandAnalyzer {
         x.todo = "Keep your most experienced stylists and best upsellers on the floor in these hours, avoid giving leave then, "
                 + "and put premium services (packages, memberships) front and centre.";
         x.impact = "Every customer lost to a wait or a weaker pitch in these hours costs more than elsewhere in the day.";
+        x.action = "Keep your best stylists on " + TimeLabels.range(bestStart, bestEnd) + " and avoid leave then";
         x.weight = 8;
         x.start = bestStart;
         x.end = bestEnd;
@@ -616,6 +627,7 @@ public final class DemandAnalyzer {
         x.todo = "Roster by day, not by habit: give weekly offs and approve leave on " + TimeLabels.days(slow)
                 + ", keep everyone on for " + TimeLabels.days(busy) + ", and schedule training or maintenance on the slow days.";
         x.impact = "Matching headcount to the day avoids both overtime on busy days and idle pay on slow ones.";
+        x.action = "Give weekly offs on " + TimeLabels.days(slow) + "; keep everyone on " + TimeLabels.days(busy);
         x.weight = Math.min(16, 5 + (dayAvg[hi] / dayAvg[lo] - 1.5) * 6);
         x.days = busy;
         recs.add(x);
@@ -642,8 +654,19 @@ public final class DemandAnalyzer {
         x.todo = (peak.isEmpty() ? "" : "Block leave and book extra hands for the busy months. ")
                 + (slow.isEmpty() ? "" : "Use the slow months for staff leave, training, deep-cleaning and promotions.");
         x.impact = "Seasonal swings are predictable — rostering for them early avoids last-minute hiring and idle weeks.";
+        x.action = (peak.isEmpty() ? "" : "Block leave in " + monthNames(peak) + ". ")
+                + (slow.isEmpty() ? "" : "Use " + monthNames(slow) + " for leave and training.");
+        x.action = x.action.trim();
         x.weight = 8 + Math.min(6, (peak.isEmpty() ? 0 : peak.get(0).getVisitsPerDay() / mean - 1) * 10);
         recs.add(x);
+    }
+
+    private static String monthNames(List<MonthStat> list) {
+        List<String> names = new ArrayList<>();
+        for (MonthStat m : list) {
+            names.add(Month.of(Integer.parseInt(m.getMonth().substring(5, 7))).getDisplayName(TextStyle.SHORT, Locale.ENGLISH));
+        }
+        return String.join(", ", names);
     }
 
     private static String monthList(List<MonthStat> list, double mean, boolean up) {
@@ -703,6 +726,7 @@ public final class DemandAnalyzer {
         x.see = Math.round(bestRate * 100) + "% of bookings in these hours are cancelled, against " + Math.round(avgRate * 100) + "% across the day.";
         x.todo = "Send a reminder a few hours before, confirm by WhatsApp, or ask for a small advance on these slots — and keep a walk-in friendly stylist free to fill gaps.";
         x.impact = "Each cancelled slot in your busiest hours is a chair left empty.";
+        x.action = "Send a reminder for " + TimeLabels.range(bestStart, bestEnd) + " bookings";
         x.weight = 6 + Math.min(6, (bestRate - avgRate) * 20);
         x.start = bestStart;
         x.end = bestEnd;
@@ -720,6 +744,7 @@ public final class DemandAnalyzer {
                 + TimeLabels.hour(c.close()) + ". Either customers really do come then, or walk-ins are being entered late.";
         x.todo = "If they are real, consider opening or closing a bit later. If not, check that walk-ins are entered when the customer arrives and that the till device clock is right — it affects every number on this page.";
         x.impact = null;
+        x.action = "Check how walk-ins are entered and that the till device clock is right";
         x.weight = Math.min(12, 3 + pct);
         recs.add(x);
     }
@@ -744,6 +769,7 @@ public final class DemandAnalyzer {
             x.title = "The first hour (" + TimeLabels.range(first, first + 1) + ") is almost empty";
             x.see = "Only " + fmt(firstShare * 100) + "% of the day's customers arrive in the opening hour.";
             x.todo = "Open an hour later, or keep just one person for set-up and let the rest start when customers do.";
+            x.action = "Open an hour later, or start with one person";
             x.impact = "Saves a full hour of staff time on every open day.";
             x.weight = 6;
             x.start = first;
@@ -757,6 +783,7 @@ public final class DemandAnalyzer {
             x.title = "The last hour (" + TimeLabels.range(last, last + 1) + ") is almost empty";
             x.see = "Only " + fmt(lastShare * 100) + "% of the day's customers arrive in the final hour.";
             x.todo = "Close an hour earlier, or run with a skeleton team for the last hour.";
+            x.action = "Close an hour earlier, or keep a skeleton team";
             x.impact = "Saves a full hour of staff time on every open day.";
             x.weight = 6;
             x.start = last;
@@ -778,6 +805,7 @@ public final class DemandAnalyzer {
                 ? "Check the busiest hours above are covered, and keep whatever you changed (offers, reviews, new services)."
                 : "Look at what changed — a stylist leaving, a lapse in offers or reviews, or a seasonal dip — and consider a win-back campaign to past customers.";
         x.impact = null;
+        x.action = up ? "Keep what is working: footfall is up " + Math.round(Math.abs(trend)) + "%" : "Win customers back: footfall is down " + Math.round(Math.abs(trend)) + "%";
         x.weight = Math.min(14, 5 + Math.abs(trend) / 5);
         recs.add(x);
     }
