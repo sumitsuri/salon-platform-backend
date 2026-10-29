@@ -31,6 +31,19 @@ app:
       # Shows a city/country per signed-in device. Sends the device IP to the lookup service at `url`.
       enabled: ${AUTH_GEO_ENABLED:true}
       url: ${AUTH_GEO_URL:https://ipwho.is/{ip}?fields=success,city,region,country}
+  offer-posters:
+    # Festive-offer poster studio (Admin → Growth → Offer studio).
+    provider: ${OFFER_POSTER_PROVIDER:auto}          # auto | openai | preview | none
+    allow-preview: ${OFFER_POSTER_ALLOW_PREVIEW:false}   # plain drawn stand-in when no image key (dev only)
+    daily-limit-per-tenant: ${OFFER_POSTER_DAILY_LIMIT:15}
+    api-key: ${OFFER_POSTER_OPENAI_API_KEY:${OPENAI_API_KEY:}}
+    base-url: ${OFFER_POSTER_OPENAI_BASE_URL:${OPENAI_BASE_URL:https://api.openai.com/v1}}
+    model: ${OFFER_POSTER_MODEL:gpt-image-1}
+    quality: ${OFFER_POSTER_QUALITY:medium}          # low | medium | high — also drives cost per poster
+    s3-bucket: ${OFFER_POSTER_S3_BUCKET:${ATTENDANCE_S3_BUCKET:}}
+    key-prefix: ${OFFER_POSTER_S3_PREFIX:attendance/offer-posters/}
+    storage-dir: ${OFFER_POSTER_DIR:data/offer-posters}
+    aws-region: ${AWS_REGION:ap-south-1}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   public-url: ${PUBLIC_URL:http://localhost}
