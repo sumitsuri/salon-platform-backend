@@ -80,15 +80,14 @@ class DemandAnalyzerTest {
         assertNotNull(out.summary().getStaffingFitPercent());
         assertEquals(60.0, out.summary().getVisitMinutes());
 
-        // Weekday mornings are dead while evenings are stretched → move starts later, don't hire.
-        DemandRecommendation stagger = out.recommendations().stream()
-                .filter(r -> r.getType().equals("STAGGER_START")).findFirst().orElseThrow();
-        assertEquals(10, stagger.getStartHour());
-        assertEquals(12, stagger.getEndHour());
-        assertEquals(List.of(1, 2, 3, 4, 5), stagger.getDays());
-        assertTrue(stagger.getTitle().contains("weekdays"), stagger.getTitle());
-        assertTrue(stagger.getWhatToDo().contains("10 am to 12 pm"), stagger.getWhatToDo());
-        assertTrue(stagger.getAction().startsWith("Start ") && stagger.getAction().contains("at 12 pm instead of 10 am on weekdays"), stagger.getAction());
+        // Everyone is on a fixed full-time shift, so a dead weekday morning is a "quiet spell" to use well, never "start later".
+        DemandRecommendation quiet = out.recommendations().stream()
+                .filter(r -> r.getType().equals("QUIET")).findFirst().orElseThrow();
+        assertEquals(10, quiet.getStartHour());
+        assertEquals(12, quiet.getEndHour());
+        assertEquals(List.of(1, 2, 3, 4, 5), quiet.getDays());
+        assertTrue(quiet.getAction().contains("training and prep"), quiet.getAction());
+        assertFalse(types(out).stream().anyMatch(t -> t.startsWith("STAGGER") || t.equals("EARLY_LEAVE") || t.equals("SHIFT_SWAP")));
 
         // Weekend evenings and weekday evenings are over-loaded.
         List<DemandRecommendation> rush = out.recommendations().stream().filter(r -> r.getType().equals("RUSH")).toList();
@@ -112,7 +111,6 @@ class DemandAnalyzerTest {
         assertTrue(out.summary().getTeamBusyPercent() >= 60 && out.summary().getTeamBusyPercent() <= 70, "busy " + out.summary().getTeamBusyPercent());
         assertEquals(0.0, out.summary().getStretchedHoursPerWeek());
         assertFalse(types(out).contains("RUSH"));
-        assertFalse(types(out).contains("STAGGER_START"));
         assertFalse(types(out).contains("QUIET"));
     }
 
@@ -124,7 +122,7 @@ class DemandAnalyzerTest {
         assertNull(out.summary().getStaffingFitPercent());
         assertNull(out.summary().getSpareStaffHoursPerWeek());
         List<String> t = types(out);
-        assertTrue(t.contains("RUSH") || t.contains("STAGGER_START"), t.toString());
+        assertTrue(t.contains("RUSH"), t.toString());
         DemandRecommendation rush = out.recommendations().stream().filter(r -> r.getType().equals("RUSH")).findFirst().orElseThrow();
         assertTrue(rush.getWhatWeSee().contains("Turn on attendance"), rush.getWhatWeSee());
     }
@@ -226,8 +224,8 @@ class DemandAnalyzerTest {
         assertEquals(17, rush.getStartHour());
         assertEquals(20, rush.getEndHour());
         assertTrue(rush.getTitle().contains("every day 5-8 pm"), rush.getTitle());
-        assertTrue(rush.getWhatToDo().contains("Add 3 more people"), rush.getWhatToDo());
-        assertEquals("Add 3 people on every day 5-8 pm", rush.getAction());
+        assertTrue(rush.getWhatToDo().contains("bring in 3 part-timers"), rush.getWhatToDo());
+        assertEquals("Cover 5-8 pm on every day with 3 part-timers or borrowed staff, and no leave then", rush.getAction());
         assertTrue(rush.getWhatWeSee().contains("busy 133% of the time"), rush.getWhatWeSee());
     }
 
@@ -251,7 +249,7 @@ class DemandAnalyzerTest {
         assertEquals("HIGH", over.getPriority());
         assertTrue(over.getTitle().startsWith("Your team is busy only"), over.getTitle());
         assertTrue(over.getWhatToDo().contains("Attendance counts everyone"), over.getWhatToDo());
-        assertTrue(over.getAction().startsWith("Plan for "), over.getAction());
+        assertTrue(over.getAction().startsWith("Move ") && over.getAction().contains("to a busier branch"), over.getAction());
         assertTrue(out.summary().getTeamBusyPercent() < 40);
         assertTrue(out.summary().getSpareStaffHoursPerWeek() > 20);
         assertNotNull(out.summary().getIdleStaffCostPerMonth());

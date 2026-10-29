@@ -11,7 +11,7 @@ import java.util.List;
 public class DemandRecommendation {
     /** Stable id within the branch, e.g. "RUSH-6-17-20". */
     private String id;
-    /** RUSH | STAGGER_START | EARLY_LEAVE | QUIET | OVERSTAFFED | PREMIUM_HOURS | DAY_MIX | SEASON | CANCELLATIONS | OFF_HOURS | EDGE_HOUR | TREND */
+    /** RUSH | QUIET | OVERSTAFFED | PREMIUM_HOURS | DAY_MIX | SEASON | CANCELLATIONS | OFF_HOURS | EDGE_HOUR | TREND */
     private String type;
     /** HIGH | MEDIUM | LOW */
     private String priority;

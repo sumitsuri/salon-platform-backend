@@ -247,7 +247,6 @@ public final class DemandAnalyzer {
         if (staffed && floorStaffHours > 0) {
             addOverstaffed(c, recs, floorStaffHours, demandStaffHours, spareStaffHours, openDays.size() * (close - open));
         }
-        addStagger(c, recs, consumed);
         addRush(c, recs);
         addQuiet(c, recs, consumed);
         addPremium(c, recs);
@@ -322,114 +321,25 @@ public final class DemandAnalyzer {
         x.type = "OVERSTAFFED";
         x.id = "OVERSTAFFED";
         x.title = "Your team is busy only " + pct(busy) + "% of the time";
-        x.see = "In an average opening hour about " + fmt(avgArrivals) + " customers arrive and " + fmt(avgOnFloor)
-                + " people are on the floor. A typical visit takes " + Math.round(c.visitHours * 60)
-                + " minutes, so customers need only about " + fmt(neededPerHour) + " people's time even with comfortable breathing room.";
-        x.todo = "Plan around " + plan + " people in a typical hour instead of " + fmt(avgOnFloor) + ", and add cover only for the rush hours. "
-                + "Use staggered starts and weekly offs rather than one fixed shift for everyone. "
+        x.see = "In an average opening hour you get about " + cust(avgArrivals) + " and have " + count(avgOnFloor)
+                + " staff on the floor. A typical visit takes " + Math.round(c.visitHours * 60)
+                + " minutes, so customers need only about " + count(neededPerHour) + " staff's time even with comfortable breathing room.";
+        int spareHeads = Math.max(1, (int) Math.floor(avgOnFloor - neededPerHour));
+        x.todo = "Your full-time team works fixed shifts, so the lever is headcount, not hours: customers need about " + plan
+                + " people in a typical hour but " + count(avgOnFloor) + " are on the floor. Move " + spareHeads + " "
+                + people(spareHeads) + " to a branch that is short of people, or don't replace the next leavers. "
+                + "Use the quiet hours for training and offers. "
                 + "(Attendance counts everyone who clocks in — if reception or managers are included, the real picture is a bit better than this.)";
         if (c.in.staffHourCost() != null && spareHours > 0) {
             double month = round(spareHours * c.in.staffHourCost() * WEEKS_PER_MONTH, 100);
-            x.impact = "About " + fmt(spareHours) + " paid staff-hours a week go beyond what customers need — roughly ₹" + inr(month)
+            x.impact = "About " + count(spareHours) + " paid staff-hours a week go beyond what customers need — roughly ₹" + inr(month)
                     + " a month at your average salary (estimate).";
             x.impactAmount = month;
         } else {
-            x.impact = "About " + fmt(spareHours) + " paid staff-hours a week go beyond what customers need.";
+            x.impact = "About " + count(spareHours) + " paid staff-hours a week go beyond what customers need.";
         }
-        x.action = "Plan for " + plan + " " + people(plan) + " per hour instead of " + Math.round(avgOnFloor) + ", adding cover only for rush hours";
+        x.action = "Move " + spareHeads + " " + people(spareHeads) + " to a busier branch, or don't replace the next leavers";
         x.weight = busy <= 0.35 ? 40 : 30;
-        recs.add(x);
-    }
-
-    /** Quiet first hours + a rush later (or a quiet close + an earlier rush): move shifts instead of adding people. */
-    private static void addStagger(Ctx c, List<Rec> recs, boolean[][] consumed) {
-        List<Win> startRuns = new ArrayList<>();
-        List<Win> endRuns = new ArrayList<>();
-        for (int d : c.openDays) {
-            int e = c.open();
-            while (e < c.close() && c.st[d][e] == State.IDLE) e++;
-            if (e - c.open() >= 2 && e < c.close() && anyStretched(c, d, e, c.close())) {
-                startRuns.add(new Win(d, c.open(), e));
-            }
-            int b = c.close();
-            while (b > c.open() && c.st[d][b - 1] == State.IDLE) b--;
-            if (c.close() - b >= 2 && b > c.open() && anyStretched(c, d, c.open(), b)) {
-                endRuns.add(new Win(d, b, c.close()));
-            }
-        }
-        for (Group g : group(startRuns, 2)) {
-            emitStagger(c, recs, consumed, g, true);
-        }
-        for (Group g : group(endRuns, 2)) {
-            emitStagger(c, recs, consumed, g, false);
-        }
-    }
-
-    private static void emitStagger(Ctx c, List<Rec> recs, boolean[][] consumed, Group g, boolean atStart) {
-        double aSum = 0, sSum = 0;
-        int n = 0;
-        double spareStaff = 0;
-        for (int d : g.days) {
-            for (int h = g.start; h < g.end; h++) {
-                aSum += c.a[d][h];
-                sSum += c.s[d][h];
-                n++;
-                if (c.staffed(d)) spareStaff += Math.max(0, c.s[d][h] - c.needed(c.a[d][h]));
-                consumed[d][h] = true;
-            }
-        }
-        double avgA = aSum / n;
-        double avgS = sSum / n;
-        double sparePerHour = c.staffed(g.days.first()) ? spareStaff / n : 0;
-        int people = c.staffed(g.days.first()) ? Math.max(1, (int) Math.floor(sparePerHour)) : 1;
-        double spareHoursWeek = spareStaff;
-        // The rush these people are needed for: the stretched hours on the other side of the day.
-        int rushStart = Integer.MAX_VALUE, rushEnd = -1;
-        for (int d : g.days) {
-            for (int h = atStart ? g.end : c.open(); h < (atStart ? c.close() : g.start); h++) {
-                if (c.st[d][h] == State.STRETCHED) {
-                    rushStart = Math.min(rushStart, h);
-                    rushEnd = Math.max(rushEnd, h + 1);
-                }
-            }
-        }
-        String days = TimeLabels.days(iso(g.days));
-        String quiet = TimeLabels.range(g.start, g.end);
-        String rush = rushEnd > 0 ? TimeLabels.range(rushStart, rushEnd) : "later in the day";
-        Rec x = new Rec();
-        x.type = atStart ? "STAGGER_START" : "EARLY_LEAVE";
-        x.id = x.type + "-" + key(g.days) + "-" + g.start + "-" + g.end;
-        x.title = atStart
-                ? "Start " + people + " " + people(people) + " later on " + days
-                : "Let " + people + " " + people(people) + " leave earlier on " + days;
-        x.see = c.staffed(g.days.first())
-                ? "On " + days + ", " + quiet + " is quiet — about " + fmt(avgA) + " customers an hour with " + fmt(avgS)
-                        + " staff on the floor, so the team is busy only " + pct(c.util(avgA, avgS)) + "% of the time — while "
-                        + rush + " is stretched."
-                : "On " + days + ", " + quiet + " is quiet — about " + fmt(avgA) + " customers an hour, well under your usual "
-                        + fmt(c.mu) + " — while " + rush + " is stretched.";
-        x.todo = atStart
-                ? "Move " + people + " of the team's start from " + TimeLabels.hour(g.start) + " to " + TimeLabels.hour(g.end)
-                        + " so they overlap the " + rush + " rush, instead of adding a new person."
-                : "Let " + people + " " + people(people) + " finish at " + TimeLabels.hour(g.start)
-                        + " and cover the " + rush + " rush earlier in the day instead.";
-        if (spareHoursWeek > 0 && c.in.staffHourCost() != null) {
-            double month = round(spareHoursWeek * c.in.staffHourCost() * WEEKS_PER_MONTH, 100);
-            x.impact = "Frees about " + fmt(spareHoursWeek) + " staff-hours a week (≈ ₹" + inr(month)
-                    + " a month of paid time) and puts them where customers are waiting. Estimate from average salary.";
-            x.impactAmount = month;
-        } else if (spareHoursWeek > 0) {
-            x.impact = "Frees about " + fmt(spareHoursWeek) + " staff-hours a week and puts them where customers are waiting.";
-        } else {
-            x.impact = "Puts your people where customers are, with no extra hiring.";
-        }
-        x.action = atStart
-                ? "Start " + people + " " + people(people) + " at " + TimeLabels.hour(g.end) + " instead of " + TimeLabels.hour(g.start) + " on " + days
-                : "Let " + people + " " + people(people) + " leave at " + TimeLabels.hour(g.start) + " on " + days;
-        x.weight = 12 + Math.min(20, spareHoursWeek * 1.5) + g.days.size();
-        x.days = new ArrayList<>(g.days.stream().map(d -> d + 1).toList());
-        x.start = g.start;
-        x.end = g.end;
         recs.add(x);
     }
 
@@ -465,19 +375,21 @@ public final class DemandAnalyzer {
             x.id = "RUSH-" + key(g.days) + "-" + g.start + "-" + g.end;
             x.title = "Add cover on " + days + " " + range;
             if (staffed) {
-                x.see = "About " + fmt(avgA) + " customers arrive every hour and only " + fmt(avgS) + " staff are on the floor — "
+                x.see = "You get about " + cust(avgA) + " every hour and only " + count(avgS) + " staff on the floor — "
                         + "each person is busy " + pct(c.util(avgA, avgS)) + "% of the time, leaving no slack for walk-ins or overruns.";
-                x.todo = "Add " + extra + " more " + people(extra) + " for these hours: shift someone's start/finish, bring in a part-timer, "
-                        + "and avoid giving leave then. Encourage online booking for the quieter hours either side.";
+                String shift = TimeLabels.range(c.open(), c.close());
+                x.todo = "Your full-time team (" + shift + ") is already all on the floor, so keep everyone for these hours — no leave, weekly offs "
+                        + "or lunch breaks then — and bring in " + extra + " part-timer" + (extra == 1 ? "" : "s")
+                        + " or borrow someone from a quieter branch. Encourage online booking for the quieter hours either side.";
             } else {
-                x.see = "About " + fmt(avgA) + " customers arrive every hour — " + fmt(avgA / c.mu) + "× this branch's usual "
-                        + fmt(c.mu) + ". (Turn on attendance to see how many staff are on the floor.)";
+                x.see = "You get about " + cust(avgA) + " every hour — " + fmt(avgA / c.mu) + "× this branch's usual "
+                        + count(c.mu) + ". (Turn on attendance to see how many staff are on the floor.)";
                 x.todo = "Make sure your strongest team is on for these hours, avoid leave then, and offer online booking for the quieter hours either side.";
             }
             x.impact = "About ₹" + inr(round(rev, 100)) + " a week flows through these hours (" + Math.round(share)
                     + "% of the branch's billing) — long waits here cost the most.";
             x.action = staffed
-                    ? "Add " + extra + " " + people(extra) + " on " + days + " " + range
+                    ? "Cover " + range + " on " + days + " with " + extra + " part-timer" + (extra == 1 ? "" : "s") + " or borrowed staff, and no leave then"
                     : "Put your strongest team on " + days + " " + range;
             x.weight = Math.min(40, share) + (staffed ? 5 : 0) + g.days.size() * 0.5;
             x.days = new ArrayList<>(g.days.stream().map(d -> d + 1).toList());
@@ -524,10 +436,10 @@ public final class DemandAnalyzer {
             x.id = "QUIET-" + key(g.days) + "-" + g.start + "-" + g.end;
             x.title = "Quiet spell: " + days + " " + range;
             x.see = staffed
-                    ? "Only " + fmt(avgA) + " customers an hour, yet " + fmt(avgS) + " staff on the floor — the team is busy "
+                    ? "Only " + cust(avgA) + " an hour, yet " + count(avgS) + " staff on the floor — the team is busy "
                             + pct(c.util(avgA, avgS)) + "% of the time."
-                    : "Only " + fmt(avgA) + " customers an hour — " + Math.round(100 * avgA / c.mu)
-                            + "% of this branch's usual " + fmt(c.mu) + ".";
+                    : "Only " + cust(avgA) + " an hour — " + Math.round(100 * avgA / c.mu)
+                            + "% of this branch's usual " + count(c.mu) + ".";
             double extraVisitsWeek = 0.5 * gap;
             double promoMonth = extraVisitsWeek * c.revenuePerVisit * 0.8 * WEEKS_PER_MONTH;
             x.todo = "Stagger lunch and breaks here and use the time for training, stock or deep-cleaning. Test an off-peak offer "
@@ -546,7 +458,7 @@ public final class DemandAnalyzer {
                 impact.append("Idle staff time here ≈ ₹").append(inr(month)).append(" a month (estimate from average salary).");
             }
             x.impact = impact.length() == 0 ? null : impact.toString();
-            x.action = "Offer 20% off " + range + " on " + days + " to fill the quiet hours";
+            x.action = "Use " + range + " on " + days + " for training and prep, or offer 20% off to fill it";
             x.weight = 4 + Math.min(14, (staffed ? spare * 1.2 : 0) + g.days.size() * 1.5 + extraVisitsWeek * 0.3);
             x.days = new ArrayList<>(g.days.stream().map(d -> d + 1).toList());
             x.start = g.start;
@@ -622,8 +534,8 @@ public final class DemandAnalyzer {
         x.type = "DAY_MIX";
         x.id = "DAYMIX";
         x.title = TimeLabels.dayLong(hi + 1) + "s are " + fmt(dayAvg[hi] / dayAvg[lo]) + "× busier than " + TimeLabels.dayLong(lo + 1) + "s";
-        x.see = "On average " + fmt(dayAvg[hi]) + " customers arrive on " + TimeLabels.dayLong(hi + 1) + "s against "
-                + fmt(dayAvg[lo]) + " on " + TimeLabels.dayLong(lo + 1) + "s.";
+        x.see = "On average " + cust(dayAvg[hi]) + " come on " + TimeLabels.dayLong(hi + 1) + "s against "
+                + count(dayAvg[lo]) + " on " + TimeLabels.dayLong(lo + 1) + "s.";
         x.todo = "Roster by day, not by habit: give weekly offs and approve leave on " + TimeLabels.days(slow)
                 + ", keep everyone on for " + TimeLabels.days(busy) + ", and schedule training or maintenance on the slow days.";
         x.impact = "Matching headcount to the day avoids both overtime on busy days and idle pay on slow ones.";
@@ -928,6 +840,17 @@ public final class DemandAnalyzer {
     }
 
     /** 5 → "5", 5.4 → "5.4", 12.04 → "12". */
+    /** Whole number for people and customers; a real flow never shows as 0. */
+    static long count(double v) {
+        return v <= 0 ? 0 : Math.max(1, Math.round(v));
+    }
+
+    /** "1 customer" / "5 customers". */
+    static String cust(double v) {
+        long n = count(v);
+        return n + (n == 1 ? " customer" : " customers");
+    }
+
     static String fmt(double v) {
         double r = Math.round(v * 10.0) / 10.0;
         return r == Math.rint(r) ? String.valueOf((long) r) : String.valueOf(r);
