@@ -455,6 +455,8 @@ Patterns consistently used in this codebase — **follow these for new work**.
 
 ### 7.1 Pre-deploy checklist
 
+**Fast path (use this first):** from the monorepo root, `bash scripts/verify.sh` runs only what changed — backend unit tests, frontend typecheck + lint of changed files, locale JSON validity and `node scripts/smoke-api.mjs` (a ~2 s read-only regression smoke of every role plus sessions, advances, leave and busy hours) when the local API is up. `--all` checks both apps before a deploy. These scripts live in the monorepo root `scripts/` (local, not in a repo); add a smoke check for each feature you ship.
+
 **Backend** (from `salon-platform/backend/`):
 
 ```bash
