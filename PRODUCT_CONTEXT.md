@@ -174,32 +174,6 @@ After login, home route comes from `getHomeForRole()` in `frontend/src/lib/auth-
 10. **Edit history is thin:** every action writes an audit-log row (`ADVANCE_REQUESTED/APPROVED/REJECTED/GRANTED/UPDATED/REVOKED/CANCELLED`, installment deduct/waive, `ADVANCE_POLICY_UPDATED`), but `ADVANCE_UPDATED`/`ADVANCE_REVOKED` carry no before/after values. Revoke is only allowed on an active (approved, not completed) advance.
 11. Local demo data was affected once during development (72 seeded demo leaves deleted locally; prod untouched). Re-seed local DB if the leave demo list looks short.
 
-#### 4.2.2 Offer studio — festive offer posters for WhatsApp (Admin → Growth → Offer studio, `/admin/offers`)
-
-Owners design a festive offer for one branch and get an AI-generated poster plus a WhatsApp message to post in their promotion groups by hand. **Marketing content only — it creates no discount; billing is unchanged** (staff apply the offer manually, as before). Brand admin only (`assertBrandAdmin`). Added Oct 2026.
-
-**Offer types** (a poster holds 1–6 blocks, each a card on the poster): `SPEND_PERCENT` (spend ₹X+ → Y% off, up to 5 tiers), `PACKAGE` (2–12 services picked from the catalogue, price editable, X% off the combined total → package price, whole rupees, HALF_UP), `FREE_WITH_SPEND` (spend ₹X+ → get FREE <service/gift>, up to 5 tiers). Plus occasion (15 presets: Diwali, Karwa Chauth, Navratri, Holi, Rakhi, Eid, Christmas/New Year, Valentine's, Women's/Mother's Day, Wedding season, Summer, Monsoon, New launch, General), headline, tagline, valid-till date, small print, optional "Salon services include" list (≤8), look (4 styles modelled on owners' hand-made posters), shape (portrait 1024×1536 / square), extra art direction, branch (prefills brand name, address, phone).
-
-**Flow:** save offer → "Create poster" (async; polled every 3 s; ~20–90 s) → review → tick *"I've checked every price, phone and address"* (required before Share) → Share on WhatsApp / Download. Several versions per offer; poster list, duplicate and delete in the studio.
-- **Sharing is manual by design:** phones use the system share sheet with the image file + caption (`navigator.share({files})`), so the owner picks WhatsApp → group. Desktops (no file sharing) download the poster, copy the caption and open web.whatsapp.com. There is no WhatsApp API send and no group access.
-- **Caption:** written by the server (`OfferCaptionBuilder`, WhatsApp *bold*/_italic_/~strike~) from the offer on every save unless the owner edited it (only then is it sent back). One text source: `OfferCopy` feeds the on-screen summary, the caption and the prompt, so numbers cannot differ between them.
-
-**Backend:** `FestiveOfferController` (`/api/v1/festive-offers`: `GET /studio`, CRUD, `POST|GET /{id}/posters`, `GET|DELETE /posters/{id}`, `GET /posters/{id}/image` — authenticated bytes, `no-store`), `FestiveOfferService` (validation, 15/day cap, stale-PENDING cleanup after 10 min), `PosterPromptBuilder`, `OfferCaptionBuilder`, `OfferCopy`, `IndianMoney`, `OfferPosterWorker` (`@Async("offerPosterExecutor")`, own 2–4 thread pool), providers (`OpenAiPosterImageProvider` → `POST {base}/images/generations`, `PreviewPosterImageProvider` Java2D stand-in, selected by `PosterImageProviders`), `OfferPosterStorageService` (S3 `attendance/offer-posters/…` or `data/offer-posters/`). Tables `festive_offers` (blocks as JSON) and `offer_posters` (keeps the exact prompt, provider, model, status, error) are created by `ddl-auto: update`; no schema patch needed.
-**Frontend:** `app/admin/offers/page.tsx`, `components/admin/offers/*` (`OfferStudio` list, `OfferEditor`, `BlockEditors`, `PosterPanel`, `offer-form.ts`, `share-poster.ts`), `fetchOfferPosterBlob` in `api.ts`, i18n `admin.offerStudio` (English only), nav entry under Growth (`Wand2`).
-
-**Config** (`app.offer-posters.*`; env `OFFER_POSTER_PROVIDER` auto|openai|preview|none, `OFFER_POSTER_OPENAI_API_KEY` (falls back to `OPENAI_API_KEY`), `OFFER_POSTER_MODEL` (default `gpt-image-1`), `OFFER_POSTER_QUALITY` (low|medium|high, default medium), `OFFER_POSTER_DAILY_LIMIT` per brand (15), `OFFER_POSTER_ALLOW_PREVIEW` (true locally, false in prod)). **Prod wiring:** key lives in SSM `/salon-platform-prod/openai/api_key` (+ optional `offer_posters/{model,quality,daily_limit}`); `salon-platform-infra/scripts/setup-offer-poster-ssm.sh` stores it, `deploy/scripts/render-runtime-env.sh` + `docker-compose.prod.yml` pass it to the backend, and the infra change must be applied (terraform uploads the scripts to the deploy bucket) before the key reaches the container. Until a key is set the studio opens but shows "AI poster generation isn't set up yet" and the Create poster button is disabled.
-**Local testing:** with no key the stand-in "preview" renderer draws a plain, correctly-worded poster (badged "PREVIEW — not AI artwork") so the whole flow can be exercised. Seed login: CEO in §9.
-
-**Known issues / limitations**
-1. **The real AI path is untested against the live OpenAI API** (no key was available). Request/response handling and every error mapping are unit-tested with a mock server; the first real poster must be checked by a person. The model name/params follow `gpt-image-1` (`size`, `quality`, `output_format=jpeg`); newer models may need a config change.
-2. **AI text can be wrong** (misspelt words, altered prices or phone digits). The prompt lists every string verbatim and forbids other text, and the UI forces a "checked" tick before Share, but a wrong poster is still possible. A deterministic text overlay on an AI background (so numbers are always exact) is the robust next step.
-3. **Prerequisites outside the code:** an OpenAI API key with billing, and the OpenAI organisation verified for the image model (otherwise requests return 403 — surfaced to the owner as "not approved yet"). Cost ≈ per image by quality (medium is a few rupees each); the 15/day/brand cap limits spend.
-4. **No logo/brand-photo upload and no festival calendar**: artwork is generic AI imagery in the chosen style (people shown are AI-generated); dates of lunar festivals are not suggested.
-5. **Not connected to billing or Promotions/Packages**: nothing validates that the offer can actually be applied at the till.
-6. Posters stay in S3 until the owner deletes the poster/offer; there is no retention job. English-only admin copy.
-7. Desktop sharing is a download + paste (web.whatsapp.com cannot be pre-filled with an image). Web Share needs HTTPS and a user tap; it is unavailable on most desktop browsers.
-8. In-flight generations are lost on a backend restart (they are marked failed after 10 minutes and can be retried).
-
 ---
 
 ### 4.3 Platform app (`/platform/*`)
@@ -364,7 +338,6 @@ Spring Boot 3.5, Java 21, PostgreSQL, Redis. Key modules (see `backend/README.md
 - Inventory
 - Platform tenant administration
 - Sales module (leads) for platform
-- **Offer studio:** festive offer posters (`/api/v1/festive-offers/*`) — see §4.2.2
 - **Team requests:** leave approvals + revolving salary-advance budget (`/api/v1/salary-advances/*`, `/api/v1/leave/*`, `/api/v1/staff-portal/advances|leaves`) — see §4.2.1
 
 **Schema evolution:** Many `*SchemaPatch` `ApplicationRunner` classes apply idempotent SQL (e.g. `ExpenditureSchemaPatch`, `MembershipSoldByStaffSchemaPatch`, `ScratchCampaignSchemaPatch`, `branches.scratch_card_enabled` default false).
@@ -575,7 +548,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 | Staff promo analytics | `backend/.../StaffPromoSalesAnalyticsService.java` |
 | **Platform customer usage** | **§4.3.1** — `PlatformUsageAnalyticsService.java`, `PlatformUsageController.java`, `ProductUsageSqlSupport.java`, `ProductUsageRollupService.java`, `ProductTelemetryIngestService.java`, `route-feature-map.ts`, `frontend/src/modules/platform/usage/*`, `scripts/verify-tenant-usage.mjs`, `scripts/verify-usage-sql-local.sh` |
 | Team requests (leave + advances) | **§4.2.1** — `SalaryAdvanceService.java`, `SalaryAdvanceRules.java`, `SalaryAdvanceController.java`, `LeaveService.java`, `SalaryAdvanceSchemaPatch.java`; `frontend/src/components/admin/requests/*`, `frontend/src/components/employee/StaffAdvanceSection.tsx` |
-| Offer studio (festive posters) | **§4.2.2** — `FestiveOfferService.java`, `PosterPromptBuilder.java`, `OpenAiPosterImageProvider.java`; `frontend/src/components/admin/offers/*` |
 | Deploy workflows | `frontend/.github/workflows/deploy.yml`, `backend/.github/workflows/deploy.yml` |
 
 ---
