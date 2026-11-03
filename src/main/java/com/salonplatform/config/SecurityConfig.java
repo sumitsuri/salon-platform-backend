@@ -1,6 +1,7 @@
 package com.salonplatform.config;
 
 import com.salonplatform.security.JwtAuthenticationFilter;
+import com.salonplatform.telemetry.ProductActivityFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -35,6 +36,7 @@ import java.util.Set;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ProductActivityFilter productActivityFilter;
     private final AuthenticationEntryPoint authenticationEntryPoint;
     private final AccessDeniedHandler accessDeniedHandler;
 
@@ -59,7 +61,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(productActivityFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 

@@ -16,6 +16,7 @@ import com.salonplatform.exception.BadRequestException;
 import com.salonplatform.exception.ResourceNotFoundException;
 import com.salonplatform.security.JwtTokenProvider;
 import com.salonplatform.security.UserPrincipal;
+import com.salonplatform.telemetry.ProductActivityCatalog;
 import com.salonplatform.telemetry.ProductTelemetryIngestService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -61,7 +62,8 @@ public class AuthService {
         String accessToken = jwtTokenProvider.generateAccessToken(principal, session.getId());
 
         try {
-            productTelemetryIngestService.recordLoginSucceeded(principal, request.getPortal());
+            productTelemetryIngestService.recordLoginSucceeded(
+                    principal, ProductActivityCatalog.portalFor(principal.getRole()));
         } catch (Exception ignored) {
             // Telemetry must never affect authentication.
         }
@@ -79,6 +81,12 @@ public class AuthService {
 
     /** Explicit sign-out of one device. */
     public void logout(String refreshToken) {
+        try {
+            sessionService.findActive(refreshToken).ifPresent(active ->
+                    productTelemetryIngestService.recordLogout(new UserPrincipal(active.user())));
+        } catch (Exception ignored) {
+            // Telemetry must never block sign-out.
+        }
         sessionService.logout(refreshToken);
     }
 

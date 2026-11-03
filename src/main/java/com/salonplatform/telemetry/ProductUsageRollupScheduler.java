@@ -34,7 +34,7 @@ public class ProductUsageRollupScheduler {
     @Async
     public void bootstrapRollup() {
         try {
-            rollupService.rollupRecentDays(35);
+            rollupService.rollupRecentDays(90);
         } catch (Exception e) {
             log.warn("Initial product usage rollup failed: {}", e.getMessage());
         }

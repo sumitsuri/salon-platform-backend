@@ -18,7 +18,8 @@ public class ProductTelemetryEventValidator {
             "screen_viewed",
             "session_started",
             "feature_used",
-            "login_succeeded");
+            "login_succeeded",
+            "logout");
 
     private static final Set<String> ALLOWED_PORTALS = Set.of("employee", "manager", "admin", "platform");
 

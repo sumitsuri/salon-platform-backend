@@ -27,6 +27,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -135,6 +136,16 @@ public class SessionService {
             session = repository.save(session);
         }
         return new Validated(session, user);
+    }
+
+    /** Active session for this refresh token, if the device is still signed in. */
+    @Transactional(readOnly = true)
+    public Optional<Validated> findActive(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findByTokenAndRevokedFalse(rawToken).flatMap(session ->
+                userRepository.findById(session.getUserId()).map(user -> new Validated(session, user)));
     }
 
     /** Signs out one device. Safe to call repeatedly or with an unknown token. */

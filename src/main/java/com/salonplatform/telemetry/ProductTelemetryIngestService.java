@@ -75,22 +75,36 @@ public class ProductTelemetryIngestService {
     }
 
     public void recordLoginSucceeded(UserPrincipal user, String portal) {
-        if (!properties.isEnabled() || user == null) {
+        String resolved = resolvePortal(user, portal);
+        storeNow(user, "login_succeeded", resolved, resolved + ".login", "/api/v1/auth/login", "POST");
+    }
+
+    public void recordLogout(UserPrincipal user) {
+        String resolved = resolvePortal(user, null);
+        storeNow(user, "logout", resolved, resolved + ".logout", "/api/v1/auth/logout", "POST");
+    }
+
+    /** Post-login product work (billing, attendance, and the rest). Queued so the request is not blocked. */
+    public void recordActivity(UserPrincipal user, String portal, String featureKey, String route, String httpMethod) {
+        if (!properties.isEnabled() || user == null || user.getTenantId() == null || featureKey == null) {
             return;
         }
-        String normalizedPortal = portal == null || portal.isBlank() ? null : portal.trim().toLowerCase();
-        ProductTelemetryEventValidator.ValidatedClientEvent validated = new ProductTelemetryEventValidator.ValidatedClientEvent(
-                "login_succeeded",
-                Instant.now(),
-                null,
-                normalizedPortal,
-                "auth.login",
-                null,
-                null,
-                "server",
-                null,
-                UUID.randomUUID());
-        StoredEvent event = buildStoredEvent(user, validated);
+        StoredEvent event = serverEvent(user, "feature_used", portal, featureKey, route, httpMethod);
+        if (queue == null) {
+            storeExisting(event);
+            return;
+        }
+        enqueue(event);
+    }
+
+    private void storeNow(UserPrincipal user, String eventName, String portal, String featureKey, String route, String httpMethod) {
+        if (!properties.isEnabled() || user == null || user.getTenantId() == null) {
+            return;
+        }
+        storeExisting(serverEvent(user, eventName, portal, featureKey, route, httpMethod));
+    }
+
+    private void storeExisting(StoredEvent event) {
         if (!persistEventBatch(List.of(event))) {
             enqueue(event);
             return;
@@ -98,9 +112,38 @@ public class ProductTelemetryIngestService {
         try {
             upsertSnapshots(List.of(event));
         } catch (Exception e) {
-            log.warn("Product telemetry snapshot upsert failed for login: {}", e.getMessage());
+            log.warn("Product telemetry snapshot upsert failed for {}: {}", event.eventName(), e.getMessage());
         }
         rollupAffectedDays(List.of(event));
+    }
+
+    private StoredEvent serverEvent(
+            UserPrincipal user, String eventName, String portal, String featureKey, String route, String httpMethod) {
+        String propertiesJson = httpMethod == null || httpMethod.isBlank()
+                ? null
+                : "{\"source\":\"api\",\"action\":\"" + httpMethod + "\"}";
+        ProductTelemetryEventValidator.ValidatedClientEvent validated = new ProductTelemetryEventValidator.ValidatedClientEvent(
+                eventName,
+                Instant.now(),
+                null,
+                portal,
+                featureKey,
+                route,
+                propertiesJson,
+                "server",
+                null,
+                UUID.randomUUID());
+        return buildStoredEvent(user, validated);
+    }
+
+    private static String resolvePortal(UserPrincipal user, String requested) {
+        if (user != null && user.getRole() != null) {
+            return ProductActivityCatalog.portalFor(user.getRole());
+        }
+        if (requested == null || requested.isBlank()) {
+            return "manager";
+        }
+        return requested.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private StoredEvent buildStoredEvent(UserPrincipal user, ProductTelemetryEventValidator.ValidatedClientEvent validated) {
