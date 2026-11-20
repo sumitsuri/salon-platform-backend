@@ -9,6 +9,11 @@ permissions:
   id-token: write
   contents: read
 
+# One deploy at a time; a newer push waits instead of cancelling a swap mid-flight.
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-south-1
   ECR_REPOSITORY: salon-platform-prod-backend
@@ -18,6 +23,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -35,16 +41,19 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker buildx build --platform linux/arm64 \
-            -t "$ECR_REGISTRY/$ECR_REPOSITORY:latest" \
-            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
-            --push .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Deploy to EC2 via SSM
+        id: deploy
         run: |
           set -euo pipefail
           DEFAULT_TARGETS="Key=tag:DeployTarget,Values=salon-platform-prod-app"
@@ -56,9 +65,45 @@ jobs:
             TARGETS="$DEFAULT_TARGETS"
             echo "SSM deploy target (fallback tag): $TARGETS"
           fi
-          aws ssm send-command \
+          CMD_ID=$(aws ssm send-command \
             --targets "$TARGETS" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy backend ${{ github.sha }}" \
             --parameters 'commands=["/opt/salon-platform/scripts/deploy.sh backend"]' \
-            --output text
+            --query Command.CommandId --output text)
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+
+      # Green must mean "deployed", not "deploy command sent": wait for the host to finish
+      # the image pull and container swap, then for the API to answer again.
+      - name: Wait for the host to finish the swap
+        run: |
+          set -euo pipefail
+          CMD_ID="${{ steps.deploy.outputs.command_id }}"
+          for i in $(seq 1 60); do
+            STATUSES=$(aws ssm list-command-invocations --command-id "$CMD_ID" \
+              --query 'CommandInvocations[].Status' --output text)
+            echo "host command status: ${STATUSES:-none yet}"
+            case "$STATUSES" in
+              *Failed*|*Cancelled*|*TimedOut*)
+                echo "::error::Deploy command failed on the host"
+                exit 1 ;;
+              *Pending*|*InProgress*|*Delayed*|"") sleep 10 ;;
+              *) exit 0 ;;
+            esac
+          done
+          echo "::error::Timed out waiting for the host deploy command"
+          exit 1
+
+      - name: Wait for the API to answer
+        run: |
+          # 401 is healthy here (auth is on); 5xx or no answer means the app is still starting.
+          for i in $(seq 1 72); do
+            CODE=$(curl -s -o /dev/null -m 10 -w '%{http_code}' https://api.antrahq.com/actuator/health || true)
+            echo "api health: $CODE"
+            case "$CODE" in
+              2??|3??|4??) exit 0 ;;
+            esac
+            sleep 5
+          done
+          echo "::error::API did not recover within 6 minutes of the swap"
+          exit 1
