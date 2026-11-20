@@ -23,6 +23,13 @@ spring:
       port: 6379
 
 app:
+  # Owner-facing AI assistant. Off unless enabled; "fake" is a scripted model for local development.
+  copilot:
+    enabled: ${COPILOT_ENABLED:false}
+    provider: ${COPILOT_PROVIDER:bedrock}
+    model-id: ${COPILOT_MODEL_ID:global.anthropic.claude-sonnet-5-5}
+    region: ${COPILOT_REGION:ap-south-1}
+    daily-requests-per-tenant: ${COPILOT_DAILY_REQUESTS:300}
   jwt:
     secret: ${JWT_SECRET:salon-platform-jwt-secret-change-in-production-min-256-bits-long-key-here}
     access-token-expiry-ms: ${JWT_ACCESS_TOKEN_EXPIRY_MS:900000}        # 15 minutes (silent refresh via refresh token)

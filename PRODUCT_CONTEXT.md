@@ -208,6 +208,17 @@ Answers the owner question "should staff shifts follow demand instead of a fixed
 
 ---
 
+#### 4.2.4 Ask Antra — owner chat assistant (Admin → Intelligence → Ask Antra, `/admin/assistant`)
+
+Owners ask about sales, staff, busy hours, stock and profit in plain words; the answer streams in like a chat app. Plan and market analysis: `backend/docs/AI_COPILOT_PLAN.md`.
+
+- **Principle:** the model is the interface and the reasoner, never the calculator. Every number comes from a read-only **tool** that wraps an existing service (`CopilotToolbox`): `list_branches`, `sales_overview`, `compare_periods`, `service_mix`, `staff_sales`, `attendance_overview`, `busy_hours`, `inventory_overview`, `profit_and_loss`. `compare_periods` splits a revenue change into a *visits effect* and a *ticket effect* in code (`PeriodComparison`), so "why did sales drop" is arithmetic, not a guess.
+- **Backend** (`com.salonplatform.copilot`): `POST /api/v1/copilot/chat` streams server-sent events (`text`, `tool`, `done`, `error`); `GET /api/v1/copilot/status`. `CopilotService` runs the model-to-tool loop on the request thread so tools see the signed-in user (tenant and branch limits apply exactly as on screens). Brand admin or above only. Guardrails: max 6 tool rounds, 20 messages, 4,000 chars per message, 300 requests per tenant per day (in-memory counter), tool results trimmed to 14k chars (`JsonTrimmer`), a system prompt that forbids self-calculated numbers and treats tool output as data.
+- **Model access** is behind `LlmClient`: `BedrockLlmClient` (Amazon Bedrock Converse API, streaming + tools; credentials from the default AWS chain) or `ScriptedLlmClient` (`provider=fake`, local development and tests only, labels every answer as scripted). The model id is a setting, so models can be compared without code changes.
+- **Config** (`app.copilot.*`, all via env): `COPILOT_ENABLED` (default **false**), `COPILOT_PROVIDER` (`bedrock`|`fake`), `COPILOT_MODEL_ID` (default `global.anthropic.claude-sonnet-5-5`), `COPILOT_REGION`, `COPILOT_DAILY_REQUESTS`. Local: `COPILOT_ENABLED=true COPILOT_PROVIDER=fake bash scripts/dev-server.sh restart`.
+- **Frontend** (`frontend/src/components/admin/assistant/*`): `AssistantChat` (suggested questions, streaming, step chips per tool call, stop, copy, chat history in the browser's localStorage per user, last 20 chats), `Markdown` (safe renderer, tables included, no raw HTML), `streamAssistantChat` in `lib/api.ts` (fetch + SSE with 401 refresh). Conversations are **not** stored on the server yet.
+- **Known issues / not yet built:** (1) prod is **off** until Amazon Bedrock model access is granted for the AWS account (Anthropic use-case form, per-model access, quota increase) and the EC2 role gets `bedrock:InvokeModelWithResponseStream`; (2) no check yet that every number in the prose appears in a tool result; (3) tools are read-only, no actions yet; (4) no forecasts, inventory-per-service readiness or autopilot briefs (plan phases 2-4); (5) daily limit is per instance and resets on restart; (6) no token or cost accounting beyond the log line.
+
 ### 4.3 Platform app (`/platform/*`)
 
 **Audience:** Antrahq internal — `PLATFORM_SUPER_ADMIN` or `SALES_EXECUTIVE`.
@@ -584,6 +595,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8080
 | **Platform customer usage** | **§4.3.1** — `PlatformUsageAnalyticsService.java`, `PlatformUsageController.java`, `ProductUsageSqlSupport.java`, `ProductUsageRollupService.java`, `ProductTelemetryIngestService.java`, `route-feature-map.ts`, `frontend/src/modules/platform/usage/*`, `scripts/verify-tenant-usage.mjs`, `scripts/verify-usage-sql-local.sh` |
 | Team requests (leave + advances) | **§4.2.1** — `SalaryAdvanceService.java`, `SalaryAdvanceRules.java`, `SalaryAdvanceController.java`, `LeaveService.java`, `SalaryAdvanceSchemaPatch.java`; `frontend/src/components/admin/requests/*`, `frontend/src/components/employee/StaffAdvanceSection.tsx` |
 | Busy hours (demand vs staffing) | **§4.2.3** — `DemandAnalyzer.java`, `DemandInsightsService.java`; `frontend/src/components/admin/busy/*` |
+| Ask Antra (owner chat assistant) | **§4.2.4** — `copilot/*` (`CopilotService`, `CopilotToolbox`, `BedrockLlmClient`); `frontend/src/components/admin/assistant/*` |
 | Deploy workflows | `frontend/.github/workflows/deploy.yml`, `backend/.github/workflows/deploy.yml` |
 
 ---
