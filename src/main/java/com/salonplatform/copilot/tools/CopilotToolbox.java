@@ -48,6 +48,8 @@ public class CopilotToolbox {
     private final PlAnalyticsService pl;
     private final StaffScorecardService staffScorecard;
     private final DemandInsightsService demand;
+    private final com.salonplatform.forecast.SalesForecastService salesForecast;
+    private final com.salonplatform.forecast.StockReadinessService stockReadiness;
     private final BranchRepository branches;
     private final ObjectMapper mapper;
 
@@ -142,6 +144,19 @@ public class CopilotToolbox {
                     return inventory.getOverview(month, branchIds(args));
                 }));
 
+        t.add(new CopilotTool("sales_forecast", "Forecasting sales",
+                "Expected sales for the brand and each branch for the coming days (default 30, up to 90), with a likely range, how the month "
+                        + "is pacing against its target, festival effects, and how accurate the forecast has been on past periods. Use it for any "
+                        + "question about future or expected sales.",
+                schema("\"days\":{\"type\":\"integer\",\"description\":\"How many days ahead, 7 to 90. Default 30.\"}"),
+                args -> forecastSummary(salesForecast.forecast(args.hasNonNull("days") ? args.get("days").asInt() : 30))));
+
+        t.add(new CopilotTool("stock_readiness", "Checking stock for upcoming services",
+                "Whether each branch has enough of each product for the services already booked plus the walk-ins the forecast expects, "
+                        + "over the next few days (default 7, up to 30): products that may run out, products running low, and how much to order.",
+                schema("\"days\":{\"type\":\"integer\",\"description\":\"How many days ahead, 1 to 30. Default 7.\"}"),
+                args -> stockSummary(stockReadiness.readiness(args.hasNonNull("days") ? args.get("days").asInt() : 7))));
+
         t.add(new CopilotTool("profit_and_loss", "Checking profit and loss",
                 "Revenue, expenses and profit for a period.",
                 schema(RANGE_PROPS + "," + BRANCH_PROP),
@@ -154,6 +169,105 @@ public class CopilotToolbox {
     }
 
     // ---- shaping results for the model ----
+
+    private static Map<String, Object> forecastScope(com.salonplatform.forecast.SalesForecastService.Scope sc, boolean withWeeks) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("name", sc.name());
+        if (!sc.forecastable() || sc.totals() == null) {
+            m.put("forecastable", false);
+            m.put("note", sc.note());
+            return m;
+        }
+        var q = sc.quality();
+        m.put("confidence", q.confidence());
+        if (q.backtests() > 0) m.put("typicalMonthlyErrorPercent", Math.round(q.monthError() * 100));
+        var tt = sc.totals();
+        m.put("next7Days", Map.of("expected", Math.round(tt.next7()), "low", Math.round(tt.next7Low()), "high", Math.round(tt.next7High())));
+        m.put("next30Days", Map.of("expected", Math.round(tt.next30()), "low", Math.round(tt.next30Low()), "high", Math.round(tt.next30High())));
+        var p = sc.pacing();
+        if (p != null) {
+            Map<String, Object> pace = new LinkedHashMap<>();
+            pace.put("monthToDate", Math.round(p.monthToDate()));
+            pace.put("expectedMonthEnd", Math.round(p.expectedMonthEnd()));
+            if (p.target() != null) {
+                pace.put("monthlyTarget", Math.round(p.target()));
+                pace.put("expectedVersusTargetPercent", Math.round(p.expectedVsTarget() * 100));
+            }
+            m.put("thisMonth", pace);
+        }
+        if (withWeeks) {
+            List<Map<String, Object>> weeks = new ArrayList<>();
+            double sum = 0;
+            LocalDate start = null;
+            for (var d : sc.days()) {
+                if (start == null) start = d.date();
+                sum += d.expected();
+                if (d.date().getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
+                    weeks.add(Map.of("from", start.toString(), "to", d.date().toString(), "expected", Math.round(sum)));
+                    sum = 0;
+                    start = null;
+                }
+            }
+            if (start != null) weeks.add(Map.of("from", start.toString(), "to", sc.days().get(sc.days().size() - 1).date().toString(), "expected", Math.round(sum)));
+            m.put("weeks", weeks);
+        }
+        return m;
+    }
+
+    private static Object forecastSummary(com.salonplatform.forecast.SalesForecastService.ForecastResponse r) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("trainedThrough", r.trainedThrough());
+        out.put("horizonDays", r.horizonDays());
+        if (r.stale()) out.put("warning", "The latest sales are from " + r.trainedThrough() + "; the forecast is built from that.");
+        if (r.brand() != null) out.put("brand", forecastScope(r.brand(), true));
+        out.put("branches", r.branches().stream().map(b -> forecastScope(b, false)).toList());
+        List<Map<String, Object>> fest = new ArrayList<>();
+        for (var f : r.festivals()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("festival", f.name());
+            m.put("date", f.date());
+            m.put("expectedImpact", Math.round(f.impact()));
+            m.put("expectedImpactPercent", Math.round(f.percent() * 100));
+            m.put("basis", f.learned() ? "learned from this brand's own sales" : "starting assumption, not yet confirmed by this brand's sales");
+            fest.add(m);
+        }
+        out.put("festivals", fest);
+        return out;
+    }
+
+    private static Object stockSummary(com.salonplatform.forecast.StockReadinessService.Readiness r) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("from", r.from());
+        out.put("to", r.to());
+        out.put("usageHistoryAvailable", r.hasUsageHistory());
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (var b : r.branches()) {
+            Map<String, Object> bm = new LinkedHashMap<>();
+            bm.put("branch", b.name());
+            bm.put("bookedServices", b.bookedServices());
+            bm.put("mayRunOut", b.shortCount());
+            bm.put("runningLow", b.lowCount());
+            List<Map<String, Object>> items = new ArrayList<>();
+            for (var i : b.items().stream().filter(x -> x.status() == com.salonplatform.forecast.StockReadinessService.Status.SHORT
+                    || x.status() == com.salonplatform.forecast.StockReadinessService.Status.LOW).limit(10).toList()) {
+                Map<String, Object> im = new LinkedHashMap<>();
+                im.put("product", i.name());
+                im.put("status", i.status());
+                im.put("unit", i.unit());
+                im.put("inStock", Math.round(i.onHand()));
+                im.put("neededForBookedServices", Math.round(i.bookedNeed()));
+                im.put("expectedNeed", Math.round(i.expectedNeed()));
+                if (i.runsOutOn() != null) im.put("runsOutOn", i.runsOutOn());
+                im.put("suggestedOrder", Math.round(i.suggestedOrder()));
+                im.put("confidence", i.confidence());
+                items.add(im);
+            }
+            bm.put("atRisk", items);
+            list.add(bm);
+        }
+        out.put("branches", list);
+        return out;
+    }
 
     private static Map<String, Object> branchRow(Branch b) {
         Map<String, Object> m = new LinkedHashMap<>();
