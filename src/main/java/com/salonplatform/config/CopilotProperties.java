@@ -30,11 +30,30 @@ public class CopilotProperties {
     private int maxMessages = 20;
     private int maxMessageChars = 4000;
     private int dailyRequestsPerTenant = 300;
+    /** Questions one person may ask per day (a business's people share {@code dailyRequestsPerTenant}). */
+    private int dailyRequestsPerUser = 60;
+    /** Model spend per business per day and per month, in rupees; the gateway refuses further questions once reached. */
+    private double dailySpendInrPerTenant = 300;
+    private double monthlySpendInrPerTenant = 3000;
+    /** Refused attempts (off-topic, secrets, injection) within an hour before a person is paused, and for how long. */
+    private int violationsBeforeCooldown = 5;
+    private int cooldownMinutes = 30;
+    /** Ask a small, cheap model whether an unclear question is about the business, instead of refusing it outright. */
+    private boolean classifierEnabled = true;
+    /** Blank picks the provider's Haiku 5.5. */
+    private String classifierModelId = "";
     /**
      * Brand slugs to switch the assistant on for at startup (never switches anyone off). This is how a protected
      * production brand is enabled, since platform admin cannot modify it.
      */
     private java.util.List<String> enableForSlugs = new java.util.ArrayList<>();
+
+    public String resolvedClassifierModelId() {
+        if (classifierModelId != null && !classifierModelId.isBlank()) {
+            return classifierModelId.trim();
+        }
+        return "anthropic".equals(provider) ? "claude-haiku-5-5" : "global.anthropic.claude-haiku-5-5";
+    }
 
     /** The Bedrock id carries a routing prefix; the direct API uses the bare model name. */
     public String resolvedModelId() {

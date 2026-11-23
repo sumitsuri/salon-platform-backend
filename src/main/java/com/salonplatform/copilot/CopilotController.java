@@ -1,7 +1,6 @@
 package com.salonplatform.copilot;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.salonplatform.copilot.llm.LlmMessage;
 import com.salonplatform.dto.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -40,10 +39,16 @@ public class CopilotController {
         return ApiResponse.ok(service.status());
     }
 
+    /** What this person and their business have used today and this month, and the limits that apply. */
+    @GetMapping("/usage")
+    public ApiResponse<Map<String, Object>> usage() {
+        return ApiResponse.ok(service.usage());
+    }
+
     @PostMapping("/chat")
     public void chat(@RequestBody ChatRequest body, HttpServletResponse response) throws IOException {
         // Access, limits and input are checked first, so they fail as ordinary HTTP errors, not mid-stream.
-        List<LlmMessage> conversation = service.prepare(body.messages());
+        CopilotService.Prepared prepared = service.prepare(body.messages());
 
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType("text/event-stream");
@@ -52,7 +57,11 @@ public class CopilotController {
         response.setHeader("X-Accel-Buffering", "no"); // keep nginx from holding the stream back
         SseWriter sse = new SseWriter(response.getOutputStream());
         try {
-            service.run(conversation, sse);
+            if (prepared.refused()) {
+                service.streamRefusal(prepared, sse);
+            } else {
+                service.run(prepared, sse);
+            }
         } catch (ClientGoneException e) {
             log.debug("assistant client disconnected");
         }
@@ -105,6 +114,16 @@ public class CopilotController {
             d.put("inputTokens", inputTokens);
             d.put("outputTokens", outputTokens);
             send("done", d);
+        }
+
+        @Override
+        public void replaceText(String text) {
+            send("replace", Map.of("text", text));
+        }
+
+        @Override
+        public void blocked(String reason, boolean discardUserMessage) {
+            send("blocked", Map.of("reason", reason, "discardUserMessage", discardUserMessage));
         }
 
         @Override
