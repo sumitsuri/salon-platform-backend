@@ -114,6 +114,7 @@ public class SalesForecastService {
     public void warm(UUID tenantId) {
         try {
             cache.remove(tenantId);
+            describeTenant(tenantId);
             Trained t = trained(tenantId);
             ForecastEngine.Result b = t.output().brand();
             log.info("Sales forecast trained: tenant={} branches={} through={} brandModel={} confidence={} backtests={} monthError={} weekError={} dailyError={} bias={}",
@@ -143,9 +144,38 @@ public class SalesForecastService {
                         r.quality().model(), r.quality().confidence(), r.quality().trainingDays(), pct(r.quality().monthError()));
             }
         } catch (BadRequestException e) {
-            log.debug("Sales forecast skipped for tenant {}: {}", tenantId, e.getMessage());
+            log.info("Sales forecast skipped for tenant {}: {}", tenantId, e.getMessage());
         } catch (RuntimeException e) {
             log.warn("Sales forecast training failed for tenant {}", tenantId, e);
+        }
+    }
+
+    /**
+     * One aggregate-only line about where a brand's sales live (counts and totals, never customers or bills), so a brand that
+     * cannot be forecast can be explained from the log: which brand it is, how many invoices per month, what else exists.
+     */
+    private void describeTenant(UUID tenantId) {
+        try {
+            MapSqlParameterSource p = new MapSqlParameterSource("t", tenantId);
+            String who = jdbc.query("SELECT slug, name FROM tenants WHERE id = :t", p, rs -> rs.next() ? rs.getString("slug") + " / " + rs.getString("name") : "?");
+            Map<String, Integer> branchStatus = new java.util.TreeMap<>();
+            jdbc.query("SELECT status, COUNT(*) AS n FROM branches WHERE tenant_id = :t GROUP BY 1", p,
+                    rs -> { branchStatus.put(rs.getString("status"), rs.getInt("n")); });
+            StringBuilder months = new StringBuilder();
+            jdbc.query("""
+                    SELECT to_char(date_trunc('month', issued_at AT TIME ZONE 'Asia/Kolkata'), 'YYYY-MM') AS m, COUNT(*) AS n, ROUND(SUM(grand_total)) AS total
+                    FROM invoices WHERE tenant_id = :t AND deleted_at IS NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 8
+                    """, p, rs -> { months.append(rs.getString("m")).append('=').append(rs.getInt("n")).append('/').append(rs.getLong("total")).append(' '); });
+            long voided = jdbc.queryForObject("SELECT COUNT(*) FROM invoices WHERE tenant_id = :t AND deleted_at IS NOT NULL", p, Long.class);
+            StringBuilder bookings = new StringBuilder();
+            jdbc.query("""
+                    SELECT status, COUNT(*) AS n FROM bookings
+                    WHERE tenant_id = :t AND deleted_at IS NULL AND created_at > now() - interval '120 days' GROUP BY 1 ORDER BY 1
+                    """, p, rs -> { bookings.append(rs.getString("status")).append('=').append(rs.getInt("n")).append(' '); });
+            log.info("Sales forecast source: brand={} branchesByStatus={} invoicesPerMonth(count/rupees, newest first)={} voidedInvoices={} bookingsLast120Days={}",
+                    who, branchStatus, months.toString().trim(), voided, bookings.toString().trim());
+        } catch (RuntimeException e) {
+            log.warn("Sales forecast source description failed for tenant {}: {}", tenantId, e.getMessage());
         }
     }
 
