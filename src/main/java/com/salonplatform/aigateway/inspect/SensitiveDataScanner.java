@@ -37,7 +37,12 @@ public final class SensitiveDataScanner {
                     "(?i)\\b(?:postgres(?:ql)?|mysql|mongodb(?:\\+srv)?|redis|amqps?)://[^\\s:@/]+:[^\\s@/]+@\\S+"),
             new Rule("password-assignment", Category.CREDENTIAL,
                     Pattern.compile("(?i)\\b(?:password|passwd|pwd|passcode|secret|api[ _-]?key|access[ _-]?token|auth[ _-]?token|"
-                            + "private[ _-]?key|client[ _-]?secret|otp|pin)\\b\\s*(?:is|=|:|are)\\s*[\"']?([^\\s\"',;]{4,})"),
+                            + "private[ _-]?key|client[ _-]?secret|otp|pin)\\b\\s*(?:is|=|:|are|hai|hain|he)\\s*[\"']?([^\\s\"',;]{4,})"),
+                    1, Validators::looksLikeSecretValue),
+            // Hindi word order: "mera password Sunrise@2026 hai"
+            new Rule("password-assignment-hindi-order", Category.CREDENTIAL,
+                    Pattern.compile("(?i)\\b(?:password|passwd|pwd|passcode|secret|api[ _-]?key|access[ _-]?token|auth[ _-]?token|"
+                            + "private[ _-]?key|client[ _-]?secret|otp|pin)\\b\\s+[\"']?([^\\s\"',;]{4,})[\"']?\\s+(?:hai|hain|he)\\b"),
                     1, Validators::looksLikeSecretValue),
             new Rule("card-number", Category.PAYMENT_CARD, Pattern.compile("(?<![\\d])(?:\\d[ -]?){13,19}(?![\\d])"), 0,
                     v -> Validators.luhn(v.replaceAll("[ -]", ""))),

@@ -44,6 +44,12 @@ Then, around the model call: `sanitizeToolResult` (redacts sensitive data in too
 `inspectOutbound` (redacts secrets in the answer, replaces an answer that recites the hidden instructions) and `recordUsage`
 (tokens and cost against the business).
 
+## Language
+
+`LanguageDetector` tells English from Hinglish (Hindi in Latin letters, or Devanagari) from common Hindi function words, with no model call.
+A profile supplies a `Messages` set per `Language` (`Profile.localized`), so refusals, fixed answers, limits and cool-down notices
+come back in the language the person wrote in. The model's own answers follow the same rule through the system prompt.
+
 ## The audit trail
 
 One row per decision in `ai_gateway_events`: who, what was decided, why, which *kinds* of sensitive data were seen, tokens, rupees,
@@ -68,7 +74,7 @@ general-purpose chat (an employee using any AI tool) would start from.
   words; the system prompt, the daily and monthly spend caps and the cool-down are the backstops.
 - Limits are read from the ledger per request, so two simultaneous requests can both pass just under a cap.
 - A secret in a model's *answer* is caught after streaming ends; the browser is then told to replace the text.
-- Vocabulary is English and Hinglish. Other Indian languages rely on the classifier.
+- Vocabulary is English, Hinglish (Hindi in Latin letters) and a little Devanagari. Other Indian languages (Marathi, Gujarati, Tamil, ...) rely on the classifier and are answered in English for the gateway's own messages.
 - No retention job for `ai_gateway_events` yet, and no platform screen for the usage API.
 
 ## Becoming a standalone service

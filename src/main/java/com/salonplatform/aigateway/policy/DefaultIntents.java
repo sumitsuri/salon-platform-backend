@@ -47,9 +47,24 @@ public final class DefaultIntents {
             "\\b(quantum|relativity|blockchain|machine learning|artificial intelligence|climate change|photosynthesis|black hole|"
                     + "solar system|neural network|world war|theory of|chatgpt|openai|llm)\\b");
 
+    /**
+     * The same kinds of request written in Hindi, in Latin letters ("ek kavita likho", "mausam kaisa hai", "code likh do") or
+     * in Devanagari. Devanagari has no word boundaries for the regex engine, so those words are matched as plain text.
+     */
+    public static final IntentRule HINGLISH_GENERAL = IntentRule.of("general-assistant-hindi",
+            "\\b(kavita|shayari|kahani|kahaniya|chutkula|chutkule|nibandh|gaana|gaane|lyrics|anuvad)\\b"
+                    + "|\\b(code|program|script|python|javascript|java|html|sql)\\b[^.?!\\n]{0,40}\\b(likh|likho|likhiye|banao|bana do|bana de|banaiye)"
+                    + "|\\b(likh|likho|likhiye|banao)\\b[^.?!\\n]{0,30}\\b(code|program|script|python|javascript|html)\\b"
+                    + "|\\b(mausam|cricket|khabar|khabren|samachar|chunav|rashifal|kundli|lottery|bitcoin|sone ka (bhav|rate)|petrol ka (bhav|rate))\\b"
+                    + "|\\b(rajdhani|pradhan ?mantri|mukhya ?mantri|rashtrapati)\\b|\\bkisne (banaya|khoja|likha|invent kiya)\\b|\\bkab paida\\b"
+                    + "|\\b(khana (banane|banana|kaise banate)|nuskha|recipe|film|filmein|picture dekhne)\\b"
+                    + "|\\b(bimari|dawai|ilaaj|kanoon ki salah)\\b"
+                    + "|\\u0915\\u0935\\u093f\\u0924\\u093e|\\u0936\\u093e\\u092f\\u0930\\u0940|\\u0915\\u0939\\u093e\\u0928\\u0940|\\u091a\\u0941\\u091f\\u0915\\u0941\\u0932\\u093e"
+                    + "|\\u092e\\u094c\\u0938\\u092e|\\u0915\\u094d\\u0930\\u093f\\u0915\\u0947\\u091f|\\u0938\\u092e\\u093e\\u091a\\u093e\\u0930|\\u0930\\u0947\\u0938\\u093f\\u092a\\u0940|\\u0930\\u093e\\u091c\\u0927\\u093e\\u0928\\u0940");
+
     /** Every rule above, for profiles that want the whole library. */
     public static List<IntentRule> all() {
         return List.of(CODE, CREATIVE, TRANSLATION, GENERAL_KNOWLEDGE, NEWS_MARKETS_WEATHER, HOMEWORK_MATH, ENTERTAINMENT_LIFE,
-                HEALTH_LEGAL, SCIENCE_TECH);
+                HEALTH_LEGAL, SCIENCE_TECH, HINGLISH_GENERAL);
     }
 }

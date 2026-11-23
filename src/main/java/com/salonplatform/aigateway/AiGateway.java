@@ -1,5 +1,6 @@
 package com.salonplatform.aigateway;
 
+import com.salonplatform.aigateway.inspect.LanguageDetector;
 import com.salonplatform.aigateway.inspect.PromptInjectionDetector;
 import com.salonplatform.aigateway.inspect.ScopeGuard;
 import com.salonplatform.aigateway.inspect.SensitiveDataScanner;
@@ -12,6 +13,7 @@ import com.salonplatform.aigateway.model.Category;
 import com.salonplatform.aigateway.model.Finding;
 import com.salonplatform.aigateway.model.GatewayContext;
 import com.salonplatform.aigateway.model.GatewayRequest;
+import com.salonplatform.aigateway.model.Language;
 import com.salonplatform.aigateway.model.InboundDecision;
 import com.salonplatform.aigateway.model.Message;
 import com.salonplatform.aigateway.model.ModelUsage;
@@ -19,6 +21,7 @@ import com.salonplatform.aigateway.model.OutboundDecision;
 import com.salonplatform.aigateway.model.Subject;
 import com.salonplatform.aigateway.policy.Budget;
 import com.salonplatform.aigateway.policy.CostCalculator;
+import com.salonplatform.aigateway.policy.Messages;
 import com.salonplatform.aigateway.policy.Profile;
 
 import java.math.BigDecimal;
@@ -49,11 +52,9 @@ import java.util.stream.Collectors;
  */
 public final class AiGateway {
 
-    public static final String MSG_CREDENTIAL = "Your message looks like it contains a password, access key or card number, "
-            + "so I did not send it to the AI. Please remove it and ask again. Never share credentials in a chat.";
-    public static final String MSG_INJECTION = "I can't follow instructions that try to change how I work. I'm here to help "
-            + "with your business data, so ask me about your sales, staff, stock or busy hours.";
-    public static final String MSG_TOO_LONG = "That message is too long for a business question. Please ask it in a sentence or two.";
+    public static final String MSG_CREDENTIAL = Messages.CREDENTIAL;
+    public static final String MSG_INJECTION = Messages.INJECTION;
+    public static final String MSG_TOO_LONG = Messages.TOO_LONG;
 
     /** What one subject has used and may use, for showing remaining allowance. */
     public record UsageReport(UsageSnapshot used, Budget limits) {}
@@ -90,8 +91,9 @@ public final class AiGateway {
         List<Message> normalised = req.messages() == null ? List.of() : req.messages().stream()
                 .map(m -> new Message(m.role(), TextNormalizer.forMatching(m.text()))).toList();
         int last = lastUserIndex(normalised);
+        Messages msg = profile.messages(last < 0 ? Language.ENGLISH : LanguageDetector.detect(normalised.get(last).text()));
         if (last < 0 || normalised.get(last).text().isBlank()) {
-            return block(ctx, "EMPTY", "Ask a question first.", false, List.of(), 0);
+            return block(ctx, "EMPTY", msg.emptyQuestion(), false, List.of(), 0);
         }
         int inputChars = normalised.get(last).text().length();
         Budget budget = profile.budget();
@@ -104,8 +106,8 @@ public final class AiGateway {
             Instant until = used.lastViolationAt().plus(Duration.ofMinutes(budget.cooldownMinutes()));
             if (now.isBefore(until)) {
                 long minutes = Math.max(1, (Duration.between(now, until).getSeconds() + 59) / 60);
-                return limit(ctx, "COOLDOWN", "You have asked several things I can't help with, so Ask Antra is paused for you for "
-                        + minutes + " more minute" + (minutes == 1 ? "" : "s") + ". Please ask about your business data afterwards.", inputChars);
+                return limit(ctx, "COOLDOWN", msg.cooldown()
+                        .replace("{minutes}", String.valueOf(minutes)).replace("{s}", minutes == 1 ? "" : "s"), inputChars);
             }
         }
 
@@ -114,7 +116,7 @@ public final class AiGateway {
             String lower = m.text().toLowerCase(Locale.ROOT);
             boolean hit = m.role() == Message.Role.USER ? injection.isInjection(lower) : injection.hasTemplateTokens(m.text());
             if (hit) {
-                return block(ctx, Category.PROMPT_INJECTION.name(), MSG_INJECTION, false, List.of(), inputChars,
+                return block(ctx, Category.PROMPT_INJECTION.name(), msg.injection(), false, List.of(), inputChars,
                         Category.PROMPT_INJECTION, "prompt-injection");
             }
         }
@@ -128,7 +130,7 @@ public final class AiGateway {
             if (m.role() == Message.Role.USER) {
                 Finding blocking = findings.stream().filter(f -> profile.actionFor(f.category()) == Action.BLOCK).findFirst().orElse(null);
                 if (blocking != null) {
-                    return block(ctx, blocking.category().name(), MSG_CREDENTIAL, i == last, List.of(blocking), inputChars,
+                    return block(ctx, blocking.category().name(), msg.credential(), i == last, List.of(blocking), inputChars,
                             blocking.category(), blocking.ruleId());
                 }
             }
@@ -161,15 +163,15 @@ public final class AiGateway {
             verdict = scope.evaluate(profile, lastLower, terms, priorInScope);
             switch (verdict.result()) {
                 case SMALL_TALK -> {
-                    String answer = profile.smallTalk().get(verdict.smallTalk());
+                    String answer = msg.smallTalk().get(verdict.smallTalk());
                     audit(AuditEvent.ANSWERED, ctx, "ANSWERED", verdict.detail(), Set.of(), "", 0, 0, BigDecimal.ZERO, 0, inputChars);
                     return new InboundDecision(InboundDecision.Kind.ANSWERED, verdict.detail(), answer, false, List.of(), List.of(), ctx);
                 }
                 case TOO_LONG -> {
-                    return block(ctx, Category.TOO_LONG.name(), MSG_TOO_LONG, false, List.of(), inputChars, Category.TOO_LONG, "max-words");
+                    return block(ctx, Category.TOO_LONG.name(), msg.tooLong(), false, List.of(), inputChars, Category.TOO_LONG, "max-words");
                 }
                 case OFF_TOPIC -> {
-                    return block(ctx, Category.OFF_TOPIC.name(), profile.offTopicMessage(), false, List.of(), inputChars,
+                    return block(ctx, Category.OFF_TOPIC.name(), msg.offTopic(), false, List.of(), inputChars,
                             Category.OFF_TOPIC, verdict.detail());
                 }
                 default -> { /* IN_SCOPE or AMBIGUOUS: continue */ }
@@ -177,7 +179,7 @@ public final class AiGateway {
         }
 
         // 5. Budgets
-        InboundDecision over = overBudget(ctx, budget, used, inputChars);
+        InboundDecision over = overBudget(ctx, budget, used, inputChars, msg);
         if (over != null) return over;
 
         // 6. A second opinion for questions the rules cannot place
@@ -194,7 +196,7 @@ public final class AiGateway {
                     ? profile.weakSignalWithoutClassifier() : profile.ambiguousWithoutClassifier();
             boolean allow = inScope != null ? inScope : fallback == Action.ALLOW;
             if (!allow) {
-                return block(ctx, Category.OFF_TOPIC.name(), profile.offTopicMessage(), false, List.of(), inputChars,
+                return block(ctx, Category.OFF_TOPIC.name(), msg.offTopic(), false, List.of(), inputChars,
                         Category.OFF_TOPIC, inScope == null ? "unclassified" : "classifier");
             }
         }
@@ -253,19 +255,18 @@ public final class AiGateway {
 
     // ------------------------------------------------------------------ internals
 
-    private InboundDecision overBudget(GatewayContext ctx, Budget b, UsageSnapshot u, int inputChars) {
+    private InboundDecision overBudget(GatewayContext ctx, Budget b, UsageSnapshot u, int inputChars, Messages msg) {
         if (b.dailyRequestsPerUser() > 0 && u.requestsUserToday() >= b.dailyRequestsPerUser()) {
-            return limit(ctx, "RATE_LIMIT_USER", "You have used today's " + b.dailyRequestsPerUser()
-                    + " questions. Your allowance resets tomorrow.", inputChars);
+            return limit(ctx, "RATE_LIMIT_USER", msg.userLimit().replace("{limit}", String.valueOf(b.dailyRequestsPerUser())), inputChars);
         }
         if (b.dailyRequestsPerTenant() > 0 && u.requestsTenantToday() >= b.dailyRequestsPerTenant()) {
-            return limit(ctx, "RATE_LIMIT_TENANT", "Today's assistant limit for your business has been reached. It resets tomorrow.", inputChars);
+            return limit(ctx, "RATE_LIMIT_TENANT", msg.tenantLimit(), inputChars);
         }
         if (b.dailySpendPerTenantInr() > 0 && u.spendTenantToday().doubleValue() >= b.dailySpendPerTenantInr()) {
-            return limit(ctx, "SPEND_DAILY", "Your business has reached today's assistant usage limit. It resets tomorrow.", inputChars);
+            return limit(ctx, "SPEND_DAILY", msg.spendDaily(), inputChars);
         }
         if (b.monthlySpendPerTenantInr() > 0 && u.spendTenantMonth().doubleValue() >= b.monthlySpendPerTenantInr()) {
-            return limit(ctx, "SPEND_MONTHLY", "Your business has reached this month's assistant usage limit. It resets next month.", inputChars);
+            return limit(ctx, "SPEND_MONTHLY", msg.spendMonthly(), inputChars);
         }
         return null;
     }

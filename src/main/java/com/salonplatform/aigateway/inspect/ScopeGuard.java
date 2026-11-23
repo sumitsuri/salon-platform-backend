@@ -105,6 +105,6 @@ public final class ScopeGuard {
     }
 
     private static String[] tokens(String lower) {
-        return lower.split("[^\\p{L}\\p{N}]+");
+        return lower.split("[^\\p{L}\\p{M}\\p{N}]+");
     }
 }
