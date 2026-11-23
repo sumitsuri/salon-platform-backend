@@ -22,6 +22,8 @@ public final class ForecastEngine {
     private static final double COMPLEX_MODEL_MUST_BEAT_BY = 0.03;
     /** A branch must have sales on at least this many of the last 28 days; otherwise there is no current pattern to carry forward. */
     public static final int MIN_RECENT_TRADING_DAYS = 8;
+    static final int MIN_BACKTESTS_FOR_HIGH = 8;
+    static final int SEASON_HISTORY_DAYS = 330;
 
     public enum Confidence { HIGH, MEDIUM, LOW, INSUFFICIENT }
 
@@ -202,6 +204,10 @@ public final class ForecastEngine {
         int trainingDays = usable.stream().mapToInt(c -> c.series.length()).max().orElse(0);
         String model = usable.stream().map(c -> c.trainer.name()).distinct().count() == 1 ? usable.get(0).trainer.name() : "per-branch";
         String note = usable.size() < branchResults.size() ? "Some branches have too little history and are left out." : null;
+        if (note == null && trainingDays < SEASON_HISTORY_DAYS) {
+            note = "Based on about " + Math.max(1, Math.round(trainingDays / 30.0)) + " months of sales. Seasonal patterns need about a year of history, so "
+                    + "festival effects use cautious starting assumptions until they have been seen in your sales.";
+        }
         return buildResult(id, "All branches", model, score, null, dates, expected, calendar, note, trainingDays);
     }
 
@@ -228,6 +234,13 @@ public final class ForecastEngine {
         double[] w = tight(weekBand, 0.9, 1.1), m = tight(monthBand, 0.92, 1.08);
         Totals totals = new Totals(s7, s7 * w[0], s7 * w[1], s30, s30 * m[0], s30 * m[1]);
         Confidence conf = !tested ? Confidence.LOW : score.month1Error() <= 0.08 ? Confidence.HIGH : score.month1Error() <= 0.15 ? Confidence.MEDIUM : Confidence.LOW;
+        // a good score on only a few past periods is not yet proof: cap what it can claim
+        if (tested && conf == Confidence.HIGH && score.origins() < MIN_BACKTESTS_FOR_HIGH) conf = Confidence.MEDIUM;
+        if (tested && score.origins() < 3 && conf != Confidence.LOW) conf = Confidence.MEDIUM;
+        if (series != null && trainingDays < SEASON_HISTORY_DAYS && note == null && tested) {
+            note = "Based on about " + Math.max(1, Math.round(trainingDays / 30.0)) + " months of sales. Seasonal patterns need about a year of history, so "
+                    + "festival effects use cautious starting assumptions until they have been seen in your sales.";
+        }
         Quality q = tested
                 ? new Quality(model, conf, score.origins(), trainingDays, score.dailyWape(), score.week1Error(), score.month1Error(), score.bias())
                 : new Quality(model, Confidence.LOW, 0, trainingDays, -1, -1, -1, 0);

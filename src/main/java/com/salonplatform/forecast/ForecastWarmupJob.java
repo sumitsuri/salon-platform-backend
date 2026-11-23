@@ -23,6 +23,7 @@ import java.util.UUID;
 public class ForecastWarmupJob {
 
     private final SalesForecastService service;
+    private final StockReadinessService stock;
     private final JdbcTemplate jdbc;
 
     @Value("${app.forecast.warmup-on-start:true}")
@@ -52,6 +53,17 @@ public class ForecastWarmupJob {
                 WHERE deleted_at IS NULL AND issued_at > now() - interval '45 days'
                 """, UUID.class);
         log.info("Sales forecast: training {} brand(s)", tenants.size());
-        for (UUID tenant : tenants) service.warm(tenant);
+        for (UUID tenant : tenants) {
+            service.warm(tenant);
+            try {
+                StockReadinessService.Readiness r = stock.compute(tenant, StockReadinessService.DEFAULT_DAYS, null, java.time.LocalDate.now(SalesForecastService.ZONE));
+                for (StockReadinessService.BranchReadiness b : r.branches()) {
+                    log.info("  stock {} usageHistory={} short={} low={} ok={} unknown={} bookedServices={}", b.name(), r.hasUsageHistory(), b.shortCount(),
+                            b.lowCount(), b.okCount(), b.unknownCount(), b.bookedServices());
+                }
+            } catch (RuntimeException e) {
+                log.warn("Stock readiness check failed for tenant {}: {}", tenant, e.getMessage());
+            }
+        }
     }
 }
