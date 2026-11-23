@@ -2,6 +2,7 @@ package com.salonplatform.aigateway.policy;
 
 import com.salonplatform.aigateway.model.Action;
 import com.salonplatform.aigateway.model.Category;
+import com.salonplatform.aigateway.model.Language;
 
 import java.util.EnumMap;
 import java.util.List;
@@ -23,6 +24,7 @@ import java.util.Set;
  * @param budget               spend and rate limits
  * @param ambiguousWithoutClassifier what to do with a question that has no domain words and no classifier is available
  * @param weakSignalWithoutClassifier what to do with a question that has exactly one weak domain word and no classifier is available
+ * @param localized            the gateway's own messages per language; a language not listed gets the English texts built from {@code smallTalk} and {@code offTopicMessage}
  */
 public record Profile(
         String name,
@@ -36,7 +38,22 @@ public record Profile(
         Map<Category, Action> sensitiveActions,
         Budget budget,
         Action ambiguousWithoutClassifier,
-        Action weakSignalWithoutClassifier) {
+        Action weakSignalWithoutClassifier,
+        Map<Language, Messages> localized) {
+
+    /** A profile with English messages only. */
+    public Profile(String name, boolean scopeGuard, Set<String> domainRoots, Set<String> weakDomainRoots, List<IntentRule> deniedIntents,
+                   Map<SmallTalk, String> smallTalk, String offTopicMessage, int maxWords, Map<Category, Action> sensitiveActions,
+                   Budget budget, Action ambiguousWithoutClassifier, Action weakSignalWithoutClassifier) {
+        this(name, scopeGuard, domainRoots, weakDomainRoots, deniedIntents, smallTalk, offTopicMessage, maxWords, sensitiveActions, budget,
+                ambiguousWithoutClassifier, weakSignalWithoutClassifier, Map.of());
+    }
+
+    /** The gateway's own messages in the given language. */
+    public Messages messages(Language language) {
+        Messages m = localized == null ? null : localized.get(language);
+        return m != null ? m : Messages.english(smallTalk, offTopicMessage);
+    }
 
     /** What to do with sensitive data unless a profile says otherwise: block secrets and cards, redact personal data. */
     public static Map<Category, Action> defaultSensitiveActions() {

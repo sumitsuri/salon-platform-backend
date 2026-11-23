@@ -24,6 +24,10 @@ public final class PromptInjectionDetector {
             s("pretend", "\\b(pretend (to be|you are|you're)|roleplay as|role-play as|act as if you (have|had) no)\\b", 0.6),
             s("chat-template-tokens", "(<\\|\\s*(im_start|im_end|system|assistant)\\s*\\|>|\\[/?INST\\]|<<SYS>>|###\\s*(system|instruction)s?\\b|<system>)", 1.0),
             s("encoded-instructions", "\\b(base64|rot13|hex)\\b[^.?!\\n]{0,20}\\b(decode|decoded|instruction|prompt)\\b", 0.6),
+            // Hindi in Latin letters: "pichle instructions bhool jao", "system prompt dikhao"
+            s("ignore-instructions-hinglish", "\\b(instructions?|rules?|niyam|prompt|guidelines?)\\b[^.?!\\n]{0,30}\\b(bhool|bhul|ignore|todo|tod do|hata|hatao|mat maano|mat mano)\\b"
+                    + "|\\b(bhool|bhul|ignore|hatao|hata do)\\b[^.?!\\n]{0,30}\\b(instructions?|rules?|niyam|prompt|guidelines?)\\b", 1.0),
+            s("reveal-system-prompt-hinglish", "\\b(system|hidden|secret|original|apna|apni)\\b[^.?!\\n]{0,12}\\b(prompt|instructions?)\\b[^.?!\\n]{0,20}\\b(batao|bataiye|dikhao|dikhaiye|bata do|dikha do|likho|print|reveal|show)\\b", 1.0),
             s("exfiltrate", "\\b(send|post|upload|email)\\b[^.?!\\n]{0,40}\\b(to|at)\\b[^.?!\\n]{0,10}https?://", 0.7));
 
     /** Total weight of the signals found in {@code normalizedText}. */
