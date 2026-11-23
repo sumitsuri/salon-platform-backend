@@ -20,6 +20,8 @@ public final class ForecastEngine {
     /** From this much history the branch can be backtested, so models can be compared. */
     public static final int MIN_BACKTEST_DAYS = Backtest.MIN_TRAIN_DAYS + Backtest.HORIZON + Backtest.STEP_DAYS;
     private static final double COMPLEX_MODEL_MUST_BEAT_BY = 0.03;
+    /** A branch must have sales on at least this many of the last 28 days; otherwise there is no current pattern to carry forward. */
+    public static final int MIN_RECENT_TRADING_DAYS = 8;
 
     public enum Confidence { HIGH, MEDIUM, LOW, INSUFFICIENT }
 
@@ -126,6 +128,20 @@ public final class ForecastEngine {
         int positive = positiveDays(s);
         if (days < MIN_FORECAST_DAYS || positive < 20) {
             c.note = "Needs at least four weeks of sales before it can be forecast.";
+            return c;
+        }
+        int recent = 0;
+        for (int i = 0; i < 28; i++) if (s.at(s.end().minusDays(i)) > 0) recent++;
+        if (recent < MIN_RECENT_TRADING_DAYS) {
+            LocalDate lastSale = null;
+            for (LocalDate d = s.end(); !d.isBefore(s.start()); d = d.minusDays(1)) {
+                if (s.at(d) > 0) {
+                    lastSale = d;
+                    break;
+                }
+            }
+            c.note = "Sales were recorded on only " + recent + " of the last 28 days" + (lastSale == null ? "" : " (the latest was " + lastSale + ")")
+                    + ", so there is no current pattern to forecast from. It resumes once bills are recorded regularly.";
             return c;
         }
         Trainer best = trainers.get(0);
