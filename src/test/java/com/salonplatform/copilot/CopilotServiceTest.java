@@ -1,7 +1,12 @@
 package com.salonplatform.copilot;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.salonplatform.aigateway.AiGateway;
+import com.salonplatform.aigateway.ledger.InMemoryGatewayLedger;
+import com.salonplatform.aigateway.policy.CostCalculator;
 import com.salonplatform.config.CopilotProperties;
+import com.salonplatform.copilot.gateway.AskAntraProfile;
+import com.salonplatform.copilot.gateway.TenantTermsProvider;
 import com.salonplatform.copilot.llm.LlmClient;
 import com.salonplatform.copilot.llm.LlmMessage;
 import com.salonplatform.copilot.tools.CopilotTool;
@@ -43,8 +48,19 @@ class CopilotServiceTest {
     @SuppressWarnings("unchecked")
     private final ObjectProvider<LlmClient> llm = mock(ObjectProvider.class);
 
+    private final TenantTermsProvider terms = mock(TenantTermsProvider.class);
+    private InMemoryGatewayLedger ledger;
     private LlmClient client;
     private CopilotService service;
+
+    /** Builds the service with a gateway configured from the current properties, as the application does. */
+    private void buildService() {
+        ledger = new InMemoryGatewayLedger();
+        AiGateway gateway = new AiGateway(List.of(new AskAntraProfile().askAntraGatewayProfile(props)), ledger,
+                new CostCalculator(java.util.Map.of(), new CostCalculator.Price(2, 10), 88), null,
+                java.time.Clock.systemUTC(), java.time.ZoneId.of("Asia/Kolkata"));
+        service = new CopilotService(props, llm, toolbox, tenants, branches, mapper, gateway, terms);
+    }
 
     /** Records everything the service reports, in order. */
     private static final class Recorder implements CopilotService.Events {
@@ -74,7 +90,8 @@ class CopilotServiceTest {
         };
         when(llm.getIfAvailable()).thenAnswer(i -> client);
         when(llm.getObject()).thenAnswer(i -> client);
-        service = new CopilotService(props, llm, toolbox, tenants, branches, mapper);
+        when(terms.termsFor(any())).thenReturn(java.util.Set.of());
+        buildService();
         signIn(UserRole.BRAND_ADMIN);
     }
 
@@ -375,7 +392,8 @@ class CopilotServiceTest {
     @Test
     void aBusinessThatUsesItsDailyAllowanceGetsA429() {
         props.setDailyRequestsPerTenant(2);
-        List<CopilotService.ChatMessage> q = List.of(new CopilotService.ChatMessage("user", "hi"));
+        buildService();
+        List<CopilotService.ChatMessage> q = List.of(new CopilotService.ChatMessage("user", "How were sales last month?"));
         service.prepare(q);
         service.prepare(q);
 

@@ -107,6 +107,27 @@ public class AnthropicLlmClient implements LlmClient {
         return new Turn(blocks, stop, (int) message.usage().inputTokens(), (int) message.usage().outputTokens());
     }
 
+    @Override
+    public java.util.Optional<Completion> complete(String modelId, String system, String user, int maxTokens) {
+        try {
+            MessageCreateParams params = MessageCreateParams.builder()
+                    .model(modelId)
+                    .maxTokens((long) maxTokens)
+                    .system(system)
+                    .addUserMessage(user)
+                    .outputConfig(OutputConfig.builder().effort(OutputConfig.Effort.LOW).build())
+                    .build();
+            Message m = client.messages().create(params,
+                    com.anthropic.core.RequestOptions.builder().timeout(java.time.Duration.ofSeconds(8)).build());
+            String text = m.content().stream().flatMap(b -> b.text().stream()).map(t -> t.text())
+                    .collect(java.util.stream.Collectors.joining()).trim();
+            return java.util.Optional.of(new Completion(text, m.usage().inputTokens(), m.usage().outputTokens()));
+        } catch (RuntimeException e) {
+            log.warn("Anthropic quick call failed: {}", e.toString());
+            return java.util.Optional.empty();
+        }
+    }
+
     private OutputConfig.Effort effort() {
         String e = props.getEffort() == null ? "" : props.getEffort().trim().toLowerCase();
         return switch (e) {

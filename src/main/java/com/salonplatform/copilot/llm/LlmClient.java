@@ -30,4 +30,15 @@ public interface LlmClient {
     }
 
     Turn stream(String system, List<LlmMessage> messages, List<ToolSpec> tools, Consumer<String> onText);
+
+    /** A short, non-streaming answer from a (usually small) model. */
+    record Completion(String text, long inputTokens, long outputTokens) {}
+
+    /**
+     * One quick call to {@code modelId}, for jobs like classifying a question. Returns empty when this provider cannot
+     * do it or the call failed; callers must then use a fallback.
+     */
+    default java.util.Optional<Completion> complete(String modelId, String system, String user, int maxTokens) {
+        return java.util.Optional.empty();
+    }
 }
