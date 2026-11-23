@@ -12,4 +12,6 @@ public class UpdateTenantSandboxRequest {
     private Boolean localSpotlightEnabled;
     /** Platform license: Guest Voice / review routing. */
     private Boolean guestReviewsEnabled;
+    /** Platform license: Ask Antra, the owner chat assistant. */
+    private Boolean assistantEnabled;
 }

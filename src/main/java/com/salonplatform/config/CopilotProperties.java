@@ -25,6 +25,11 @@ public class CopilotProperties {
     private int maxMessages = 20;
     private int maxMessageChars = 4000;
     private int dailyRequestsPerTenant = 300;
+    /**
+     * Brand slugs to switch the assistant on for at startup (never switches anyone off). This is how a protected
+     * production brand is enabled, since platform admin cannot modify it.
+     */
+    private java.util.List<String> enableForSlugs = new java.util.ArrayList<>();
 
     /** The Bedrock id carries a routing prefix; the direct API uses the bare model name. */
     public String resolvedModelId() {

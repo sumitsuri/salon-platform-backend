@@ -54,6 +54,7 @@ public class TenantManagementService {
                 .onlineBookingEnabled(t.getOnlineBookingEnabled())
                 .localSpotlightEnabled(t.getLocalSpotlightEnabled())
                 .guestReviewsEnabled(t.getGuestReviewsEnabled())
+                .assistantEnabled(t.getAssistantEnabled())
                 .createdAt(t.getCreatedAt())
                 .build();
     }

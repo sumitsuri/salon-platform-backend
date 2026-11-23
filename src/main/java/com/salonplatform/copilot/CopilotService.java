@@ -70,6 +70,14 @@ public class CopilotService {
         this.mapper = mapper;
     }
 
+    @jakarta.annotation.PostConstruct
+    void warnIfNoModel() {
+        if (props.isEnabled() && llm.getIfAvailable() == null) {
+            log.warn("Ask Antra is enabled but no model is configured (provider={}); it will report itself as not "
+                    + "enabled. For provider=anthropic set ANTHROPIC_API_KEY.", props.getProvider());
+        }
+    }
+
     private static final class DayCount {
         final LocalDate day;
         final AtomicInteger count = new AtomicInteger();
@@ -81,8 +89,13 @@ public class CopilotService {
 
     public Map<String, Object> status() {
         SecurityUtils.assertBrandAdminOrAbove();
-        boolean ready = props.isEnabled() && llm.getIfAvailable() != null;
+        boolean ready = props.isEnabled() && llm.getIfAvailable() != null && isLicensed(SecurityUtils.requireTenantId());
         return Map.of("enabled", ready, "provider", props.getProvider());
+    }
+
+    /** The assistant is a per-brand platform licence, off until a brand is switched on. */
+    private boolean isLicensed(UUID tenantId) {
+        return tenants.findById(tenantId).map(t -> t.isAssistantLicensed()).orElse(false);
     }
 
     /** Checks access, limits and input before any streaming starts, so failures are ordinary HTTP errors. */
@@ -92,6 +105,9 @@ public class CopilotService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "The assistant is not enabled yet.");
         }
         UUID tenantId = SecurityUtils.requireTenantId();
+        if (!isLicensed(tenantId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "The assistant is not enabled for your business yet.");
+        }
         LocalDate today = LocalDate.now(CopilotToolbox.IST);
         DayCount dc = usage.compute(tenantId, (k, v) -> v == null || !v.day.equals(today) ? new DayCount(today) : v);
         if (dc.count.incrementAndGet() > props.getDailyRequestsPerTenant()) {

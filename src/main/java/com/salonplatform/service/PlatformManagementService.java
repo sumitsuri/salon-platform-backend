@@ -218,6 +218,9 @@ public class PlatformManagementService {
         if (request.getGuestReviewsEnabled() != null) {
             tenant.setGuestReviewsEnabled(request.getGuestReviewsEnabled());
         }
+        if (request.getAssistantEnabled() != null) {
+            tenant.setAssistantEnabled(request.getAssistantEnabled());
+        }
         return toTenantResponse(tenantRepository.save(tenant));
     }
 
@@ -260,6 +263,7 @@ public class PlatformManagementService {
                         ? t.getOutboundMessagingMode() : OutboundMessagingMode.LIVE)
                 .localSpotlightEnabled(t.getLocalSpotlightEnabled())
                 .guestReviewsEnabled(t.getGuestReviewsEnabled())
+                .assistantEnabled(t.getAssistantEnabled())
                 .createdAt(t.getCreatedAt())
                 .build();
     }

@@ -23,5 +23,6 @@ public class TenantResponse {
     private OutboundMessagingMode outboundMessagingMode;
     private Boolean localSpotlightEnabled;
     private Boolean guestReviewsEnabled;
+    private Boolean assistantEnabled;
     private Instant createdAt;
 }

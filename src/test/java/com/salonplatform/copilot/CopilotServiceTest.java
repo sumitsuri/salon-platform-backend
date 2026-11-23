@@ -6,6 +6,7 @@ import com.salonplatform.copilot.llm.LlmClient;
 import com.salonplatform.copilot.llm.LlmMessage;
 import com.salonplatform.copilot.tools.CopilotTool;
 import com.salonplatform.copilot.tools.CopilotToolbox;
+import com.salonplatform.domain.entity.Tenant;
 import com.salonplatform.domain.entity.User;
 import com.salonplatform.domain.enums.UserRole;
 import com.salonplatform.domain.repository.BranchRepository;
@@ -63,7 +64,8 @@ class CopilotServiceTest {
     void setUp() {
         props.setEnabled(true);
         props.setProvider("fake");
-        when(tenants.findById(any())).thenReturn(java.util.Optional.empty());
+        when(tenants.findById(any())).thenAnswer(i -> java.util.Optional.of(
+                Tenant.builder().id(i.getArgument(0)).name("Mystic Wellness").slug("mystic-wellness").assistantEnabled(true).build()));
         when(branches.findByTenantIdAndStatus(any(), any())).thenReturn(List.of());
         client = (system, messages, tools, onText) -> {
             throw new IllegalStateException("client not scripted");
@@ -267,6 +269,36 @@ class CopilotServiceTest {
         signIn(UserRole.SALON_MANAGER);
         assertThatThrownBy(() -> service.prepare(List.of(new CopilotService.ChatMessage("user", "hi"))))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void aBrandThatIsNotSwitchedOnGetsA403AndDoesNotUseTheAllowance() {
+        when(tenants.findById(any())).thenAnswer(i -> java.util.Optional.of(
+                Tenant.builder().id(i.getArgument(0)).name("Other").slug("other").assistantEnabled(false).build()));
+        props.setDailyRequestsPerTenant(1);
+        List<CopilotService.ChatMessage> q = List.of(new CopilotService.ChatMessage("user", "hi"));
+
+        assertThatThrownBy(() -> service.prepare(q))
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
+        assertThatThrownBy(() -> service.prepare(q)) // still 403, not 429: no allowance was consumed
+                .isInstanceOfSatisfying(ResponseStatusException.class,
+                        e -> assertThat(e.getStatusCode().value()).isEqualTo(403));
+    }
+
+    @Test
+    void statusSaysDisabledForABrandThatIsNotSwitchedOn() {
+        assertThat(service.status().get("enabled")).isEqualTo(true);
+
+        when(tenants.findById(any())).thenAnswer(i -> java.util.Optional.of(
+                Tenant.builder().id(i.getArgument(0)).name("Other").slug("other").assistantEnabled(false).build()));
+        assertThat(service.status().get("enabled")).isEqualTo(false);
+    }
+
+    @Test
+    void anUnknownBrandIsTreatedAsNotLicensed() {
+        when(tenants.findById(any())).thenReturn(java.util.Optional.empty());
+        assertThat(service.status().get("enabled")).isEqualTo(false);
     }
 
     @Test

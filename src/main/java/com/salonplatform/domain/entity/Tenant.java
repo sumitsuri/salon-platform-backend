@@ -84,6 +84,10 @@ public class Tenant {
     @Builder.Default
     private Boolean guestReviewsEnabled = false;
 
+    /** Platform license: Ask Antra, the owner chat assistant. Off until a brand is switched on. */
+    @Builder.Default
+    private Boolean assistantEnabled = false;
+
     /** Tracks one-off catalog migration patches applied to this tenant. */
     private String catalogPatchVersion;
 
@@ -107,5 +111,9 @@ public class Tenant {
 
     public boolean isGuestReviewsLicensed() {
         return Boolean.TRUE.equals(guestReviewsEnabled);
+    }
+
+    public boolean isAssistantLicensed() {
+        return Boolean.TRUE.equals(assistantEnabled);
     }
 }

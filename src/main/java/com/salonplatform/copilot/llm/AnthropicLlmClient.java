@@ -40,7 +40,9 @@ import java.util.function.Consumer;
  */
 @Slf4j
 @Component
-@ConditionalOnExpression("${app.copilot.enabled:false} and '${app.copilot.provider:bedrock}' == 'anthropic'")
+// Without a key there is simply no model: the app still starts and the assistant reports itself as not enabled.
+@ConditionalOnExpression("${app.copilot.enabled:false} and '${app.copilot.provider:bedrock}' == 'anthropic' "
+        + "and '${app.copilot.anthropic-api-key:}' != ''")
 public class AnthropicLlmClient implements LlmClient {
 
     private final AnthropicClient client;
