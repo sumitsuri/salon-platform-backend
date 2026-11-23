@@ -65,6 +65,8 @@ public class ScriptedLlmClient implements LlmClient {
             tool = "profit_and_loss";
         } else if (q.contains("service")) {
             tool = "service_mix";
+        } else if (q.contains("salary") || q.contains("scorecard") || q.contains("4x") || q.contains("target")) {
+            tool = "staff_scorecard";
         } else if (q.contains("staff") || q.contains("stylist") || q.contains("employee")) {
             tool = "staff_sales";
         } else {

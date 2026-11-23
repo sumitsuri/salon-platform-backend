@@ -46,6 +46,7 @@ public class CopilotToolbox {
     private final AttendanceAnalyticsService attendance;
     private final InventoryAnalyticsService inventory;
     private final PlAnalyticsService pl;
+    private final StaffScorecardService staffScorecard;
     private final DemandInsightsService demand;
     private final BranchRepository branches;
     private final ObjectMapper mapper;
@@ -90,19 +91,36 @@ public class CopilotToolbox {
                 }));
 
         t.add(new CopilotTool("staff_sales", "Checking staff sales",
-                "Sales per staff member for a period, against their targets.",
+                "Sales per staff member for a period: revenue, service lines and average ticket. For revenue against salary, "
+                        + "unique customers, services performed or attendance per person, use staff_scorecard instead.",
                 schema(RANGE_PROPS + "," + BRANCH_PROP),
                 args -> {
                     LocalDate[] r = range(args);
                     return analytics.getStaffSalesPerformance(r[0], r[1], branchIds(args));
                 }));
 
+        t.add(new CopilotTool("staff_scorecard", "Building the staff scorecard",
+                "One row per staff member: revenue, salary for the period, multiple of salary achieved against a target "
+                        + "(default 4x) and the gap, unique customers, services performed, days present, late arrivals. "
+                        + "Use it for any question about individual staff performance or whether people earn their salary.",
+                schema(RANGE_PROPS + "," + BRANCH_PROP
+                        + ",\"targetMultiple\":{\"type\":\"number\",\"description\":\"Target revenue as a multiple of salary. Default 4.\"}"),
+                args -> {
+                    LocalDate[] r = range(args);
+                    double multiple = args.hasNonNull("targetMultiple") ? args.get("targetMultiple").asDouble() : 4.0;
+                    if (multiple <= 0 || multiple > 50) {
+                        throw new IllegalArgumentException("targetMultiple must be between 0 and 50.");
+                    }
+                    return staffScorecard.scorecard(r[0], r[1], branchIds(args), multiple);
+                }));
+
         t.add(new CopilotTool("attendance_overview", "Checking attendance",
-                "Staff attendance for a period: who was present, late, absent or checked in outside the branch.",
+                "Staff attendance for a period: days present and on leave, late arrivals, early exits and check-ins outside "
+                        + "the branch, per person, with today's headcount.",
                 schema(RANGE_PROPS + "," + BRANCH_PROP),
                 args -> {
                     LocalDate[] r = range(args);
-                    return attendance.getDashboard(r[0], r[1], branchIds(args));
+                    return attendanceSummary(attendance.getDashboard(r[0], r[1], branchIds(args)));
                 }));
 
         t.add(new CopilotTool("busy_hours", "Checking busy hours",
@@ -151,6 +169,30 @@ public class CopilotToolbox {
         ObjectNode node = mapper.valueToTree(d);
         node.remove("branchTrends");
         return node;
+    }
+
+    /** Per-person attendance without the raw punch records and leave list, which are large and not needed to answer. */
+    private Object attendanceSummary(com.salonplatform.dto.analytics.AttendanceDashboardResponse d) {
+        List<Map<String, Object>> staff = new ArrayList<>();
+        for (var s : d.getStaffSummaries()) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("name", s.getStaffName());
+            m.put("branch", s.getBranchName());
+            m.put("daysPresent", s.getDaysPresent());
+            m.put("daysOnLeave", s.getDaysLeave());
+            m.put("lateArrivals", s.getLateArrivals());
+            m.put("earlyExits", s.getEarlyExits());
+            m.put("outsideBranchCheckIns", s.getGeoFlags());
+            m.put("avgHoursPerDay", s.getAvgHoursPerDay());
+            staff.add(m);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("totalStaff", d.getTotalStaff());
+        out.put("presentToday", d.getPresentToday());
+        out.put("onLeaveToday", d.getOnLeaveToday());
+        out.put("absentToday", d.getAbsentToday());
+        out.put("staff", staff);
+        return out;
     }
 
     /** The conclusions of the Busy hours screen, without the hour-by-hour grids. */

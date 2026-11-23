@@ -19,9 +19,14 @@ public class CopilotProperties {
     private String anthropicApiKey = "";
     /** Thinking depth for the {@code anthropic} provider: low, medium, high, or blank for the model's default. */
     private String effort = "medium";
-    private int maxTokens = 2000;
+    /** Per model turn, thinking included. Too low cuts answers off mid-sentence; unused budget costs nothing. */
+    private int maxTokens = 12000;
     /** How many model-to-tool round trips one question may take. */
-    private int maxToolRounds = 6;
+    private int maxToolRounds = 8;
+    /** How many times an answer that hit the output limit is automatically continued. */
+    private int maxContinuations = 3;
+    /** Largest tool result handed to the model, in characters (about 4 per token). */
+    private int maxToolResultChars = 40_000;
     private int maxMessages = 20;
     private int maxMessageChars = 4000;
     private int dailyRequestsPerTenant = 300;

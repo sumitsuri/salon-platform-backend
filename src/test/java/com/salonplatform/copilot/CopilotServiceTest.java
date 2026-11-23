@@ -51,12 +51,14 @@ class CopilotServiceTest {
         final List<String> log = new ArrayList<>();
         final StringBuilder text = new StringBuilder();
         String error;
+        boolean truncated;
         int rounds = -1;
 
         @Override public void text(String delta) { text.append(delta); }
         @Override public void toolStart(String name, String label) { log.add("start:" + name); }
         @Override public void toolEnd(String name, boolean ok, long millis) { log.add("end:" + name + ":" + ok); }
         @Override public void done(int r, int in, int out) { rounds = r; log.add("done"); }
+        @Override public void truncated() { truncated = true; }
         @Override public void error(String message) { error = message; }
     }
 
@@ -157,6 +159,67 @@ class CopilotServiceTest {
         service.run(List.of(LlmMessage.user("Sales?")), events);
 
         assertThat(events.text).hasToString("Done.");
+    }
+
+    private static LlmClient.Turn cutOff(String t, Consumer<String> onText) {
+        onText.accept(t);
+        return new LlmClient.Turn(List.of(new LlmMessage.Text(t)), "max_tokens", 10, 5);
+    }
+
+    @Test
+    void anAnswerCutOffByTheOutputLimitIsContinuedAutomaticallyWithoutAParagraphBreak() {
+        when(toolbox.tools()).thenReturn(List.of());
+        List<List<LlmMessage>> seen = new ArrayList<>();
+        int[] turns = {0};
+        client = (system, messages, tools, onText) -> {
+            seen.add(new ArrayList<>(messages));
+            return turns[0]++ == 0 ? cutOff("Koramangala earned 2,98", onText) : text(",280 rupees.", onText);
+        };
+
+        Recorder events = new Recorder();
+        service.run(List.of(LlmMessage.user("Sales?")), events);
+
+        assertThat(events.text).hasToString("Koramangala earned 2,98,280 rupees.");
+        assertThat(events.truncated).isFalse();
+        LlmMessage last = seen.get(1).get(seen.get(1).size() - 1);
+        assertThat(last.role()).isEqualTo(LlmMessage.Role.USER);
+        assertThat(((LlmMessage.Text) last.blocks().get(0)).text()).isEqualTo(CopilotService.CONTINUE_PROMPT);
+        assertThat(events.log).containsExactly("done");
+    }
+
+    @Test
+    void anAnswerThatKeepsHittingTheLimitIsMarkedTruncatedNotSilentlyCut() {
+        props.setMaxContinuations(2);
+        when(toolbox.tools()).thenReturn(List.of());
+        int[] calls = {0};
+        client = (system, messages, tools, onText) -> {
+            calls[0]++;
+            return cutOff("part" + calls[0] + " ", onText);
+        };
+
+        Recorder events = new Recorder();
+        service.run(List.of(LlmMessage.user("Sales?")), events);
+
+        assertThat(calls[0]).isEqualTo(3); // the first answer plus two automatic continuations
+        assertThat(events.truncated).isTrue();
+        assertThat(events.log).contains("done");
+    }
+
+    @Test
+    void aNormalAnswerIsNeverMarkedTruncated() {
+        when(toolbox.tools()).thenReturn(List.of());
+        client = (system, messages, tools, onText) -> text("All good.", onText);
+
+        Recorder events = new Recorder();
+        service.run(List.of(LlmMessage.user("Hi")), events);
+
+        assertThat(events.truncated).isFalse();
+    }
+
+    @Test
+    void theOutputBudgetIsGenerousByDefault() {
+        assertThat(new CopilotProperties().getMaxTokens()).isGreaterThanOrEqualTo(8000);
+        assertThat(new CopilotProperties().getMaxToolResultChars()).isGreaterThanOrEqualTo(30_000);
     }
 
     @Test

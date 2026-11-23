@@ -108,6 +108,11 @@ public class CopilotController {
         }
 
         @Override
+        public void truncated() {
+            send("truncated", Map.of("reason", "output-limit"));
+        }
+
+        @Override
         public void error(String message) {
             try {
                 send("error", Map.of("message", message));
