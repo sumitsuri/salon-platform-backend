@@ -63,8 +63,9 @@ final class Backtest {
 
     static Score score(List<Run> runs) {
         int used = 0;
-        double absErr = 0, actualSum = 0, predSum = 0, weekErr = 0, monthErr = 0;
-        int weekN = 0;
+        double absErr = 0, actualSum = 0, predSum = 0;
+        List<Double> weekErrs = new ArrayList<>();
+        List<Double> monthErrs = new ArrayList<>();
         List<Double> daily = new ArrayList<>();
         List<Double> weekly = new ArrayList<>();
         List<Double> monthly = new ArrayList<>();
@@ -81,7 +82,7 @@ final class Backtest {
                 if (r.actual()[k] > 0 && r.predicted()[k] > 0) daily.add(r.actual()[k] / r.predicted()[k]);
             }
             if (a30 > 0 && p30 > 0) {
-                monthErr += Math.abs(a30 - p30) / a30;
+                monthErrs.add(Math.abs(a30 - p30) / a30);
                 monthly.add(a30 / p30);
             }
             for (int w = 0; w + 7 <= HORIZON; w += 7) {
@@ -91,15 +92,20 @@ final class Backtest {
                     p += r.predicted()[k];
                 }
                 if (a > 0) {
-                    weekErr += Math.abs(a - p) / a;
-                    weekN++;
+                    weekErrs.add(Math.abs(a - p) / a);
                     if (p > 0) weekly.add(a / p);
                 }
             }
         }
         if (used == 0 || actualSum <= 0) return new Score(0, 1, 1, 1, 0, null, null, null);
-        return new Score(used, absErr / actualSum, weekN == 0 ? 1 : weekErr / weekN, monthErr / used, predSum / actualSum - 1,
+        // each period's error is capped at 100%, so one freak period (a closure, a launch month) cannot make the model look hopeless
+        return new Score(used, absErr / actualSum, cappedMean(weekErrs, 1), cappedMean(monthErrs, 1), predSum / actualSum - 1,
                 band(daily), band(weekly), band(monthly));
+    }
+
+    private static double cappedMean(List<Double> v, double fallback) {
+        if (v.isEmpty()) return fallback;
+        return v.stream().mapToDouble(x -> Math.min(1.0, x)).average().orElse(fallback);
     }
 
     /** P10 and P90 of actual/predicted ratios, or null when there are too few to say. */

@@ -119,6 +119,25 @@ public class SalesForecastService {
             log.info("Sales forecast trained: tenant={} branches={} through={} brandModel={} confidence={} backtests={} monthError={} weekError={} dailyError={} bias={}",
                     tenantId, t.output().branches().size(), t.output().trainedThrough(), b.quality().model(), b.quality().confidence(),
                     b.quality().backtests(), pct(b.quality().monthError()), pct(b.quality().weekError()), pct(b.quality().dailyError()), pct(b.quality().bias()));
+            for (Series sr : t.series().values()) {
+                double[] rev = sr.revenue();
+                StringBuilder weekly = new StringBuilder();
+                int weeks = Math.min(12, rev.length / 7);
+                for (int w = weeks; w >= 1; w--) {
+                    double sum = 0;
+                    for (int d = 0; d < 7; d++) sum += rev[rev.length - w * 7 + d];
+                    weekly.append(Math.round(sum)).append(' ');
+                }
+                double max = 0;
+                int positive = 0;
+                for (double v : rev) {
+                    max = Math.max(max, v);
+                    if (v > 0) positive++;
+                }
+                log.info("  data {} from={} to={} days={} tradingDays={} maxDay={} weeklyRevenueLast{}={}", sr.name(), sr.start(), sr.end(), rev.length,
+                        positive, Math.round(max), weeks, weekly.toString().trim());
+            }
+            t.output().diagnostics().forEach(d -> log.info("  backtest {}", d));
             for (ForecastEngine.Result r : t.output().branches()) {
                 log.info("  branch {} forecastable={} model={} confidence={} trainingDays={} monthError={}", r.name(), r.forecastable(),
                         r.quality().model(), r.quality().confidence(), r.quality().trainingDays(), pct(r.quality().monthError()));
@@ -175,7 +194,7 @@ public class SalesForecastService {
                 if (e.getKey().isAfter(end)) break;
                 rev[(int) ChronoUnit.DAYS.between(start, e.getKey())] = e.getValue();
             }
-            Series s = new Series(b.getId(), b.getName(), start, rev);
+            Series s = launched(new Series(b.getId(), b.getName(), start, rev));
             series.add(s);
             seriesById.put(b.getId(), s);
         }
@@ -186,6 +205,25 @@ public class SalesForecastService {
         ForecastEngine engine = new ForecastEngine(FestivalCalendar.standard(), festivalPriorWeight);
         ForecastEngine.Output out = engine.forecast(series, through);
         return new Trained(out, seriesById, byId, Instant.now(), today);
+    }
+
+    /**
+     * Drops the trickle before a branch really opened: test bills and the odd early sale would otherwise be learned as the
+     * branch's normal and make every later month look like explosive growth. Trading starts on the first day from which at
+     * least half of the next 14 days have sales.
+     */
+    static Series launched(Series s) {
+        double[] r = s.revenue();
+        for (int i = 0; i + 14 <= r.length; i++) {
+            int positive = 0;
+            for (int k = i; k < i + 14; k++) if (r[k] > 0) positive++;
+            if (positive >= 7) {
+                while (i < r.length && r[i] <= 0) i++;
+                if (i == 0) return s;
+                return new Series(s.id(), s.name(), s.start().plusDays(i), java.util.Arrays.copyOfRange(r, i, r.length));
+            }
+        }
+        return s;
     }
 
     // ---- shaping the answer

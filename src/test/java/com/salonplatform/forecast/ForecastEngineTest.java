@@ -166,4 +166,17 @@ class ForecastEngineTest {
             assertThat(out.brand().days().get(i).expected()).isCloseTo(sum, org.assertj.core.data.Offset.offset(1e-6));
         }
     }
+
+    @Test
+    void theTrickleBeforeABranchReallyOpenedIsDropped() {
+        double[] r = new double[100];
+        r[3] = 500;
+        r[20] = 900;           // two stray early bills
+        for (int i = 40; i < 100; i++) r[i] = 20000; // trading starts on day 40
+        Series s = new Series(UUID.randomUUID(), "x", LocalDate.of(2026, 1, 1), r);
+        Series t = SalesForecastService.launched(s);
+        assertThat(t.start()).isEqualTo(LocalDate.of(2026, 1, 1).plusDays(40));
+        assertThat(t.length()).isEqualTo(60);
+        assertThat(SalesForecastService.launched(new Series(UUID.randomUUID(), "y", s.start(), new double[]{1, 0, 0}))).isNotNull();
+    }
 }

@@ -36,7 +36,8 @@ public final class ForecastEngine {
     /** A festival's effect on the days ahead, in rupees and as a share of normal sales. */
     public record FestivalImpact(String id, String name, LocalDate date, double impact, double percent, boolean learned, int timesSeen) {}
 
-    public record Output(Result brand, List<Result> branches, List<FestivalImpact> festivals, LocalDate trainedThrough, LocalDate calendarEnds) {}
+    public record Output(Result brand, List<Result> branches, List<FestivalImpact> festivals, LocalDate trainedThrough, LocalDate calendarEnds,
+                         List<String> diagnostics) {}
 
     private final FestivalCalendar calendar;
     private final List<Trainer> trainers;
@@ -69,7 +70,27 @@ public final class ForecastEngine {
 
         List<Chosen> usable = chosen.stream().filter(c -> c.model != null).toList();
         Result brand = brandResult(usable, branchResults, chosenRuns, through, trainedThrough);
-        return new Output(brand, branchResults, festivalImpacts(usable, trainedThrough, through), trainedThrough, calendar.coverageEnd());
+        return new Output(brand, branchResults, festivalImpacts(usable, trainedThrough, through), trainedThrough, calendar.coverageEnd(), diagnostics(chosen));
+    }
+
+    /** One line per branch: what the chosen model predicted for 30 days against what happened, at each backtest origin. */
+    private static List<String> diagnostics(List<Chosen> chosen) {
+        List<String> out = new ArrayList<>();
+        for (Chosen c : chosen) {
+            if (c.runs == null) continue;
+            StringBuilder sb = new StringBuilder(c.series.name()).append(" [").append(c.trainer.name()).append("] 30-day actual/predicted:");
+            for (Backtest.Run r : c.runs) {
+                if (!r.trained()) continue;
+                double a = 0, p = 0;
+                for (int k = 0; k < Backtest.HORIZON; k++) {
+                    a += r.actual()[k];
+                    p += r.predicted()[k];
+                }
+                sb.append(String.format(" %s %.0f/%.0f;", r.origin(), a, p));
+            }
+            out.add(sb.toString());
+        }
+        return out;
     }
 
     // ---- choosing a model for one branch
