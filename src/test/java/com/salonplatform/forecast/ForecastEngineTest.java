@@ -145,7 +145,7 @@ class ForecastEngineTest {
     @Test
     void tooLittleHistoryIsNotForecastAndShortHistoryIsFlaggedLowConfidence() {
         Series tiny = synthetic("Tiny", LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 20), 30000, 0, 0.08, 1, (d, v) -> v);
-        Series shortish = synthetic("Short", LocalDate.of(2026, 7, 1), LocalDate.of(2026, 9, 20), 30000, 0, 0.08, 2, (d, v) -> v);
+        Series shortish = synthetic("Short", LocalDate.of(2026, 7, 21), LocalDate.of(2026, 9, 20), 30000, 0, 0.08, 2, (d, v) -> v);
         // all series in a call share an end date
         Series tiny20 = new Series(tiny.id(), tiny.name(), tiny.start(), tiny.revenue());
         ForecastEngine.Output out = new ForecastEngine(CAL, 0.5).forecast(List.of(tiny20, shortish), LocalDate.of(2026, 10, 20));
@@ -191,5 +191,15 @@ class ForecastEngineTest {
         assertThat(out.branches().get(0).forecastable()).isFalse();
         assertThat(out.branches().get(0).note()).contains("of the last 28 days");
         assertThat(out.brand().forecastable()).isFalse();
+    }
+
+    @Test
+    void aFewMonthsOfHistoryIsForecastWithAnHonestNoteAndNeverClaimsHighConfidence() {
+        Series s = synthetic("Young", LocalDate.of(2026, 8, 9), LocalDate.of(2026, 11, 23), 40000, 0, 0.06, 6, (d, v) -> v);
+        ForecastEngine.Result r = new ForecastEngine(CAL, 0.5).forecast(List.of(s), LocalDate.of(2026, 12, 31)).branches().get(0);
+        assertThat(r.forecastable()).isTrue();
+        assertThat(r.quality().backtests()).isGreaterThanOrEqualTo(3);
+        assertThat(r.quality().confidence()).isNotEqualTo(ForecastEngine.Confidence.HIGH);
+        assertThat(r.note()).contains("months of sales");
     }
 }

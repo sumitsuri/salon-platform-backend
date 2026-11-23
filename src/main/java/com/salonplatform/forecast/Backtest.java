@@ -12,10 +12,10 @@ import java.util.List;
 final class Backtest {
 
     static final int HORIZON = 30;
-    static final int STEP_DAYS = 14;
+    static final int STEP_DAYS = 7;
     static final int MAX_ORIGINS = 8;
     /** A branch needs this many days of history at an origin before a forecast made from it is judged. */
-    static final int MIN_TRAIN_DAYS = 56;
+    static final int MIN_TRAIN_DAYS = 42;
 
     private Backtest() {}
 

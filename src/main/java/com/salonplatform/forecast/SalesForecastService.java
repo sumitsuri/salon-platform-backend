@@ -172,6 +172,12 @@ public class SalesForecastService {
                     SELECT status, COUNT(*) AS n FROM bookings
                     WHERE tenant_id = :t AND deleted_at IS NULL AND created_at > now() - interval '120 days' GROUP BY 1 ORDER BY 1
                     """, p, rs -> { bookings.append(rs.getString("status")).append('=').append(rs.getInt("n")).append(' '); });
+            StringBuilder moves = new StringBuilder();
+            jdbc.query("""
+                    SELECT movement_type, COUNT(*) AS n FROM inventory_movements
+                    WHERE tenant_id = :t AND movement_date > current_date - 84 GROUP BY 1 ORDER BY 1
+                    """, p, rs -> { moves.append(rs.getString("movement_type")).append('=').append(rs.getInt("n")).append(' '); });
+            log.info("Sales forecast source: stockMovementsLast12Weeks={}", moves.toString().trim());
             log.info("Sales forecast source: brand={} branchesByStatus={} invoicesPerMonth(count/rupees, newest first)={} voidedInvoices={} bookingsLast120Days={}",
                     who, branchStatus, months.toString().trim(), voided, bookings.toString().trim());
         } catch (RuntimeException e) {
