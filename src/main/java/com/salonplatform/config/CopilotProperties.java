@@ -10,14 +10,27 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "app.copilot")
 public class CopilotProperties {
     private boolean enabled = false;
-    /** {@code bedrock} for the real model, {@code fake} for a scripted model used in local development and tests. */
+    /** {@code anthropic} (API key), {@code bedrock} (AWS), or {@code fake} (scripted model for local development and tests). */
     private String provider = "bedrock";
-    private String modelId = "global.anthropic.claude-sonnet-5-5";
+    /** Blank picks the provider's Claude Sonnet 5.5 id; set it to compare other models. */
+    private String modelId = "";
     private String region = "ap-south-1";
+    /** API key from the Claude Console; used only when {@code provider=anthropic}. Never commit it. */
+    private String anthropicApiKey = "";
+    /** Thinking depth for the {@code anthropic} provider: low, medium, high, or blank for the model's default. */
+    private String effort = "medium";
     private int maxTokens = 2000;
     /** How many model-to-tool round trips one question may take. */
     private int maxToolRounds = 6;
     private int maxMessages = 20;
     private int maxMessageChars = 4000;
     private int dailyRequestsPerTenant = 300;
+
+    /** The Bedrock id carries a routing prefix; the direct API uses the bare model name. */
+    public String resolvedModelId() {
+        if (modelId != null && !modelId.isBlank()) {
+            return modelId.trim();
+        }
+        return "anthropic".equals(provider) ? "claude-sonnet-5-5" : "global.anthropic.claude-sonnet-5-5";
+    }
 }

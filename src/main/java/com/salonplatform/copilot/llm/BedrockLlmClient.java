@@ -78,7 +78,7 @@ public class BedrockLlmClient implements LlmClient {
     @Override
     public Turn stream(String system, List<LlmMessage> messages, List<ToolSpec> tools, Consumer<String> onText) {
         ConverseStreamRequest.Builder request = ConverseStreamRequest.builder()
-                .modelId(props.getModelId())
+                .modelId(props.resolvedModelId())
                 .system(SystemContentBlock.builder().text(system).build())
                 .messages(messages.stream().map(this::toMessage).toList())
                 .inferenceConfig(InferenceConfiguration.builder().maxTokens(props.getMaxTokens()).build());
