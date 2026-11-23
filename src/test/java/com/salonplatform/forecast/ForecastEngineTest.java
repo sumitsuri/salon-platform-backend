@@ -179,4 +179,17 @@ class ForecastEngineTest {
         assertThat(t.length()).isEqualTo(60);
         assertThat(SalesForecastService.launched(new Series(UUID.randomUUID(), "y", s.start(), new double[]{1, 0, 0}))).isNotNull();
     }
+
+    @Test
+    void aBranchThatStoppedRecordingSalesIsNotForecast() {
+        // busy for four months, then almost nothing for the last five weeks
+        Series busy = synthetic("Faded", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 30), 30000, 0, 0.1, 3, (d, v) -> v);
+        double[] r = java.util.Arrays.copyOf(busy.revenue(), busy.length());
+        for (int i = r.length - 35; i < r.length; i++) r[i] = i % 17 == 0 ? 2000 : 0;
+        Series faded = new Series(busy.id(), busy.name(), busy.start(), r);
+        ForecastEngine.Output out = new ForecastEngine(CAL, 0.5).forecast(List.of(faded), LocalDate.of(2026, 7, 31));
+        assertThat(out.branches().get(0).forecastable()).isFalse();
+        assertThat(out.branches().get(0).note()).contains("of the last 28 days");
+        assertThat(out.brand().forecastable()).isFalse();
+    }
 }
