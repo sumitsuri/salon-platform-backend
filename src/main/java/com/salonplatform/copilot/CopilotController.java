@@ -33,10 +33,13 @@ public class CopilotController {
 
     private final CopilotService service;
     private final ObjectMapper mapper;
+    private final com.salonplatform.speech.SpeechService speech;
 
     @GetMapping("/status")
     public ApiResponse<Map<String, Object>> status() {
-        return ApiResponse.ok(service.status());
+        Map<String, Object> out = new LinkedHashMap<>(service.status());
+        out.put("speech", speech.status());
+        return ApiResponse.ok(out);
     }
 
     /** What this person and their business have used today and this month, and the limits that apply. */
