@@ -41,6 +41,15 @@ app:
     classifier-model-id: ${COPILOT_CLASSIFIER_MODEL_ID:}
     max-tokens: ${COPILOT_MAX_TOKENS:12000}
     enable-for-slugs: ${COPILOT_ENABLE_FOR_SLUGS:}
+  speech:
+    # Server-side speech to text, for phones and app-store builds where the browser's own recogniser is missing or not
+    # accurate enough. Off: the browser's built-in recogniser is used. Turn on with SPEECH_ENABLED=true plus a provider and key.
+    enabled: ${SPEECH_ENABLED:false}
+    provider: ${SPEECH_PROVIDER:none}          # none | sarvam | openai | fake
+    max-seconds: ${SPEECH_MAX_SECONDS:30}
+    daily-seconds-per-user: ${SPEECH_DAILY_SECONDS_PER_USER:900}
+    sarvam-api-key: ${SARVAM_API_KEY:}
+    openai-api-key: ${OPENAI_API_KEY:}
   jwt:
     secret: ${JWT_SECRET:salon-platform-jwt-secret-change-in-production-min-256-bits-long-key-here}
     access-token-expiry-ms: ${JWT_ACCESS_TOKEN_EXPIRY_MS:900000}        # 15 minutes (silent refresh via refresh token)
